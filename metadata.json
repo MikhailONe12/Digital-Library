@@ -1,0 +1,8 @@
+{
+  "name": "OptionsHUB - Digital Library",
+  "description": "A comprehensive media library for books, articles, and videos, designed as a Telegram Mini App with content management and analytics.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,7 +1,14 @@
 
-import { AppState, MediaItem, StatPoint, UserAnalytics } from '../types';
+import { AppState, MediaItem, StatPoint, UserAnalytics, VisitLog } from '../types';
 
 const DB_KEY = 'mediavault_db_v4'; 
+
+// Helper to get a date X days ago for mock data
+const daysAgo = (days: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
+};
 
 const INITIAL_DATA: AppState = {
   items: [
@@ -18,7 +25,11 @@ const INITIAL_DATA: AppState = {
       rating: 4.8,
       author: 'John Developer',
       publishedDate: '2023-10-15',
-      formats: [{ id: 'f1', name: 'PDF', url: '#', size: '2.4MB' }],
+      addedDate: daysAgo(40), // Old item (older than 30 days)
+      formats: [
+        { id: 'f1', name: 'PDF', url: '#', size: '2.4MB', language: 'en', allowDownload: true, allowReading: true },
+        { id: 'f1_ru', name: 'PDF (RU)', url: '#', size: '2.5MB', language: 'ru', allowDownload: true, allowReading: true }
+      ],
       videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       isPrivate: false,
       views: 1240,
@@ -40,7 +51,8 @@ const INITIAL_DATA: AppState = {
       rating: 4.9,
       author: 'Robert Martin',
       publishedDate: '2023-05-20',
-      formats: [{ id: 'f2', name: 'EPUB', url: '#', size: '1.8MB' }],
+      addedDate: daysAgo(35), // Old item
+      formats: [{ id: 'f2', name: 'EPUB', url: '#', size: '1.8MB', language: 'en', allowDownload: true, allowReading: true }],
       isPrivate: false,
       views: 890,
       downloads: 310,
@@ -61,7 +73,8 @@ const INITIAL_DATA: AppState = {
       rating: 4.9,
       author: 'Andrew Hunt',
       publishedDate: '2023-11-01',
-      formats: [{ id: 'f3', name: 'PDF', url: '#', size: '4.2MB' }],
+      addedDate: daysAgo(5), // NEW item (within 30 days)
+      formats: [{ id: 'f3', name: 'PDF', url: '#', size: '4.2MB', language: 'en', allowDownload: true, allowReading: true }],
       isPrivate: true,
       views: 2100,
       downloads: 520,
@@ -82,7 +95,8 @@ const INITIAL_DATA: AppState = {
       rating: 4.7,
       author: 'Tech Institute',
       publishedDate: '2024-01-10',
-      formats: [{ id: 'f4', name: 'Interactive PDF', url: '#', size: '12.5MB' }],
+      addedDate: daysAgo(2), // NEW item
+      formats: [{ id: 'f4', name: 'Interactive PDF', url: '#', size: '12.5MB', language: 'en', allowDownload: true, allowReading: true }],
       isPrivate: false,
       views: 560,
       downloads: 120,
@@ -103,7 +117,8 @@ const INITIAL_DATA: AppState = {
       rating: 4.6,
       author: 'Elena Smith',
       publishedDate: '2024-02-15',
-      formats: [{ id: 'f5', name: 'Source Code', url: '#', size: '0.5MB' }],
+      addedDate: daysAgo(10), // NEW item
+      formats: [{ id: 'f5', name: 'Source Code', url: '#', size: '0.5MB', language: 'en', allowDownload: true, allowReading: true }],
       videoUrl: 'https://www.youtube.com/watch?v=Tn6-PIqc4UM',
       isPrivate: false,
       views: 3400,
@@ -125,6 +140,7 @@ const INITIAL_DATA: AppState = {
       rating: 4.9,
       author: 'Alex Typer',
       publishedDate: '2023-12-12',
+      addedDate: daysAgo(60), // Old item
       formats: [],
       videoUrl: 'https://www.youtube.com/watch?v=VguJQxBsc_0',
       isPrivate: true,
@@ -147,7 +163,8 @@ const INITIAL_DATA: AppState = {
       rating: 4.5,
       author: 'Mark Market',
       publishedDate: '2024-03-01',
-      formats: [{ id: 'f6', name: 'Workbook', url: '#', size: '1.2MB' }],
+      addedDate: daysAgo(1), // Fresh item
+      formats: [{ id: 'f6', name: 'Workbook', url: '#', size: '1.2MB', language: 'ru', allowDownload: true, allowReading: true }],
       videoUrl: 'https://www.youtube.com/watch?v=Yp69mS-rCnc',
       isPrivate: false,
       views: 4200,
@@ -158,6 +175,8 @@ const INITIAL_DATA: AppState = {
     }
   ],
   allowedUsers: ['admin_username', 'pro_trader_77'],
+  blacklist: [],
+  visitLogs: [],
   stats: [
     { date: '2023-10-01', views: 120, downloads: 40 },
     { date: '2023-10-02', views: 150, downloads: 55 },
@@ -167,6 +186,7 @@ const INITIAL_DATA: AppState = {
   ],
   userAnalytics: [],
   userFavorites: {},
+  userRatings: {},
   customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
@@ -189,18 +209,24 @@ export const getDb = (): AppState => {
     return INITIAL_DATA;
   }
   const parsed = JSON.parse(saved);
-  // Ensure botConfig and contentLanguages and permissions exist for older versions
-  if (!parsed.botConfig) {
-    parsed.botConfig = INITIAL_DATA.botConfig;
-  }
-  if (!parsed.userFavorites) {
-    parsed.userFavorites = {};
-  }
+  // Ensure backward compatibility
+  if (!parsed.botConfig) parsed.botConfig = INITIAL_DATA.botConfig;
+  if (!parsed.userFavorites) parsed.userFavorites = {};
+  if (!parsed.userRatings) parsed.userRatings = {};
+  if (!parsed.blacklist) parsed.blacklist = [];
+  if (!parsed.visitLogs) parsed.visitLogs = [];
+
   parsed.items = parsed.items.map((item: any) => ({
     ...item,
     contentLanguages: item.contentLanguages || ['en'],
     allowDownload: item.allowDownload !== undefined ? item.allowDownload : true,
-    allowReading: item.allowReading !== undefined ? item.allowReading : true
+    allowReading: item.allowReading !== undefined ? item.allowReading : true,
+    addedDate: item.addedDate ? item.addedDate : (item.publishedDate ? new Date(item.publishedDate).toISOString() : new Date().toISOString()),
+    formats: (item.formats || []).map((f: any) => ({
+      ...f,
+      allowDownload: f.allowDownload !== undefined ? f.allowDownload : true,
+      allowReading: f.allowReading !== undefined ? f.allowReading : true,
+    }))
   }));
   saveDb(parsed);
   return parsed;
@@ -244,6 +270,36 @@ export const isFavorited = (userId: string, itemId: string): boolean => {
   return db.userFavorites[userId]?.includes(itemId) || false;
 };
 
+export const setUserRating = (userId: string, itemId: string, rating: number) => {
+  const db = getDb();
+  if (!db.userRatings[userId]) {
+    db.userRatings[userId] = {};
+  }
+  db.userRatings[userId][itemId] = rating;
+  saveDb(db);
+};
+
+export const getUserRating = (userId: string, itemId: string): number => {
+  const db = getDb();
+  return db.userRatings[userId]?.[itemId] || 0;
+};
+
+export const getAverageRating = (itemId: string): number => {
+  const db = getDb();
+  let sum = 0;
+  let count = 0;
+  Object.values(db.userRatings).forEach(userRecord => {
+     if (userRecord[itemId]) {
+       sum += userRecord[itemId];
+       count++;
+     }
+  });
+  if (count > 0) return parseFloat((sum / count).toFixed(1));
+  const item = db.items.find(i => i.id === itemId);
+  return item ? item.rating : 0;
+};
+
+// --- WHITELIST ---
 export const addUserToWhitelist = (username: string) => {
   const db = getDb();
   const cleanUsername = username.replace('@', '').trim().toLowerCase();
@@ -256,6 +312,76 @@ export const addUserToWhitelist = (username: string) => {
 export const removeUserFromWhitelist = (username: string) => {
   const db = getDb();
   db.allowedUsers = db.allowedUsers.filter(u => u !== username);
+  saveDb(db);
+};
+
+// --- BLACKLIST & SECURITY ---
+export const addToBlacklist = (entry: string) => {
+  const db = getDb();
+  const cleanEntry = entry.replace('@', '').trim().toLowerCase();
+  if (cleanEntry && !db.blacklist.includes(cleanEntry)) {
+    db.blacklist.push(cleanEntry);
+    saveDb(db);
+  }
+};
+
+export const removeFromBlacklist = (entry: string) => {
+  const db = getDb();
+  db.blacklist = db.blacklist.filter(e => e !== entry);
+  saveDb(db);
+};
+
+export const checkIsBlocked = (username?: string, ip?: string): boolean => {
+  const db = getDb();
+  const list = db.blacklist || [];
+  
+  if (username) {
+    const cleanUser = username.replace('@', '').toLowerCase();
+    if (list.includes(cleanUser)) return true;
+  }
+  
+  if (ip) {
+    if (list.includes(ip.trim())) return true;
+  }
+  
+  return false;
+};
+
+export const logVisit = (username: string, ip: string, platform: string) => {
+  const db = getDb();
+  
+  // Create visit log
+  const log: VisitLog = {
+    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+    timestamp: new Date().toISOString(),
+    username: username || 'guest',
+    ip: ip || 'unknown',
+    platform: platform || 'web',
+    device: navigator.userAgent
+  };
+
+  // Prepend logs, keep max 2000 to save localStorage space
+  db.visitLogs.unshift(log);
+  if (db.visitLogs.length > 2000) {
+    db.visitLogs = db.visitLogs.slice(0, 2000);
+  }
+  
+  saveDb(db);
+};
+
+// --- CUSTOM TYPES ---
+export const addCustomType = (type: string) => {
+  const db = getDb();
+  const upperType = type.trim().toUpperCase();
+  if (upperType && !db.customTypes.includes(upperType)) {
+    db.customTypes.push(upperType);
+    saveDb(db);
+  }
+};
+
+export const deleteCustomType = (type: string) => {
+  const db = getDb();
+  db.customTypes = db.customTypes.filter(t => t !== type);
   saveDb(db);
 };
 
@@ -276,11 +402,9 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
   const item = db.items.find(i => i.id === itemId);
   if (!item) return;
 
-  // Global increment
   if (type === 'view') item.views++;
   if (type === 'download') item.downloads++;
 
-  // Date tracking
   const today = new Date().toISOString().split('T')[0];
   const statIndex = db.stats.findIndex(s => s.date === today);
   if (statIndex >= 0) {
@@ -290,7 +414,6 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
     db.stats.push({ date: today, views: type === 'view' ? 1 : 0, downloads: type === 'download' ? 1 : 0 });
   }
 
-  // User tracking
   const tg = (window as any).Telegram?.WebApp;
   const user = tg?.initDataUnsafe?.user;
   if (user && user.username) {

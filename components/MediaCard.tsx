@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MediaItem, Locale } from '../types';
 import { TrendingUp, ShieldCheck, Heart } from 'lucide-react';
 
@@ -11,6 +11,15 @@ interface MediaCardProps {
 }
 
 const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited }) => {
+  
+  // Combine global item languages and individual file languages without duplicates
+  const displayedLanguages = useMemo(() => {
+    const fileLanguages = item.formats.map(f => f.language).filter((l): l is Locale => !!l);
+    const globalLanguages = item.contentLanguages || [];
+    // Create a Set to remove duplicates, spread both arrays
+    return Array.from(new Set([...globalLanguages, ...fileLanguages]));
+  }, [item]);
+
   return (
     <div 
         onClick={onClick} 
@@ -37,7 +46,7 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited 
               {item.type}
           </div>
           <div className="flex flex-wrap gap-1 max-w-[100px]">
-            {item.contentLanguages?.map(l => (
+            {displayedLanguages.map(l => (
               <div key={l} className="bg-white/80 backdrop-blur-md text-slate-900 text-[6px] font-black uppercase px-1.5 py-0.5 rounded border border-white/40 shadow-sm">
                 {l}
               </div>

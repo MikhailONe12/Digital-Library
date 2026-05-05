@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getDb, isFavorited, checkIsBlocked, logVisit } from './services/db';
 import { MediaItem, Locale } from './types';
 import { translations } from './translations';
+import { pickText } from './utils';
 import Home from './pages/Home';
 import Admin from './pages/Admin';
 import ItemDetails from './pages/ItemDetails';
@@ -124,7 +125,7 @@ const App: React.FC = () => {
 
     // 4. Logic for Search and other Categories
     return availableItems.filter(item => {
-      const title = item.title[lang] || item.title.en;
+      const title = pickText(item.title, lang);
       const author = item.author;
       const q = searchQuery.toLowerCase();
       

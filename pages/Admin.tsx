@@ -8,10 +8,11 @@ import {
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
 import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, updateBotConfig, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist } from '../services/db';
-import { 
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+import {
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts';
+import { pickText } from '../utils';
 
 interface AdminProps {
   onBack: () => void;
@@ -514,7 +515,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                    <img src={item.coverUrl} className="w-full h-full object-cover" alt="" />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-red-600 truncate">{item.title[lang] || item.title.en}</p>
+                                    <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-red-600 truncate">{pickText(item.title, lang)}</p>
                                     <p className="text-[8px] font-black text-slate-400 uppercase">{item.type}</p>
                                 </div>
                             </div>
@@ -542,7 +543,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                    <img src={item.coverUrl} className="w-full h-full object-cover" alt="" />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-green-600 truncate">{item.title[lang] || item.title.en}</p>
+                                    <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-green-600 truncate">{pickText(item.title, lang)}</p>
                                     <p className="text-[8px] font-black text-slate-400 uppercase">{item.type}</p>
                                 </div>
                             </div>
@@ -709,7 +710,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         <div className="flex items-center gap-4 overflow-hidden">
                            <img src={i.coverUrl} className="w-12 h-12 rounded-xl object-cover" />
                            <div className="min-w-0">
-                              <h4 className="text-xs font-black text-slate-900 truncate">{i.title[lang] || i.title.en}</h4>
+                              <h4 className="text-xs font-black text-slate-900 truncate">{pickText(i.title, lang)}</h4>
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{i.type}</span>
                            </div>
                         </div>

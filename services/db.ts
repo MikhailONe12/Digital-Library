@@ -18,7 +18,7 @@ const INITIAL_DATA: AppState = {
       description: { 
         en: 'A deep dive into elegant software architecture.', 
         ru: 'Глубокое погружение в элегантную архитектуру ПО.', 
-        es: 'Una имерсия profunda en la архитектуры de software elegante.' 
+        es: 'Una inmersión profunda en la arquitectura de software elegante.'
       },
       coverUrl: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&q=80&w=400&h=600',
       type: 'BOOK',

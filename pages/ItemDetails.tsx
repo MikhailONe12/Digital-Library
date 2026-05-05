@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { MediaItem, Locale, FileFormat } from '../types';
 import { ArrowLeft, Download, Star, Calendar, User, FileText, Activity, BookOpen, X, Lock, Heart, Globe } from 'lucide-react';
 import { trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating, getAverageRating } from '../services/db';
+import { pickText, handleCoverError } from '../utils';
 
 interface ItemDetailsProps {
   item: MediaItem;
@@ -67,7 +68,6 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const handleRead = (format: FileFormat) => {
     if (format.name.toLowerCase().includes('pdf') || format.url.toLowerCase().endsWith('.pdf')) {
       setActiveReaderUrl(format.url);
-      trackActivity('view', item.id);
     } else {
       window.open(format.url, '_blank');
     }
@@ -76,7 +76,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   return (
     <div className="relative animate-in fade-in slide-in-from-right-4 duration-500 bg-slate-50 min-h-screen">
       <div className="h-72 w-full relative overflow-hidden">
-        <img src={item.coverUrl} className="w-full h-full object-cover blur-3xl opacity-20 scale-150" alt="" />
+        <img src={item.coverUrl} onError={handleCoverError} className="w-full h-full object-cover blur-3xl opacity-20 scale-150" alt="" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-50" />
         <button 
             onClick={onBack} 
@@ -89,7 +89,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       <div className="px-6 -mt-32 relative z-10 pb-20">
         <div className="flex gap-6 items-start">
           <div className="relative">
-              <img src={item.coverUrl} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white" alt="" />
+              <img src={item.coverUrl} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white" alt="" />
               {/* Favorites Button replaces Activity Icon */}
               <button 
                   onClick={handleToggleFav}
@@ -104,7 +104,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 <span className="text-[10px] font-black uppercase text-red-600 bg-red-50 px-2 py-0.5 rounded-md tracking-widest">{item.type}</span>
             </div>
             <h1 className="text-2xl font-black leading-tight text-slate-900 tracking-tight drop-shadow-sm mb-3">
-                {item.title[lang] || item.title.en}
+                {pickText(item.title, lang)}
             </h1>
             <div className="flex items-center gap-3 bg-white w-fit px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
                 <Star size={14} className="text-red-600 fill-red-600" />
@@ -156,7 +156,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               {t.about}
           </h2>
           <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm leading-relaxed text-slate-600 text-sm whitespace-pre-line">
-            {item.description[lang] || item.description.en}
+            {pickText(item.description, lang, '')}
           </div>
         </div>
 
@@ -275,7 +275,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase text-white/40 tracking-widest leading-none mb-1">Reader Mode</p>
-                <p className="text-xs font-black text-white truncate max-w-[200px]">{item.title[lang] || item.title.en}</p>
+                <p className="text-xs font-black text-white truncate max-w-[200px]">{pickText(item.title, lang)}</p>
               </div>
             </div>
             <button 

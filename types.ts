@@ -55,6 +55,8 @@ export interface UserAnalytics {
   views: number;
   downloads: number;
   lastActive: string;
+  itemViews: Record<string, number>;     // {itemId: viewCount}
+  itemDownloads: Record<string, number>; // {itemId: downloadCount}
 }
 
 export interface VisitLog {

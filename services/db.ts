@@ -3,7 +3,6 @@ import { AppState, MediaItem, StatPoint, UserAnalytics, VisitLog } from '../type
 
 const DB_KEY = 'mediavault_db_v4'; 
 
-// Helper to get a date X days ago for mock data
 const daysAgo = (days: number) => {
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -32,8 +31,8 @@ const INITIAL_DATA: AppState = {
       ],
       videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       isPrivate: false,
-      views: 1240,
-      downloads: 450,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['en', 'ru'],
       allowDownload: true,
       allowReading: true
@@ -54,8 +53,8 @@ const INITIAL_DATA: AppState = {
       addedDate: daysAgo(35), // Old item
       formats: [{ id: 'f2', name: 'EPUB', url: '#', size: '1.8MB', language: 'en', allowDownload: true, allowReading: true }],
       isPrivate: false,
-      views: 890,
-      downloads: 310,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['en'],
       allowDownload: true,
       allowReading: true
@@ -76,8 +75,8 @@ const INITIAL_DATA: AppState = {
       addedDate: daysAgo(5), // NEW item (within 30 days)
       formats: [{ id: 'f3', name: 'PDF', url: '#', size: '4.2MB', language: 'en', allowDownload: true, allowReading: true }],
       isPrivate: true,
-      views: 2100,
-      downloads: 520,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['en', 'ru', 'es'],
       allowDownload: true,
       allowReading: true
@@ -98,8 +97,8 @@ const INITIAL_DATA: AppState = {
       addedDate: daysAgo(2), // NEW item
       formats: [{ id: 'f4', name: 'Interactive PDF', url: '#', size: '12.5MB', language: 'en', allowDownload: true, allowReading: true }],
       isPrivate: false,
-      views: 560,
-      downloads: 120,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['en'],
       allowDownload: true,
       allowReading: true
@@ -121,8 +120,8 @@ const INITIAL_DATA: AppState = {
       formats: [{ id: 'f5', name: 'Source Code', url: '#', size: '0.5MB', language: 'en', allowDownload: true, allowReading: true }],
       videoUrl: 'https://www.youtube.com/watch?v=Tn6-PIqc4UM',
       isPrivate: false,
-      views: 3400,
-      downloads: 880,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['en', 'ru'],
       allowDownload: true,
       allowReading: true
@@ -144,8 +143,8 @@ const INITIAL_DATA: AppState = {
       formats: [],
       videoUrl: 'https://www.youtube.com/watch?v=VguJQxBsc_0',
       isPrivate: true,
-      views: 1500,
-      downloads: 45,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['en'],
       allowDownload: true,
       allowReading: true
@@ -167,8 +166,8 @@ const INITIAL_DATA: AppState = {
       formats: [{ id: 'f6', name: 'Workbook', url: '#', size: '1.2MB', language: 'ru', allowDownload: true, allowReading: true }],
       videoUrl: 'https://www.youtube.com/watch?v=Yp69mS-rCnc',
       isPrivate: false,
-      views: 4200,
-      downloads: 1200,
+      views: 0,
+      downloads: 0,
       contentLanguages: ['ru', 'en'],
       allowDownload: true,
       allowReading: true
@@ -177,13 +176,7 @@ const INITIAL_DATA: AppState = {
   allowedUsers: ['admin_username', 'pro_trader_77'],
   blacklist: [],
   visitLogs: [],
-  stats: [
-    { date: '2023-10-01', views: 120, downloads: 40 },
-    { date: '2023-10-02', views: 150, downloads: 55 },
-    { date: '2023-10-03', views: 110, downloads: 30 },
-    { date: '2023-10-04', views: 180, downloads: 80 },
-    { date: '2023-10-05', views: 220, downloads: 90 },
-  ],
+  stats: [],
   userAnalytics: [],
   userFavorites: {},
   userRatings: {},
@@ -227,6 +220,11 @@ export const getDb = (): AppState => {
       allowDownload: f.allowDownload !== undefined ? f.allowDownload : true,
       allowReading: f.allowReading !== undefined ? f.allowReading : true,
     }))
+  }));
+  parsed.userAnalytics = (parsed.userAnalytics || []).map((u: any) => ({
+    ...u,
+    itemViews: u.itemViews || {},
+    itemDownloads: u.itemDownloads || {},
   }));
   saveDb(parsed);
   return parsed;
@@ -397,6 +395,14 @@ export const updateBotConfig = (config: AppState['botConfig']) => {
   saveDb(db);
 };
 
+export const resetStats = () => {
+  const db = getDb();
+  db.stats = [];
+  db.userAnalytics = [];
+  db.items = db.items.map(item => ({ ...item, views: 0, downloads: 0 }));
+  saveDb(db);
+};
+
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {
   const db = getDb();
   const item = db.items.find(i => i.id === itemId);
@@ -420,11 +426,19 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
     const username = user.username.toLowerCase();
     let userRecord = db.userAnalytics.find(u => u.username === username);
     if (!userRecord) {
-      userRecord = { username, views: 0, downloads: 0, lastActive: today };
+      userRecord = { username, views: 0, downloads: 0, lastActive: today, itemViews: {}, itemDownloads: {} };
       db.userAnalytics.push(userRecord);
     }
-    if (type === 'view') userRecord.views++;
-    if (type === 'download') userRecord.downloads++;
+    if (!userRecord.itemViews) userRecord.itemViews = {};
+    if (!userRecord.itemDownloads) userRecord.itemDownloads = {};
+    if (type === 'view') {
+      userRecord.views++;
+      userRecord.itemViews[itemId] = (userRecord.itemViews[itemId] || 0) + 1;
+    }
+    if (type === 'download') {
+      userRecord.downloads++;
+      userRecord.itemDownloads[itemId] = (userRecord.itemDownloads[itemId] || 0) + 1;
+    }
     userRecord.lastActive = today;
   }
 

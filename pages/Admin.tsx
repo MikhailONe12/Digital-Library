@@ -7,7 +7,7 @@ import {
   Percent, Database, Upload,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, updateBotConfig, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, updateBotConfig, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -234,6 +234,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       }
     } catch (e) {
       alert('Error parsing JSON.');
+    }
+  };
+
+  const handleResetStats = () => {
+    if (confirm('Сбросить всю статистику? Просмотры, скачивания и данные пользователей обнулятся. Отменить нельзя.')) {
+      resetStats();
+      onUpdate();
     }
   };
 
@@ -567,13 +574,21 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     <table className="w-full text-left border-collapse min-w-[300px]">
                         <thead>
                             <tr className="border-b border-slate-100">
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Rank</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">User</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">Engagement Score</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Ранг</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Пользователь</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Интересы</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">Активность</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {analytics.topUsers.length > 0 ? analytics.topUsers.map((user, idx) => (
+                            {analytics.topUsers.length > 0 ? analytics.topUsers.map((user, idx) => {
+                                const topTypes = Object.entries(user.itemViews || {})
+                                  .sort((a, b) => b[1] - a[1])
+                                  .slice(0, 3)
+                                  .map(([itemId]) => db.items.find(i => i.id === itemId)?.type)
+                                  .filter(Boolean);
+                                const uniqueTypes = [...new Set(topTypes)];
+                                return (
                                 <tr key={user.username} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
                                     <td className="p-3 text-[10px] font-black text-slate-300">#{idx + 1}</td>
                                     <td className="p-3">
@@ -581,15 +596,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                             <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold uppercase text-[8px]">
                                                 {user.username.slice(0, 2)}
                                             </div>
-                                            <span className="text-[10px] font-bold text-slate-700 group-hover:text-blue-600 transition-colors truncate max-w-[100px]">@{user.username}</span>
+                                            <div>
+                                                <p className="text-[10px] font-bold text-slate-700 group-hover:text-blue-600 transition-colors">@{user.username}</p>
+                                                <p className="text-[8px] text-slate-400">{user.lastActive}</p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td className="p-3">
+                                        <div className="flex flex-wrap gap-1">
+                                            {uniqueTypes.length > 0 ? uniqueTypes.map(type => (
+                                                <span key={type} className="text-[7px] font-black uppercase bg-red-50 text-red-600 px-1.5 py-0.5 rounded">{type}</span>
+                                            )) : <span className="text-[8px] text-slate-300">—</span>}
                                         </div>
                                     </td>
                                     <td className="p-3 text-right">
-                                        <span className="text-xs font-black text-slate-900">{user.views + user.downloads}</span>
+                                        <p className="text-xs font-black text-slate-900">{user.views + user.downloads}</p>
+                                        <p className="text-[8px] text-slate-400">{user.views}👁 {user.downloads}⬇</p>
                                     </td>
                                 </tr>
-                            )) : (
-                                <tr><td colSpan={3} className="p-8 text-center text-xs text-slate-400 font-bold uppercase tracking-widest">No user data available</td></tr>
+                                );
+                            }) : (
+                                <tr><td colSpan={4} className="p-8 text-center text-xs text-slate-400 font-bold uppercase tracking-widest">Нет данных о пользователях</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -643,6 +670,16 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           Copy JSON to Clipboard
                       </button>
                   </div>
+                  <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
+                      <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <BarChart4 size={14} /> Сбросить статистику
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-bold mb-4">Обнуляет просмотры, скачивания и данные пользователей. Сам контент не удаляется.</p>
+                      <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
+                          Сбросить всю статистику
+                      </button>
+                  </div>
+
                   <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-100">
                       <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                           <Upload size={14} /> Import Data
@@ -750,56 +787,170 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                <h3 className="font-black text-xl uppercase tracking-tighter">{editingItem.id ? 'Edit' : 'New'} Asset</h3>
                <button onClick={() => setEditingItem(null)} className="p-2 bg-slate-50 rounded-full hover:bg-red-50 hover:text-red-600"><X size={20}/></button>
             </div>
-            <div className="p-5 overflow-y-auto space-y-6 flex-1 no-scrollbar">
-               {/* Simplified edit form fields for brevity in this response, functionally identical to previous */}
-               <div className="space-y-4">
-                  {(['en', 'ru', 'es'] as const).map(l => (
-                     <div key={l}>
-                        <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} Title</label>
-                        <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" 
-                           value={editingItem.title?.[l] || ''} 
-                           onChange={e => setEditingItem({...editingItem, title: {...editingItem.title!, [l]: e.target.value}})} />
-                     </div>
+            <div className="p-5 overflow-y-auto space-y-8 flex-1 no-scrollbar">
+
+              {/* Titles */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Заголовки</p>
+                <div className="space-y-3">
+                  {(['ru', 'en', 'es'] as const).map(l => (
+                    <div key={l}>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} Заголовок</label>
+                      <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.title?.[l] || ''}
+                        onChange={e => setEditingItem({...editingItem, title: {...editingItem.title!, [l]: e.target.value}})} />
+                    </div>
                   ))}
-                  <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Cover URL</label>
-                      <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
-                  </div>
-                  <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Type</label>
-                      <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.type} onChange={e => setEditingItem({...editingItem, type: e.target.value})}>
-                          {db.customTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                </div>
+              </div>
+
+              {/* Descriptions */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Описание</p>
+                <div className="space-y-3">
+                  {(['ru', 'en', 'es'] as const).map(l => (
+                    <div key={l}>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} Описание</label>
+                      <textarea rows={3} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-medium focus:border-red-600 outline-none resize-none"
+                        value={editingItem.description?.[l] || ''}
+                        onChange={e => setEditingItem({...editingItem, description: {...(editingItem.description || {en:'',ru:'',es:''}), [l]: e.target.value}})} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Info */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Основное</p>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Тип</label>
+                      <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.type || ''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}>
+                        {db.customTypes.map(tp => <option key={tp} value={tp}>{tp}</option>)}
                       </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Автор</label>
+                      <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.author || ''} onChange={e => setEditingItem({...editingItem, author: e.target.value})} />
+                    </div>
                   </div>
-                  <div className="flex gap-4">
-                      <div className="flex-1">
-                          <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Author</label>
-                          <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.author} onChange={e => setEditingItem({...editingItem, author: e.target.value})} />
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Дата публикации</label>
+                      <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.publishedDate || ''} onChange={e => setEditingItem({...editingItem, publishedDate: e.target.value})} />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Редакционный рейтинг (0–5)</label>
+                      <input type="number" min="0" max="5" step="0.1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.rating ?? 0} onChange={e => setEditingItem({...editingItem, rating: parseFloat(e.target.value) || 0})} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Media */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Медиа</p>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Обложка (URL)</label>
+                    <input type="text" placeholder="https://..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                      value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Видео (YouTube / Rutube / Vimeo / Twitch)</label>
+                    <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                      value={editingItem.videoUrl || ''} onChange={e => setEditingItem({...editingItem, videoUrl: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Content Languages */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Языки контента</p>
+                <div className="flex gap-2">
+                  {(['ru', 'en', 'es'] as const).map(l => {
+                    const active = (editingItem.contentLanguages || []).includes(l);
+                    return (
+                      <button key={l} type="button" onClick={() => handleToggleContentLang(l)}
+                        className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-300'}`}>
+                        {l}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Access */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Доступ и права</p>
+                <div className="space-y-2">
+                  {([
+                    { key: 'isPrivate' as const,      label: 'Только по whitelist (Tier 1)' },
+                    { key: 'allowDownload' as const,  label: 'Разрешить скачивание' },
+                    { key: 'allowReading' as const,   label: 'Разрешить чтение онлайн' },
+                  ]).map(({ key, label }) => (
+                    <label key={key} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-red-100 transition-all">
+                      <span className="text-xs font-bold text-slate-700">{label}</span>
+                      <div className="relative">
+                        <input type="checkbox" className="sr-only peer"
+                          checked={!!(editingItem as any)[key]}
+                          onChange={e => setEditingItem({...editingItem, [key]: e.target.checked})} />
+                        <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
                       </div>
-                      <div className="flex-1">
-                          <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Rating</label>
-                          <input type="number" step="0.1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.rating} onChange={e => setEditingItem({...editingItem, rating: parseFloat(e.target.value)})} />
-                      </div>
-                  </div>
-               </div>
-               
-               <div className="pt-4 border-t border-slate-100">
-                  <div className="flex justify-between items-center mb-4">
-                     <h4 className="text-xs font-black uppercase tracking-widest text-red-600">Resources</h4>
-                     <button onClick={handleAddFormat} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1 rounded-lg">+ Add</button>
-                  </div>
-                  <div className="space-y-3">
-                     {editingItem.formats && editingItem.formats.map((f, i) => (
-                        <div key={f.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 relative">
-                           <button onClick={() => handleRemoveFormat(f.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-600"><X size={14}/></button>
-                           <div className="grid grid-cols-2 gap-2 mb-2 pr-6">
-                              <input placeholder="Name" className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none" value={f.name} onChange={e => handleUpdateFormat(f.id, 'name', e.target.value)} />
-                              <input placeholder="URL" className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none" value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
-                           </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* File Resources */}
+              <div className="border-t border-slate-100 pt-6">
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">Файлы</p>
+                  <button onClick={handleAddFormat} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">+ Добавить файл</button>
+                </div>
+                <div className="space-y-3">
+                  {editingItem.formats && editingItem.formats.map((f) => (
+                    <div key={f.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 relative">
+                      <button onClick={() => handleRemoveFormat(f.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-600 transition-colors"><X size={14}/></button>
+                      <div className="grid grid-cols-2 gap-2 pr-6">
+                        <div>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Название</label>
+                          <input placeholder="PDF / EPUB / …" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
+                            value={f.name} onChange={e => handleUpdateFormat(f.id, 'name', e.target.value)} />
                         </div>
-                     ))}
-                  </div>
-               </div>
+                        <div>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Язык</label>
+                          <select className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
+                            value={f.language || 'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}>
+                            <option value="ru">RU</option>
+                            <option value="en">EN</option>
+                            <option value="es">ES</option>
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">URL файла</label>
+                          <input placeholder="https://..." className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
+                            value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
+                        </div>
+                        <div>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Размер</label>
+                          <input placeholder="2.4 MB" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
+                            value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!editingItem.formats || editingItem.formats.length === 0) && (
+                    <p className="text-center text-[9px] text-slate-300 font-bold uppercase py-3">Файлы не добавлены</p>
+                  )}
+                </div>
+              </div>
+
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100">
                <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">Save Asset</button>

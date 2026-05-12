@@ -246,7 +246,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           </div>
           <h2 className="text-xl md:text-2xl font-black text-center mb-2 mt-8 tracking-tighter uppercase text-slate-900">{t.adminAccess}</h2>
           <p className="text-slate-400 text-center mb-8 text-[10px] font-black uppercase tracking-[0.2em]">Authorized Personnel Only</p>
-          <form onSubmit={(e) => { e.preventDefault(); if(apiKeyInput === 'admin123') setIsAdmin(true); else alert('Invalid Access Token'); }} className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); if(apiKeyInput === '123123123') setIsAdmin(true); else alert('Invalid Access Token'); }} className="space-y-4">
             <div className="space-y-1">
                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-2">{t.apiKey}</label>
                 <input 

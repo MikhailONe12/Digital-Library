@@ -61,7 +61,7 @@ const Home: React.FC<HomeProps> = ({
             <div className="p-3 bg-red-600 rounded-2xl text-white shadow-xl shadow-red-200">
                 <BarChart3 size={28} />
             </div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Options<span className="text-red-600 font-extrabold italic">HUB</span></h1>
+            <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Options<span className="text-red-600 font-extrabold italic">Data</span></h1>
         </div>
         <p className="text-slate-400 text-[11px] uppercase font-black tracking-[0.5em] flex items-center gap-2 ml-1">
             Digital Library <TrendingUp size={14} className="text-red-600" />

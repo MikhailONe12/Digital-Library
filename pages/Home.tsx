@@ -48,7 +48,7 @@ const Home: React.FC<HomeProps> = ({
   };
 
   return (
-    <div className="px-5 pt-12">
+    <div className="px-4 sm:px-6 lg:px-10 pt-12 max-w-7xl mx-auto">
       <header className="mb-14 relative select-none">
         <div 
           className="flex items-center gap-4 mb-3 cursor-pointer active:opacity-70 transition-opacity"
@@ -61,7 +61,7 @@ const Home: React.FC<HomeProps> = ({
             <div className="p-3 bg-red-600 rounded-2xl text-white shadow-xl shadow-red-200">
                 <BarChart3 size={28} />
             </div>
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Options<span className="text-red-600 font-extrabold italic">Data</span></h1>
+            <h1 className="text-4xl font-black text-slate-900 tracking-tighter">Options<span className="text-red-600 font-extrabold">Data</span></h1>
         </div>
         <p className="text-slate-400 text-[11px] uppercase font-black tracking-[0.5em] flex items-center gap-2 ml-1">
             Digital Library <TrendingUp size={14} className="text-red-600" />
@@ -190,7 +190,7 @@ const Home: React.FC<HomeProps> = ({
         ))}
       </div>
 
-      <div className="grid grid-cols-2 gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
         {items.map(item => (
           <MediaCard 
             key={item.id} 

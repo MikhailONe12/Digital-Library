@@ -86,7 +86,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         </button>
       </div>
 
-      <div className="px-6 -mt-32 relative z-10 pb-20">
+      <div className="px-6 -mt-32 relative z-10 pb-20 max-w-4xl mx-auto">
         <div className="flex gap-6 items-start">
           <div className="relative">
               <img src={item.coverUrl} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white" alt="" />

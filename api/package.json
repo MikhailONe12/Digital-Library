@@ -1,0 +1,20 @@
+{
+  "name": "library-api",
+  "version": "1.0.0",
+  "description": "OptionsData Digital Library — backend API",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "pg": "^8.11.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

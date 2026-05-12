@@ -1,0 +1,51 @@
+services:
+
+  library-db:
+    image: postgres:16-alpine
+    container_name: library-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: library
+      POSTGRES_USER: library
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - /mnt/library/pgdata:/var/lib/postgresql/data
+      - ./api/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "127.0.0.1:5433:5432"   # локальный доступ, порт 5433 (не конфликтует с основным 5432)
+    networks:
+      - library-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U library -d library"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  library-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: library-api
+    restart: unless-stopped
+    environment:
+      DB_HOST: library-db
+      DB_NAME: library
+      DB_USER: library
+      DB_PASSWORD: ${DB_PASSWORD}
+      API_KEY: ${API_KEY}
+      BASE_URL: https://library.optionsdata.ru
+      CORS_ORIGIN: https://library.optionsdata.ru
+    volumes:
+      - /mnt/library/content:/mnt/library/content
+    ports:
+      - "127.0.0.1:3001:3001"   # только localhost, наружу не открыт
+    depends_on:
+      library-db:
+        condition: service_healthy
+    networks:
+      - library-net
+
+networks:
+  library-net:
+    name: library-net
+    driver: bridge

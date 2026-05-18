@@ -403,6 +403,14 @@ export const resetStats = () => {
   saveDb(db);
 };
 
+const SERVER_API_KEY_STORAGE = 'library_server_api_key';
+
+export const getServerApiKey = (): string =>
+  localStorage.getItem(SERVER_API_KEY_STORAGE) || '';
+
+export const setServerApiKey = (key: string) =>
+  localStorage.setItem(SERVER_API_KEY_STORAGE, key);
+
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {
   const db = getDb();
   const item = db.items.find(i => i.id === itemId);

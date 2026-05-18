@@ -7,7 +7,7 @@ import {
   Percent, Database, Upload,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, updateBotConfig, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, updateBotConfig, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats, getServerApiKey, setServerApiKey } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -35,7 +35,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const [newType, setNewType] = useState('');
   const [botConfig, setBotConfig] = useState<BotConfig>(db.botConfig);
   const [importJson, setImportJson] = useState('');
+  const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
+  const [serverApiKeyInput, setServerApiKeyInput] = useState(() => getServerApiKey());
   const menuRef = useRef<HTMLDivElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const uploadingFormatId = useRef<string | null>(null);
 
   // Auto-scroll menu to active item
   useEffect(() => {
@@ -82,6 +87,65 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         year: getStatsForPeriod(oneDay * 365)
     };
   }, [db.visitLogs]);
+
+  const uploadCover = (itemId: string) => {
+    const file = coverInputRef.current?.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    const xhr = new XMLHttpRequest();
+    setUploadState({ field: 'cover', progress: 0 });
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setUploadState({ field: 'cover', progress: Math.round((e.loaded / e.total) * 100) });
+    };
+    xhr.onload = () => {
+      setUploadState(null);
+      if (coverInputRef.current) coverInputRef.current.value = '';
+      if (xhr.status === 200) {
+        const res = JSON.parse(xhr.responseText);
+        setEditingItem(prev => prev ? { ...prev, coverUrl: res.url } : prev);
+      } else {
+        alert('Ошибка загрузки обложки: ' + xhr.status);
+      }
+    };
+    xhr.onerror = () => { setUploadState(null); alert('Ошибка сети при загрузке'); };
+    xhr.open('POST', `/api/upload/${itemId}/cover`);
+    const key = getServerApiKey();
+    if (key) xhr.setRequestHeader('x-api-key', key);
+    xhr.send(formData);
+  };
+
+  const uploadContentFile = (itemId: string, formatId: string, lang: string) => {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('lang', lang);
+    const xhr = new XMLHttpRequest();
+    setUploadState({ field: formatId, progress: 0 });
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setUploadState({ field: formatId, progress: Math.round((e.loaded / e.total) * 100) });
+    };
+    xhr.onload = () => {
+      setUploadState(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      uploadingFormatId.current = null;
+      if (xhr.status === 200) {
+        const res = JSON.parse(xhr.responseText);
+        setEditingItem(prev => {
+          if (!prev) return prev;
+          return { ...prev, formats: (prev.formats || []).map(f => f.id === formatId ? { ...f, url: res.url, size: res.size } : f) };
+        });
+      } else {
+        alert('Ошибка загрузки файла: ' + xhr.status);
+      }
+    };
+    xhr.onerror = () => { setUploadState(null); alert('Ошибка сети при загрузке'); };
+    xhr.open('POST', `/api/upload/${itemId}/file`);
+    const key = getServerApiKey();
+    if (key) xhr.setRequestHeader('x-api-key', key);
+    xhr.send(formData);
+  };
 
   const handleSaveItem = () => {
     if (editingItem) {
@@ -663,6 +727,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               </div>
               <div className="space-y-6">
                   <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">
+                          <Upload size={14} /> Server API Key
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-bold mb-3">Нужен для загрузки файлов на сервер. Тот же что в .env (API_KEY).</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none"
+                          placeholder="API_KEY из .env"
+                          value={serverApiKeyInput}
+                          onChange={e => setServerApiKeyInput(e.target.value)}
+                        />
+                        <button
+                          onClick={() => { setServerApiKey(serverApiKeyInput); alert('API Key сохранён'); }}
+                          className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0"
+                        >
+                          Сохранить
+                        </button>
+                      </div>
+                  </div>
+                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-100">
                       <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                           <Download size={14} /> Export Data
                       </h4>
@@ -736,7 +821,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         {activeTab === 'items' && (
            <div className="space-y-6">
                <button 
-                  onClick={() => setEditingItem({ type: db.customTypes[0] || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })} 
+                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0] || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })}
                   className="w-full py-4 bg-red-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-xs shadow-xl shadow-red-200 flex items-center justify-center gap-2"
                >
                   <Plus size={18} /> {t.addContent}
@@ -753,7 +838,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </div>
                         <div className="flex gap-2">
                            <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Edit2 size={16}/></button>
-                           <button onClick={() => { if(confirm('Delete?')) { deleteItem(i.id); onUpdate(); } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Trash2 size={16}/></button>
+                           <button onClick={async () => { if(confirm('Delete?')) { const key = getServerApiKey(); try { await fetch(`/api/upload/${i.id}`, { method: 'DELETE', headers: key ? { 'x-api-key': key } : {} }); } catch {} deleteItem(i.id); onUpdate(); } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Trash2 size={16}/></button>
                         </div>
                      </div>
                   ))}
@@ -857,9 +942,25 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Медиа</p>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Обложка (URL)</label>
-                    <input type="text" placeholder="https://..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                      value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Обложка</label>
+                    <div className="flex gap-2">
+                      <input type="text" placeholder="https://..." className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
+                      <button type="button"
+                        onClick={() => coverInputRef.current?.click()}
+                        disabled={uploadState?.field === 'cover'}
+                        title="Загрузить с компьютера"
+                        className="px-3 bg-slate-100 rounded-2xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
+                        <Upload size={16} />
+                      </button>
+                    </div>
+                    {uploadState?.field === 'cover' && (
+                      <div className="mt-2 bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div className="bg-red-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadState.progress}%` }} />
+                      </div>
+                    )}
+                    <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
+                      onChange={() => editingItem?.id && uploadCover(editingItem.id)} />
                   </div>
                   <div>
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Видео (YouTube / Rutube / Vimeo / Twitch)</label>
@@ -934,8 +1035,22 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </div>
                         <div className="col-span-2">
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">URL файла</label>
-                          <input placeholder="https://..." className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
-                            value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
+                          <div className="flex gap-1">
+                            <input placeholder="https://..." className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
+                              value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
+                            <button type="button"
+                              onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }}
+                              disabled={uploadState !== null}
+                              title="Загрузить с компьютера"
+                              className="px-2 bg-slate-100 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
+                              <Upload size={12} />
+                            </button>
+                          </div>
+                          {uploadState?.field === f.id && (
+                            <div className="mt-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                              <div className="bg-red-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadState.progress}%` }} />
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Размер</label>
@@ -948,6 +1063,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   {(!editingItem.formats || editingItem.formats.length === 0) && (
                     <p className="text-center text-[9px] text-slate-300 font-bold uppercase py-3">Файлы не добавлены</p>
                   )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.epub,.mp4,.webm,.mkv,.mp3,.zip"
+                    className="hidden"
+                    onChange={() => {
+                      const id = uploadingFormatId.current;
+                      const fmt = editingItem?.formats?.find(f => f.id === id);
+                      if (id && fmt && editingItem?.id) uploadContentFile(editingItem.id, id, fmt.language || 'ru');
+                    }}
+                  />
                 </div>
               </div>
 

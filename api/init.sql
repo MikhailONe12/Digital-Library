@@ -36,3 +36,21 @@ CREATE TABLE IF NOT EXISTS item_events (
 CREATE INDEX IF NOT EXISTS idx_ie_item_id  ON item_events(item_id);
 CREATE INDEX IF NOT EXISTS idx_ie_username ON item_events(username);
 CREATE INDEX IF NOT EXISTS idx_ie_ts       ON item_events(timestamp DESC);
+
+-- Catalog items (replaces localStorage in Step 4)
+CREATE TABLE IF NOT EXISTS items (
+  id          TEXT        PRIMARY KEY,
+  data        JSONB       NOT NULL,
+  seq         BIGSERIAL,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_items_seq ON items(seq);
+
+-- App settings: single row (whitelist, blacklist, custom types, bot config)
+CREATE TABLE IF NOT EXISTS app_settings (
+  id          INT         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  data        JSONB       NOT NULL,
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);

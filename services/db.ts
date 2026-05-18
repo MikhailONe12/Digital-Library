@@ -1,179 +1,34 @@
+import { AppState, MediaItem, VisitLog } from '../types';
 
-import { AppState, MediaItem, StatPoint, UserAnalytics, VisitLog } from '../types';
+// ── Storage keys ─────────────────────────────────────────────────────────────
 
-const DB_KEY = 'mediavault_db_v4'; 
+const SERVER_API_KEY_STORAGE = 'library_server_api_key';
+const LOCAL_STATE_STORAGE = 'library_local_v1';
 
-const daysAgo = (days: number) => {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
+// ── Server API key ───────────────────────────────────────────────────────────
+
+export const getServerApiKey = (): string =>
+  localStorage.getItem(SERVER_API_KEY_STORAGE) || '';
+
+export const setServerApiKey = (key: string) =>
+  localStorage.setItem(SERVER_API_KEY_STORAGE, key);
+
+// ── Default (empty) state ────────────────────────────────────────────────────
+
+const DEFAULT_BOT_CONFIG = {
+  token: '',
+  username: 'Digital_Library_ONE_bot',
+  welcomeMessage: {
+    en: 'Welcome to OptionsData Digital Library! Access professional assets directly in Telegram.',
+    ru: 'Добро пожаловать в цифровую библиотеку OptionsData! Профессиональные активы прямо в Telegram.',
+    es: '¡Bienvenido a la biblioteca digital de OptionsData! Accede a activos profesionales directamente en Telegram.',
+  },
+  webAppUrl: typeof window !== 'undefined' ? window.location.origin : '',
 };
 
-const INITIAL_DATA: AppState = {
-  items: [
-    {
-      id: '1',
-      title: { en: 'The Art of Code', ru: 'Искусство кода', es: 'El arte del código' },
-      description: { 
-        en: 'A deep dive into elegant software architecture.', 
-        ru: 'Глубокое погружение в элегантную архитектуру ПО.', 
-        es: 'Una inmersión profunda en la arquitectura de software elegante.'
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'BOOK',
-      rating: 4.8,
-      author: 'John Developer',
-      publishedDate: '2023-10-15',
-      addedDate: daysAgo(40), // Old item (older than 30 days)
-      formats: [
-        { id: 'f1', name: 'PDF', url: '#', size: '2.4MB', language: 'en', allowDownload: true, allowReading: true },
-        { id: 'f1_ru', name: 'PDF (RU)', url: '#', size: '2.5MB', language: 'ru', allowDownload: true, allowReading: true }
-      ],
-      videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-      isPrivate: false,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['en', 'ru'],
-      allowDownload: true,
-      allowReading: true
-    },
-    {
-      id: '2',
-      title: { en: 'Clean Architecture', ru: 'Чистая архитектура', es: 'Arquitectura Limpia' },
-      description: { 
-        en: 'A Craftsman\'s Guide to Software Structure and Design.', 
-        ru: 'Руководство ремесленника по структуре и дизайну программного обеспечения.', 
-        es: 'Una guía del artesano para la estructura y el diseño del software.' 
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1531427186611-ecfd6d936c79?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'BOOK',
-      rating: 4.9,
-      author: 'Robert Martin',
-      publishedDate: '2023-05-20',
-      addedDate: daysAgo(35), // Old item
-      formats: [{ id: 'f2', name: 'EPUB', url: '#', size: '1.8MB', language: 'en', allowDownload: true, allowReading: true }],
-      isPrivate: false,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['en'],
-      allowDownload: true,
-      allowReading: true
-    },
-    {
-      id: '3',
-      title: { en: 'The Pragmatic Programmer', ru: 'Программист-прагматик', es: 'El Programador Pragmático' },
-      description: { 
-        en: 'From Journeyman to Master. Your journey to mastery begins here.', 
-        ru: 'Путь от подмастерья к мастеру. Ваше путешествие к мастерству начинается здесь.', 
-        es: 'De oficial a maestro. Tu viaje hacia la maestría comienza aquí.' 
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1517694712202-14dd9538aa97?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'BOOK',
-      rating: 4.9,
-      author: 'Andrew Hunt',
-      publishedDate: '2023-11-01',
-      addedDate: daysAgo(5), // NEW item (within 30 days)
-      formats: [{ id: 'f3', name: 'PDF', url: '#', size: '4.2MB', language: 'en', allowDownload: true, allowReading: true }],
-      isPrivate: true,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['en', 'ru', 'es'],
-      allowDownload: true,
-      allowReading: true
-    },
-    {
-      id: '4',
-      title: { en: 'AI & ML Quarterly', ru: 'AI и ML Ежеквартальник', es: 'IA y ML Trimestral' },
-      description: { 
-        en: 'Latest breakthroughs in artificial intelligence and deep learning.', 
-        ru: 'Последние достижения в области искусственного интеллекта и глубокого обучения.', 
-        es: 'Últimos avances en inteligencia artificial y aprendizaje profundo.' 
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'JOURNAL',
-      rating: 4.7,
-      author: 'Tech Institute',
-      publishedDate: '2024-01-10',
-      addedDate: daysAgo(2), // NEW item
-      formats: [{ id: 'f4', name: 'Interactive PDF', url: '#', size: '12.5MB', language: 'en', allowDownload: true, allowReading: true }],
-      isPrivate: false,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['en'],
-      allowDownload: true,
-      allowReading: true
-    },
-    {
-      id: '5',
-      title: { en: 'Mastering Modern React', ru: 'Освоение современного React', es: 'Dominando React Moderno' },
-      description: { 
-        en: 'Advanced patterns and performance optimization in React 19.', 
-        ru: 'Продвинутые паттерны и оптимизация производительности в React 19.', 
-        es: 'Patrones avanzados y optimización de rendimiento en React 19.' 
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1633356122544-f134324a6cee?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'VIDEO',
-      rating: 4.6,
-      author: 'Elena Smith',
-      publishedDate: '2024-02-15',
-      addedDate: daysAgo(10), // NEW item
-      formats: [{ id: 'f5', name: 'Source Code', url: '#', size: '0.5MB', language: 'en', allowDownload: true, allowReading: true }],
-      videoUrl: 'https://www.youtube.com/watch?v=Tn6-PIqc4UM',
-      isPrivate: false,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['en', 'ru'],
-      allowDownload: true,
-      allowReading: true
-    },
-    {
-      id: '6',
-      title: { en: 'Pro TypeScript Patterns', ru: 'TypeScript паттерны для профи', es: 'Patrones Pro de TypeScript' },
-      description: { 
-        en: 'Deep dive into utility types and generics.', 
-        ru: 'Глубокое погружение в служебные типы и дженерики.', 
-        es: 'Inmersión profunda en tipos de utilidad y genéricos.' 
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1516116216624-53e697fedbea?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'VIDEO',
-      rating: 4.9,
-      author: 'Alex Typer',
-      publishedDate: '2023-12-12',
-      addedDate: daysAgo(60), // Old item
-      formats: [],
-      videoUrl: 'https://www.youtube.com/watch?v=VguJQxBsc_0',
-      isPrivate: true,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['en'],
-      allowDownload: true,
-      allowReading: true
-    },
-    {
-      id: '7',
-      title: { en: 'Trading Psychology 101', ru: 'Психология трейдинга 101', es: 'Psicología del Trading 101' },
-      description: { 
-        en: 'Mastering your mind for consistent trading results.', 
-        ru: 'Освоение своего разума для стабильных результатов в трейдинге.', 
-        es: 'Dominando tu mente para resultados de trading consistentes.' 
-      },
-      coverUrl: 'https://images.unsplash.com/photo-1611974714024-462cd497ae98?auto=format&fit=crop&q=80&w=400&h=600',
-      type: 'VIDEO',
-      rating: 4.5,
-      author: 'Mark Market',
-      publishedDate: '2024-03-01',
-      addedDate: daysAgo(1), // Fresh item
-      formats: [{ id: 'f6', name: 'Workbook', url: '#', size: '1.2MB', language: 'ru', allowDownload: true, allowReading: true }],
-      videoUrl: 'https://www.youtube.com/watch?v=Yp69mS-rCnc',
-      isPrivate: false,
-      views: 0,
-      downloads: 0,
-      contentLanguages: ['ru', 'en'],
-      allowDownload: true,
-      allowReading: true
-    }
-  ],
-  allowedUsers: ['admin_username', 'pro_trader_77'],
+const emptyState = (): AppState => ({
+  items: [],
+  allowedUsers: [],
   blacklist: [],
   visitLogs: [],
   stats: [],
@@ -183,259 +38,343 @@ const INITIAL_DATA: AppState = {
   customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
-  botConfig: {
-    token: '',
-    username: 'Digital_Library_ONE_bot',
-    welcomeMessage: {
-      en: 'Welcome to OptionsData Digital Library! Access professional assets directly in Telegram.',
-      ru: 'Добро пожаловать в цифровую библиотеку OptionsData! Профессиональные активы прямо в Telegram.',
-      es: '¡Bienvenido a la biblioteca digital de OptionsData! Accede a activos profesionales directamente en Telegram.'
-    },
-    webAppUrl: window.location.origin
-  }
+  botConfig: { ...DEFAULT_BOT_CONFIG },
+});
+
+// In-memory cache — source of truth for the UI between renders.
+let cache: AppState = emptyState();
+
+// ── Local-only slice (per-browser, moves to DB in Step 5) ────────────────────
+
+interface LocalSlice {
+  visitLogs: AppState['visitLogs'];
+  stats: AppState['stats'];
+  userAnalytics: AppState['userAnalytics'];
+  userFavorites: AppState['userFavorites'];
+  userRatings: AppState['userRatings'];
+}
+
+const readLocalSlice = (): LocalSlice => {
+  try {
+    const raw = localStorage.getItem(LOCAL_STATE_STORAGE);
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        visitLogs: p.visitLogs || [],
+        stats: p.stats || [],
+        userAnalytics: p.userAnalytics || [],
+        userFavorites: p.userFavorites || {},
+        userRatings: p.userRatings || {},
+      };
+    }
+  } catch {/* ignore */}
+  return { visitLogs: [], stats: [], userAnalytics: [], userFavorites: {}, userRatings: {} };
 };
 
-export const getDb = (): AppState => {
-  const saved = localStorage.getItem(DB_KEY);
-  if (!saved) {
-    localStorage.setItem(DB_KEY, JSON.stringify(INITIAL_DATA));
-    return INITIAL_DATA;
-  }
-  const parsed = JSON.parse(saved);
-  // Ensure backward compatibility
-  if (!parsed.botConfig) parsed.botConfig = INITIAL_DATA.botConfig;
-  if (!parsed.userFavorites) parsed.userFavorites = {};
-  if (!parsed.userRatings) parsed.userRatings = {};
-  if (!parsed.blacklist) parsed.blacklist = [];
-  if (!parsed.visitLogs) parsed.visitLogs = [];
-
-  parsed.items = parsed.items.map((item: any) => ({
-    ...item,
-    contentLanguages: item.contentLanguages || ['en'],
-    allowDownload: item.allowDownload !== undefined ? item.allowDownload : true,
-    allowReading: item.allowReading !== undefined ? item.allowReading : true,
-    addedDate: item.addedDate ? item.addedDate : (item.publishedDate ? new Date(item.publishedDate).toISOString() : new Date().toISOString()),
-    formats: (item.formats || []).map((f: any) => ({
-      ...f,
-      allowDownload: f.allowDownload !== undefined ? f.allowDownload : true,
-      allowReading: f.allowReading !== undefined ? f.allowReading : true,
-    }))
-  }));
-  parsed.userAnalytics = (parsed.userAnalytics || []).map((u: any) => ({
-    ...u,
-    itemViews: u.itemViews || {},
-    itemDownloads: u.itemDownloads || {},
-  }));
-  saveDb(parsed);
-  return parsed;
+const saveLocalSlice = () => {
+  const slice: LocalSlice = {
+    visitLogs: cache.visitLogs,
+    stats: cache.stats,
+    userAnalytics: cache.userAnalytics,
+    userFavorites: cache.userFavorites,
+    userRatings: cache.userRatings,
+  };
+  try {
+    localStorage.setItem(LOCAL_STATE_STORAGE, JSON.stringify(slice));
+  } catch {/* ignore */}
 };
 
+// ── Item normalization (backward compatibility) ──────────────────────────────
+
+const normalizeItem = (item: any): MediaItem => ({
+  ...item,
+  contentLanguages: item.contentLanguages || ['en'],
+  allowDownload: item.allowDownload !== undefined ? item.allowDownload : true,
+  allowReading: item.allowReading !== undefined ? item.allowReading : true,
+  addedDate: item.addedDate || (item.publishedDate ? new Date(item.publishedDate).toISOString() : new Date().toISOString()),
+  views: item.views || 0,
+  downloads: item.downloads || 0,
+  rating: item.rating || 0,
+  formats: (item.formats || []).map((f: any) => ({
+    ...f,
+    allowDownload: f.allowDownload !== undefined ? f.allowDownload : true,
+    allowReading: f.allowReading !== undefined ? f.allowReading : true,
+  })),
+});
+
+// ── Server requests ──────────────────────────────────────────────────────────
+
+const authHeaders = (): Record<string, string> => {
+  const key = getServerApiKey();
+  return key ? { 'x-api-key': key } : {};
+};
+
+const warnIfFailed = (label: string) => (res: Response) => {
+  if (!res.ok) console.warn(`${label}: HTTP ${res.status}`);
+};
+
+const putItem = (item: MediaItem) => {
+  fetch(`/api/items/${item.id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(item),
+  }).then(warnIfFailed('PUT item')).catch(e => console.warn('PUT item failed:', e));
+};
+
+const removeItem = (id: string) => {
+  fetch(`/api/items/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  }).then(warnIfFailed('DELETE item')).catch(e => console.warn('DELETE item failed:', e));
+};
+
+const putSettings = () => {
+  const settings = {
+    allowedUsers: cache.allowedUsers,
+    blacklist: cache.blacklist,
+    customTypes: cache.customTypes,
+    defaultLanguage: cache.defaultLanguage,
+    globalAccess: cache.globalAccess,
+    botConfig: cache.botConfig,
+  };
+  fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(settings),
+  }).then(warnIfFailed('PUT settings')).catch(e => console.warn('PUT settings failed:', e));
+};
+
+// ── Load / get ───────────────────────────────────────────────────────────────
+
+export const loadDb = async (): Promise<AppState> => {
+  const local = readLocalSlice();
+  try {
+    const res = await fetch('/api/state');
+    if (res.ok) {
+      const remote = await res.json();
+      cache = {
+        items: (remote.items || []).map(normalizeItem),
+        allowedUsers: remote.allowedUsers || [],
+        blacklist: remote.blacklist || [],
+        customTypes: (remote.customTypes && remote.customTypes.length)
+          ? remote.customTypes
+          : emptyState().customTypes,
+        defaultLanguage: remote.defaultLanguage || 'ru',
+        globalAccess: !!remote.globalAccess,
+        botConfig: remote.botConfig || { ...DEFAULT_BOT_CONFIG },
+        ...local,
+      };
+    } else {
+      console.warn('loadDb: HTTP', res.status);
+      cache = { ...emptyState(), ...local };
+    }
+  } catch (e) {
+    console.warn('loadDb failed, using empty state:', e);
+    cache = { ...emptyState(), ...local };
+  }
+  return getDb();
+};
+
+export const getDb = (): AppState => ({ ...cache });
+
+// Used by the admin JSON import — overwrites everything.
 export const saveDb = (data: AppState) => {
-  localStorage.setItem(DB_KEY, JSON.stringify(data));
+  cache = {
+    ...emptyState(),
+    ...data,
+    items: (data.items || []).map(normalizeItem),
+  };
+  saveLocalSlice();
+  cache.items.forEach(putItem);
+  putSettings();
 };
+
+// ── Items ────────────────────────────────────────────────────────────────────
 
 export const updateItem = (item: MediaItem) => {
-  const db = getDb();
-  const index = db.items.findIndex(i => i.id === item.id);
-  if (index >= 0) db.items[index] = item;
-  else db.items.push(item);
-  saveDb(db);
+  const exists = cache.items.some(i => i.id === item.id);
+  cache.items = exists
+    ? cache.items.map(i => (i.id === item.id ? item : i))
+    : [...cache.items, item];
+  putItem(item);
 };
 
 export const deleteItem = (id: string) => {
-  const db = getDb();
-  db.items = db.items.filter(i => i.id !== id);
-  saveDb(db);
+  cache.items = cache.items.filter(i => i.id !== id);
+  removeItem(id);
 };
+
+// ── Favorites (per-browser) ──────────────────────────────────────────────────
 
 export const toggleFavorite = (userId: string, itemId: string) => {
-  const db = getDb();
-  if (!db.userFavorites[userId]) {
-    db.userFavorites[userId] = [];
-  }
-  const favorites = db.userFavorites[userId];
+  const favorites = cache.userFavorites[userId]
+    ? [...cache.userFavorites[userId]]
+    : [];
   const index = favorites.indexOf(itemId);
-  if (index > -1) {
-    favorites.splice(index, 1);
-  } else {
-    favorites.push(itemId);
-  }
-  saveDb(db);
+  if (index > -1) favorites.splice(index, 1);
+  else favorites.push(itemId);
+  cache.userFavorites = { ...cache.userFavorites, [userId]: favorites };
+  saveLocalSlice();
 };
 
-export const isFavorited = (userId: string, itemId: string): boolean => {
-  const db = getDb();
-  return db.userFavorites[userId]?.includes(itemId) || false;
-};
+export const isFavorited = (userId: string, itemId: string): boolean =>
+  cache.userFavorites[userId]?.includes(itemId) || false;
+
+// ── Ratings (per-browser) ────────────────────────────────────────────────────
 
 export const setUserRating = (userId: string, itemId: string, rating: number) => {
-  const db = getDb();
-  if (!db.userRatings[userId]) {
-    db.userRatings[userId] = {};
-  }
-  db.userRatings[userId][itemId] = rating;
-  saveDb(db);
+  const userRecord = { ...(cache.userRatings[userId] || {}), [itemId]: rating };
+  cache.userRatings = { ...cache.userRatings, [userId]: userRecord };
+  saveLocalSlice();
 };
 
-export const getUserRating = (userId: string, itemId: string): number => {
-  const db = getDb();
-  return db.userRatings[userId]?.[itemId] || 0;
-};
+export const getUserRating = (userId: string, itemId: string): number =>
+  cache.userRatings[userId]?.[itemId] || 0;
 
 export const getAverageRating = (itemId: string): number => {
-  const db = getDb();
   let sum = 0;
   let count = 0;
-  Object.values(db.userRatings).forEach(userRecord => {
-     if (userRecord[itemId]) {
-       sum += userRecord[itemId];
-       count++;
-     }
+  Object.values(cache.userRatings).forEach(userRecord => {
+    if (userRecord[itemId]) {
+      sum += userRecord[itemId];
+      count++;
+    }
   });
   if (count > 0) return parseFloat((sum / count).toFixed(1));
-  const item = db.items.find(i => i.id === itemId);
+  const item = cache.items.find(i => i.id === itemId);
   return item ? item.rating : 0;
 };
 
-// --- WHITELIST ---
+// ── Whitelist ────────────────────────────────────────────────────────────────
+
 export const addUserToWhitelist = (username: string) => {
-  const db = getDb();
-  const cleanUsername = username.replace('@', '').trim().toLowerCase();
-  if (cleanUsername && !db.allowedUsers.includes(cleanUsername)) {
-    db.allowedUsers.push(cleanUsername);
-    saveDb(db);
+  const clean = username.replace('@', '').trim().toLowerCase();
+  if (clean && !cache.allowedUsers.includes(clean)) {
+    cache.allowedUsers = [...cache.allowedUsers, clean];
+    putSettings();
   }
 };
 
 export const removeUserFromWhitelist = (username: string) => {
-  const db = getDb();
-  db.allowedUsers = db.allowedUsers.filter(u => u !== username);
-  saveDb(db);
+  cache.allowedUsers = cache.allowedUsers.filter(u => u !== username);
+  putSettings();
 };
 
-// --- BLACKLIST & SECURITY ---
+// ── Blacklist ────────────────────────────────────────────────────────────────
+
 export const addToBlacklist = (entry: string) => {
-  const db = getDb();
-  const cleanEntry = entry.replace('@', '').trim().toLowerCase();
-  if (cleanEntry && !db.blacklist.includes(cleanEntry)) {
-    db.blacklist.push(cleanEntry);
-    saveDb(db);
+  const clean = entry.replace('@', '').trim().toLowerCase();
+  if (clean && !cache.blacklist.includes(clean)) {
+    cache.blacklist = [...cache.blacklist, clean];
+    putSettings();
   }
 };
 
 export const removeFromBlacklist = (entry: string) => {
-  const db = getDb();
-  db.blacklist = db.blacklist.filter(e => e !== entry);
-  saveDb(db);
+  cache.blacklist = cache.blacklist.filter(e => e !== entry);
+  putSettings();
 };
 
 export const checkIsBlocked = (username?: string, ip?: string): boolean => {
-  const db = getDb();
-  const list = db.blacklist || [];
-  
-  if (username) {
-    const cleanUser = username.replace('@', '').toLowerCase();
-    if (list.includes(cleanUser)) return true;
-  }
-  
-  if (ip) {
-    if (list.includes(ip.trim())) return true;
-  }
-  
+  const list = cache.blacklist || [];
+  if (username && list.includes(username.replace('@', '').toLowerCase())) return true;
+  if (ip && list.includes(ip.trim())) return true;
   return false;
 };
 
-export const logVisit = (username: string, ip: string, platform: string) => {
-  const db = getDb();
-  
-  // Create visit log
-  const log: VisitLog = {
-    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-    timestamp: new Date().toISOString(),
-    username: username || 'guest',
-    ip: ip || 'unknown',
-    platform: platform || 'web',
-    device: navigator.userAgent
-  };
+// ── Custom types ─────────────────────────────────────────────────────────────
 
-  // Prepend logs, keep max 2000 to save localStorage space
-  db.visitLogs.unshift(log);
-  if (db.visitLogs.length > 2000) {
-    db.visitLogs = db.visitLogs.slice(0, 2000);
-  }
-  
-  saveDb(db);
-};
-
-// --- CUSTOM TYPES ---
 export const addCustomType = (type: string) => {
-  const db = getDb();
   const upperType = type.trim().toUpperCase();
-  if (upperType && !db.customTypes.includes(upperType)) {
-    db.customTypes.push(upperType);
-    saveDb(db);
+  if (upperType && !cache.customTypes.includes(upperType)) {
+    cache.customTypes = [...cache.customTypes, upperType];
+    putSettings();
   }
 };
 
 export const deleteCustomType = (type: string) => {
-  const db = getDb();
-  db.customTypes = db.customTypes.filter(t => t !== type);
-  saveDb(db);
+  cache.customTypes = cache.customTypes.filter(t => t !== type);
+  putSettings();
 };
 
+// ── Misc settings ────────────────────────────────────────────────────────────
+
 export const toggleGlobalAccess = (enabled: boolean) => {
-  const db = getDb();
-  db.globalAccess = enabled;
-  saveDb(db);
+  cache.globalAccess = enabled;
+  putSettings();
 };
 
 export const updateBotConfig = (config: AppState['botConfig']) => {
-  const db = getDb();
-  db.botConfig = config;
-  saveDb(db);
+  cache.botConfig = config;
+  putSettings();
 };
+
+// ── Visit logs (per-browser, moves to DB in Step 5) ──────────────────────────
+
+export const logVisit = (username: string, ip: string, platform: string) => {
+  const log: VisitLog = {
+    id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
+    timestamp: new Date().toISOString(),
+    username: username || 'guest',
+    ip: ip || 'unknown',
+    platform: platform || 'web',
+    device: navigator.userAgent,
+  };
+  cache.visitLogs = [log, ...cache.visitLogs].slice(0, 2000);
+  saveLocalSlice();
+};
+
+// ── Stats ────────────────────────────────────────────────────────────────────
 
 export const resetStats = () => {
-  const db = getDb();
-  db.stats = [];
-  db.userAnalytics = [];
-  db.items = db.items.map(item => ({ ...item, views: 0, downloads: 0 }));
-  saveDb(db);
+  cache.stats = [];
+  cache.userAnalytics = [];
+  cache.items = cache.items.map(item => ({ ...item, views: 0, downloads: 0 }));
+  saveLocalSlice();
+  fetch('/api/items/reset-stats', { method: 'POST', headers: authHeaders() })
+    .then(warnIfFailed('reset-stats'))
+    .catch(e => console.warn('reset-stats failed:', e));
 };
 
-const SERVER_API_KEY_STORAGE = 'library_server_api_key';
-
-export const getServerApiKey = (): string =>
-  localStorage.getItem(SERVER_API_KEY_STORAGE) || '';
-
-export const setServerApiKey = (key: string) =>
-  localStorage.setItem(SERVER_API_KEY_STORAGE, key);
-
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {
-  const db = getDb();
-  const item = db.items.find(i => i.id === itemId);
-  if (!item) return;
+  const idx = cache.items.findIndex(i => i.id === itemId);
+  if (idx < 0) return;
 
-  if (type === 'view') item.views++;
-  if (type === 'download') item.downloads++;
+  const updated = { ...cache.items[idx] };
+  if (type === 'view') updated.views++;
+  else updated.downloads++;
+  cache.items = cache.items.map((i, n) => (n === idx ? updated : i));
 
+  // Server-side counter (public endpoint, no key required).
+  fetch(`/api/items/${itemId}/track`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type }),
+  }).catch(() => {/* best effort */});
+
+  // Local daily timeline.
   const today = new Date().toISOString().split('T')[0];
-  const statIndex = db.stats.findIndex(s => s.date === today);
+  const statIndex = cache.stats.findIndex(s => s.date === today);
   if (statIndex >= 0) {
-    if (type === 'view') db.stats[statIndex].views++;
-    else db.stats[statIndex].downloads++;
+    if (type === 'view') cache.stats[statIndex].views++;
+    else cache.stats[statIndex].downloads++;
   } else {
-    db.stats.push({ date: today, views: type === 'view' ? 1 : 0, downloads: type === 'download' ? 1 : 0 });
+    cache.stats.push({
+      date: today,
+      views: type === 'view' ? 1 : 0,
+      downloads: type === 'download' ? 1 : 0,
+    });
   }
 
+  // Local per-user analytics.
   const tg = (window as any).Telegram?.WebApp;
   const user = tg?.initDataUnsafe?.user;
   if (user && user.username) {
     const username = user.username.toLowerCase();
-    let userRecord = db.userAnalytics.find(u => u.username === username);
+    let userRecord = cache.userAnalytics.find(u => u.username === username);
     if (!userRecord) {
       userRecord = { username, views: 0, downloads: 0, lastActive: today, itemViews: {}, itemDownloads: {} };
-      db.userAnalytics.push(userRecord);
+      cache.userAnalytics.push(userRecord);
     }
     if (!userRecord.itemViews) userRecord.itemViews = {};
     if (!userRecord.itemDownloads) userRecord.itemDownloads = {};
@@ -450,5 +389,5 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
     userRecord.lastActive = today;
   }
 
-  saveDb(db);
+  saveLocalSlice();
 };

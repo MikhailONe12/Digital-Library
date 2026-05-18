@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { getDb, isFavorited, checkIsBlocked, logVisit } from './services/db';
+import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit } from './services/db';
 import { MediaItem, Locale } from './types';
 import { translations } from './translations';
 import { pickText } from './utils';
@@ -16,7 +16,8 @@ const App: React.FC = () => {
   const [db, setDb] = useState(getDb());
   const [lang, setLang] = useState<Locale>(db.defaultLanguage);
   const [isBlocked, setIsBlocked] = useState(false);
-  
+  const [loading, setLoading] = useState(true);
+
   // Search & Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW'>('ALL');
@@ -33,34 +34,8 @@ const App: React.FC = () => {
   const userId = user?.id?.toString() || 'guest_user';
   const username = user?.username || 'guest';
 
-  // SECURITY CHECK AND LOGGING
+  // DATA LOAD + SECURITY CHECK + LOGGING
   useEffect(() => {
-    const checkSecurity = async () => {
-      let ip = 'unknown';
-      try {
-        // Add timeout to prevent hanging (2 seconds max)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        
-        const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        
-        const data = await res.json();
-        ip = data.ip;
-      } catch (e) {
-        console.warn('Could not fetch IP, logging as unknown');
-      }
-
-      const blocked = checkIsBlocked(username, ip);
-      if (blocked) {
-        setIsBlocked(true);
-      } else {
-        logVisit(username, ip, tg?.platform || 'web');
-        // CRITICAL FIX: Update React state immediately after logging to show it in Admin UI
-        setDb(getDb());
-      }
-    };
-
     if (tg) {
       tg.expand();
       tg.ready();
@@ -73,8 +48,36 @@ const App: React.FC = () => {
       setCurrentPage('admin');
     }
 
-    checkSecurity();
-    
+    const init = async () => {
+      // 1. Load catalog & settings from the server.
+      await loadDb();
+
+      // 2. Resolve visitor IP (2s timeout, best effort).
+      let ip = 'unknown';
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        const data = await res.json();
+        ip = data.ip;
+      } catch (e) {
+        console.warn('Could not fetch IP, logging as unknown');
+      }
+
+      // 3. Security gate + visit logging.
+      if (checkIsBlocked(username, ip)) {
+        setIsBlocked(true);
+      } else {
+        logVisit(username, ip, tg?.platform || 'web');
+      }
+
+      setDb(getDb());
+      setLoading(false);
+    };
+
+    init();
+
     // Click outside handler for language menu
     const handleClickOutside = (event: MouseEvent) => {
       if (langMenuRef.current && !langMenuRef.current.contains(event.target as Node)) {
@@ -156,6 +159,17 @@ const App: React.FC = () => {
     setLang(l);
     setIsLangMenuOpen(false);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-red-100 border-t-red-600 rounded-full animate-spin" />
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Loading Library</p>
+        </div>
+      </div>
+    );
+  }
 
   if (isBlocked && !isAdmin) {
     return (

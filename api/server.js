@@ -237,6 +237,117 @@ app.delete('/api/upload/:itemId',
   },
 );
 
+// ── App state: catalog items + settings ─────────────────────────────────────
+
+const DEFAULT_SETTINGS = {
+  allowedUsers: [],
+  blacklist: [],
+  customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
+  defaultLanguage: 'ru',
+  globalAccess: false,
+  botConfig: {
+    token: '',
+    username: 'Digital_Library_ONE_bot',
+    welcomeMessage: {
+      en: 'Welcome to OptionsData Digital Library! Access professional assets directly in Telegram.',
+      ru: 'Добро пожаловать в цифровую библиотеку OptionsData! Профессиональные активы прямо в Telegram.',
+      es: '¡Bienvenido a la biblioteca digital de OptionsData! Accede a activos profesionales directamente en Telegram.',
+    },
+    webAppUrl: '',
+  },
+};
+
+// Full app state (catalog + settings) — public read
+app.get('/api/state', async (req, res) => {
+  try {
+    const itemsRes = await pool.query('SELECT data FROM items ORDER BY seq');
+    const setRes   = await pool.query('SELECT data FROM app_settings WHERE id = 1');
+    const settings = setRes.rows[0]?.data || DEFAULT_SETTINGS;
+    res.json({ ...DEFAULT_SETTINGS, ...settings, items: itemsRes.rows.map(r => r.data) });
+  } catch (e) {
+    console.warn('GET /api/state:', e.message);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// Create or update one catalog item
+app.put('/api/items/:itemId', requireApiKey, validateItemId, async (req, res) => {
+  const item = req.body;
+  if (!item || typeof item !== 'object' || item.id !== req.params.itemId) {
+    return res.status(400).json({ error: 'Item id mismatch' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO items (id, data) VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET data = $2, updated_at = NOW()`,
+      [item.id, JSON.stringify(item)],
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Reset view/download counters on every item
+app.post('/api/items/reset-stats', requireApiKey, async (req, res) => {
+  try {
+    await pool.query(
+      `UPDATE items SET data = jsonb_set(jsonb_set(data, '{views}', '0'), '{downloads}', '0')`,
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete one catalog item
+app.delete('/api/items/:itemId', requireApiKey, validateItemId, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM items WHERE id = $1', [req.params.itemId]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Increment a view/download counter (public — visitor action)
+app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
+  const type = req.body?.type;
+  if (type !== 'view' && type !== 'download') {
+    return res.status(400).json({ error: 'Invalid type' });
+  }
+  const field = type === 'view' ? 'views' : 'downloads';
+  try {
+    await pool.query(
+      `UPDATE items
+          SET data = jsonb_set(data, '{${field}}',
+                to_jsonb(COALESCE((data ->> '${field}')::int, 0) + 1))
+        WHERE id = $1`,
+      [req.params.itemId],
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Save settings (whitelist, blacklist, custom types, bot config…)
+app.put('/api/settings', requireApiKey, async (req, res) => {
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Invalid settings' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO app_settings (id, data) VALUES (1, $1)
+       ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
+      [JSON.stringify(req.body)],
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Error handlers ───────────────────────────────────────────────────────────
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

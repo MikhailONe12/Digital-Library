@@ -38,7 +38,7 @@ pool.connect()
 
 const allowedOrigins = (process.env.CORS_ORIGIN || 'https://library.optionsdata.ru').split(',');
 
-app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST', 'DELETE'] }));
+app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST', 'PUT', 'DELETE'] }));
 app.use(express.json({ limit: '10mb' }));
 
 // API key guard for all write operations
@@ -55,6 +55,14 @@ const requireApiKey = (req, res, next) => {
 const validateItemId = (req, res, next) => {
   if (!/^[a-zA-Z0-9_-]+$/.test(req.params.itemId)) {
     return res.status(400).json({ error: 'Invalid item ID' });
+  }
+  next();
+};
+
+// Block path traversal / injection in userId
+const validateUserId = (req, res, next) => {
+  if (!/^[a-zA-Z0-9_-]+$/.test(req.params.userId)) {
+    return res.status(400).json({ error: 'Invalid user ID' });
   }
   next();
 };
@@ -121,6 +129,9 @@ const formatSize = bytes =>
 
 const baseUrl = () =>
   process.env.BASE_URL || 'https://library.optionsdata.ru';
+
+// Coerce a value to a trimmed string of at most n chars, or null.
+const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 
@@ -247,13 +258,24 @@ const DEFAULT_SETTINGS = {
   globalAccess: false,
 };
 
-// Full app state (catalog + settings) — public read
+// Full app state (catalog + settings + average ratings) — public read
 app.get('/api/state', async (req, res) => {
   try {
     const itemsRes = await pool.query('SELECT data FROM items ORDER BY seq');
     const setRes   = await pool.query('SELECT data FROM app_settings WHERE id = 1');
+    const rateRes  = await pool.query(
+      `SELECT item_id, round(avg(rating)::numeric, 1)::float AS avg
+         FROM user_ratings GROUP BY item_id`,
+    );
     const settings = setRes.rows[0]?.data || DEFAULT_SETTINGS;
-    res.json({ ...DEFAULT_SETTINGS, ...settings, items: itemsRes.rows.map(r => r.data) });
+    const ratings  = {};
+    for (const r of rateRes.rows) ratings[r.item_id] = r.avg;
+    res.json({
+      ...DEFAULT_SETTINGS,
+      ...settings,
+      items: itemsRes.rows.map(r => r.data),
+      ratings,
+    });
   } catch (e) {
     console.warn('GET /api/state:', e.message);
     res.status(503).json({ error: 'Database unavailable' });
@@ -278,12 +300,13 @@ app.put('/api/items/:itemId', requireApiKey, validateItemId, async (req, res) =>
   }
 });
 
-// Reset view/download counters on every item
+// Reset view/download counters on every item + wipe the event log
 app.post('/api/items/reset-stats', requireApiKey, async (req, res) => {
   try {
     await pool.query(
       `UPDATE items SET data = jsonb_set(jsonb_set(data, '{views}', '0'), '{downloads}', '0')`,
     );
+    await pool.query('DELETE FROM item_events');
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -300,13 +323,14 @@ app.delete('/api/items/:itemId', requireApiKey, validateItemId, async (req, res)
   }
 });
 
-// Increment a view/download counter (public — visitor action)
+// Increment a view/download counter + record the event (public — visitor action)
 app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
   const type = req.body?.type;
   if (type !== 'view' && type !== 'download') {
     return res.status(400).json({ error: 'Invalid type' });
   }
   const field = type === 'view' ? 'views' : 'downloads';
+  const username = clip(req.body?.username, 64);
   try {
     await pool.query(
       `UPDATE items
@@ -314,6 +338,10 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
                 to_jsonb(COALESCE((data ->> '${field}')::int, 0) + 1))
         WHERE id = $1`,
       [req.params.itemId],
+    );
+    await pool.query(
+      `INSERT INTO item_events (item_id, username, event_type) VALUES ($1, $2, $3)`,
+      [req.params.itemId, username, type],
     );
     res.json({ ok: true });
   } catch (e) {
@@ -337,6 +365,175 @@ app.put('/api/settings', requireApiKey, async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// ── Step 5: traffic logging & analytics ─────────────────────────────────────
+
+// Record a page visit (public — visitor action)
+app.post('/api/visits', async (req, res) => {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+  try {
+    await pool.query(
+      `INSERT INTO visit_logs (id, username, ip, platform, device)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        id,
+        clip(req.body?.username, 64),
+        clip(req.body?.ip, 64),
+        clip(req.body?.platform, 32),
+        clip(req.body?.device, 256),
+      ],
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Aggregated analytics for the admin dashboard (protected — sensitive data)
+app.get('/api/analytics', requireApiKey, async (req, res) => {
+  try {
+    const statsRes = await pool.query(
+      `SELECT to_char(timestamp, 'YYYY-MM-DD') AS date,
+              count(*) FILTER (WHERE event_type = 'view')::int     AS views,
+              count(*) FILTER (WHERE event_type = 'download')::int AS downloads
+         FROM item_events
+        GROUP BY 1
+        ORDER BY 1`,
+    );
+
+    const eventsRes = await pool.query(
+      `SELECT username, item_id, event_type,
+              count(*)::int AS cnt,
+              to_char(max(timestamp), 'YYYY-MM-DD') AS last_active
+         FROM item_events
+        WHERE username IS NOT NULL
+        GROUP BY username, item_id, event_type`,
+    );
+
+    const users = {};
+    for (const row of eventsRes.rows) {
+      let u = users[row.username];
+      if (!u) {
+        u = users[row.username] = {
+          username: row.username,
+          views: 0, downloads: 0,
+          lastActive: row.last_active,
+          itemViews: {}, itemDownloads: {},
+        };
+      }
+      if (row.last_active > u.lastActive) u.lastActive = row.last_active;
+      if (row.event_type === 'view') {
+        u.views += row.cnt;
+        u.itemViews[row.item_id] = row.cnt;
+      } else {
+        u.downloads += row.cnt;
+        u.itemDownloads[row.item_id] = row.cnt;
+      }
+    }
+
+    const logsRes = await pool.query(
+      `SELECT id, timestamp, username, ip, platform, device
+         FROM visit_logs
+        ORDER BY timestamp DESC
+        LIMIT 2000`,
+    );
+
+    res.json({
+      stats: statsRes.rows,
+      userAnalytics: Object.values(users),
+      visitLogs: logsRes.rows,
+    });
+  } catch (e) {
+    console.warn('GET /api/analytics:', e.message);
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// ── Step 5: per-user favorites (public — visitor action) ────────────────────
+
+app.get('/api/users/:userId/favorites', validateUserId, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT item_id FROM user_favorites WHERE user_id = $1',
+      [req.params.userId],
+    );
+    res.json({ favorites: rows.map(r => r.item_id) });
+  } catch {
+    res.json({ favorites: [] });
+  }
+});
+
+app.put('/api/users/:userId/favorites/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    try {
+      await pool.query(
+        `INSERT INTO user_favorites (user_id, item_id) VALUES ($1, $2)
+         ON CONFLICT (user_id, item_id) DO NOTHING`,
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+app.delete('/api/users/:userId/favorites/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    try {
+      await pool.query(
+        'DELETE FROM user_favorites WHERE user_id = $1 AND item_id = $2',
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// ── Step 5: per-user ratings (public — visitor action) ──────────────────────
+
+app.get('/api/users/:userId/ratings', validateUserId, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT item_id, rating FROM user_ratings WHERE user_id = $1',
+      [req.params.userId],
+    );
+    const ratings = {};
+    for (const r of rows) ratings[r.item_id] = r.rating;
+    res.json({ ratings });
+  } catch {
+    res.json({ ratings: {} });
+  }
+});
+
+app.put('/api/users/:userId/ratings/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    const rating = parseInt(req.body?.rating, 10);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return res.status(400).json({ error: 'Rating must be 1–5' });
+    }
+    try {
+      await pool.query(
+        `INSERT INTO user_ratings (user_id, item_id, rating) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, item_id) DO UPDATE SET rating = $3, created_at = NOW()`,
+        [req.params.userId, req.params.itemId, rating],
+      );
+      const { rows } = await pool.query(
+        `SELECT round(avg(rating)::numeric, 1)::float AS average
+           FROM user_ratings WHERE item_id = $1`,
+        [req.params.itemId],
+      );
+      res.json({ ok: true, average: rows[0]?.average ?? rating });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
 
 // ── Error handlers ───────────────────────────────────────────────────────────
 

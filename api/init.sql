@@ -48,9 +48,30 @@ CREATE TABLE IF NOT EXISTS items (
 
 CREATE INDEX IF NOT EXISTS idx_items_seq ON items(seq);
 
--- App settings: single row (whitelist, blacklist, custom types, bot config)
+-- App settings: single row (whitelist, blacklist, custom types)
 CREATE TABLE IF NOT EXISTS app_settings (
   id          INT         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   data        JSONB       NOT NULL,
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Per-user favorites (Step 5) — shared across all devices
+CREATE TABLE IF NOT EXISTS user_favorites (
+  user_id    TEXT        NOT NULL,
+  item_id    TEXT        NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favs_user ON user_favorites(user_id);
+
+-- Per-user ratings, 1–5 (Step 5) — shared across all devices
+CREATE TABLE IF NOT EXISTS user_ratings (
+  user_id    TEXT        NOT NULL,
+  item_id    TEXT        NOT NULL,
+  rating     INT         NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ratings_item ON user_ratings(item_id);

@@ -7,7 +7,7 @@ import {
   Percent, Database, Upload,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -50,6 +50,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         }
     }
   }, [activeTab]);
+
+  // Pull traffic/engagement analytics from the DB once authorized
+  useEffect(() => {
+    if (isAdmin) {
+      loadAnalytics().then(() => onUpdate());
+    }
+  }, [isAdmin]);
 
   // Analytics Computations
   const analytics = useMemo(() => {
@@ -270,12 +277,6 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     onUpdate();
   };
 
-  const handleExportJson = () => {
-    const jsonString = JSON.stringify(db, null, 2);
-    navigator.clipboard.writeText(jsonString);
-    alert('Database copied to clipboard!');
-  };
-
   const handleImportJson = () => {
     try {
       if (!importJson.trim()) return;
@@ -294,9 +295,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     }
   };
 
-  const handleResetStats = () => {
+  const handleResetStats = async () => {
     if (confirm('Сбросить всю статистику? Просмотры, скачивания и данные пользователей обнулятся. Отменить нельзя.')) {
-      resetStats();
+      await resetStats();
+      await loadAnalytics();
       onUpdate();
     }
   };
@@ -739,14 +741,6 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           Сохранить
                         </button>
                       </div>
-                  </div>
-                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                          <Download size={14} /> Export Data
-                      </h4>
-                      <button onClick={handleExportJson} className="w-full py-4 bg-white border border-slate-200 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-900 shadow-sm hover:border-red-600 hover:text-red-600 transition-all active:scale-95">
-                          Copy JSON to Clipboard
-                      </button>
                   </div>
                   <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
                       <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">

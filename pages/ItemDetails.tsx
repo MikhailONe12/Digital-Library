@@ -37,11 +37,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     onRefresh();
   };
 
-  const handleRate = (r: number) => {
-    setUserRating(userId, item.id, r);
+  const handleRate = async (r: number) => {
     setUserRatingState(r);
-    // Immediately update average so user sees effect
-    setAvgRating(getAverageRating(item.id));
+    // Server returns the recalculated community average.
+    const avg = await setUserRating(userId, item.id, r);
+    setAvgRating(avg);
   };
 
   const getVideoEmbed = (url?: string) => {

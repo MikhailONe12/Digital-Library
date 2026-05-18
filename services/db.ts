@@ -1,9 +1,8 @@
-import { AppState, MediaItem, VisitLog } from '../types';
+import { AppState, MediaItem } from '../types';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
 const SERVER_API_KEY_STORAGE = 'library_server_api_key';
-const LOCAL_STATE_STORAGE = 'library_local_v1';
 
 // ── Server API key ───────────────────────────────────────────────────────────
 
@@ -32,45 +31,8 @@ const emptyState = (): AppState => ({
 // In-memory cache — source of truth for the UI between renders.
 let cache: AppState = emptyState();
 
-// ── Local-only slice (per-browser, moves to DB in Step 5) ────────────────────
-
-interface LocalSlice {
-  visitLogs: AppState['visitLogs'];
-  stats: AppState['stats'];
-  userAnalytics: AppState['userAnalytics'];
-  userFavorites: AppState['userFavorites'];
-  userRatings: AppState['userRatings'];
-}
-
-const readLocalSlice = (): LocalSlice => {
-  try {
-    const raw = localStorage.getItem(LOCAL_STATE_STORAGE);
-    if (raw) {
-      const p = JSON.parse(raw);
-      return {
-        visitLogs: p.visitLogs || [],
-        stats: p.stats || [],
-        userAnalytics: p.userAnalytics || [],
-        userFavorites: p.userFavorites || {},
-        userRatings: p.userRatings || {},
-      };
-    }
-  } catch {/* ignore */}
-  return { visitLogs: [], stats: [], userAnalytics: [], userFavorites: {}, userRatings: {} };
-};
-
-const saveLocalSlice = () => {
-  const slice: LocalSlice = {
-    visitLogs: cache.visitLogs,
-    stats: cache.stats,
-    userAnalytics: cache.userAnalytics,
-    userFavorites: cache.userFavorites,
-    userRatings: cache.userRatings,
-  };
-  try {
-    localStorage.setItem(LOCAL_STATE_STORAGE, JSON.stringify(slice));
-  } catch {/* ignore */}
-};
+// Server-computed average ratings, keyed by item id.
+let avgRatings: Record<string, number> = {};
 
 // ── Item normalization (backward compatibility) ──────────────────────────────
 
@@ -131,15 +93,36 @@ const putSettings = () => {
   }).then(warnIfFailed('PUT settings')).catch(e => console.warn('PUT settings failed:', e));
 };
 
+// ── Current user's favorites & ratings (server-backed, shared across devices) ─
+
+const loadUserData = async (userId: string) => {
+  try {
+    const [favRes, ratRes] = await Promise.all([
+      fetch(`/api/users/${userId}/favorites`),
+      fetch(`/api/users/${userId}/ratings`),
+    ]);
+    if (favRes.ok) {
+      const d = await favRes.json();
+      cache.userFavorites = { [userId]: d.favorites || [] };
+    }
+    if (ratRes.ok) {
+      const d = await ratRes.json();
+      cache.userRatings = { [userId]: d.ratings || {} };
+    }
+  } catch (e) {
+    console.warn('loadUserData failed:', e);
+  }
+};
+
 // ── Load / get ───────────────────────────────────────────────────────────────
 
-export const loadDb = async (): Promise<AppState> => {
-  const local = readLocalSlice();
+export const loadDb = async (userId?: string): Promise<AppState> => {
   try {
     const res = await fetch('/api/state');
     if (res.ok) {
       const remote = await res.json();
       cache = {
+        ...emptyState(),
         items: (remote.items || []).map(normalizeItem),
         allowedUsers: remote.allowedUsers || [],
         blacklist: remote.blacklist || [],
@@ -148,29 +131,49 @@ export const loadDb = async (): Promise<AppState> => {
           : emptyState().customTypes,
         defaultLanguage: remote.defaultLanguage || 'ru',
         globalAccess: !!remote.globalAccess,
-        ...local,
       };
+      avgRatings = remote.ratings || {};
     } else {
       console.warn('loadDb: HTTP', res.status);
-      cache = { ...emptyState(), ...local };
+      cache = emptyState();
+      avgRatings = {};
     }
   } catch (e) {
     console.warn('loadDb failed, using empty state:', e);
-    cache = { ...emptyState(), ...local };
+    cache = emptyState();
+    avgRatings = {};
+  }
+  if (userId) await loadUserData(userId);
+  return getDb();
+};
+
+// Load admin-only analytics (stats, leaderboard, access logs) from the server.
+export const loadAnalytics = async (): Promise<AppState> => {
+  try {
+    const res = await fetch('/api/analytics', { headers: authHeaders() });
+    if (res.ok) {
+      const data = await res.json();
+      cache.stats = data.stats || [];
+      cache.userAnalytics = data.userAnalytics || [];
+      cache.visitLogs = data.visitLogs || [];
+    } else {
+      console.warn('loadAnalytics: HTTP', res.status);
+    }
+  } catch (e) {
+    console.warn('loadAnalytics failed:', e);
   }
   return getDb();
 };
 
 export const getDb = (): AppState => ({ ...cache });
 
-// Used by the admin JSON import — overwrites everything.
+// Used by the admin JSON import — overwrites catalog + settings.
 export const saveDb = (data: AppState) => {
   cache = {
     ...emptyState(),
     ...data,
     items: (data.items || []).map(normalizeItem),
   };
-  saveLocalSlice();
   cache.items.forEach(putItem);
   putSettings();
 };
@@ -190,43 +193,56 @@ export const deleteItem = (id: string) => {
   removeItem(id);
 };
 
-// ── Favorites (per-browser) ──────────────────────────────────────────────────
+// ── Favorites (server-backed) ────────────────────────────────────────────────
 
 export const toggleFavorite = (userId: string, itemId: string) => {
-  const favorites = cache.userFavorites[userId]
-    ? [...cache.userFavorites[userId]]
-    : [];
-  const index = favorites.indexOf(itemId);
-  if (index > -1) favorites.splice(index, 1);
-  else favorites.push(itemId);
-  cache.userFavorites = { ...cache.userFavorites, [userId]: favorites };
-  saveLocalSlice();
+  const current = cache.userFavorites[userId] || [];
+  const has = current.includes(itemId);
+  const updated = has
+    ? current.filter(i => i !== itemId)
+    : [...current, itemId];
+  cache.userFavorites = { ...cache.userFavorites, [userId]: updated };
+
+  fetch(`/api/users/${userId}/favorites/${itemId}`, {
+    method: has ? 'DELETE' : 'PUT',
+  }).then(warnIfFailed('favorite')).catch(e => console.warn('favorite failed:', e));
 };
 
 export const isFavorited = (userId: string, itemId: string): boolean =>
   cache.userFavorites[userId]?.includes(itemId) || false;
 
-// ── Ratings (per-browser) ────────────────────────────────────────────────────
+// ── Ratings (server-backed) ──────────────────────────────────────────────────
 
-export const setUserRating = (userId: string, itemId: string, rating: number) => {
+export const setUserRating = async (
+  userId: string, itemId: string, rating: number,
+): Promise<number> => {
   const userRecord = { ...(cache.userRatings[userId] || {}), [itemId]: rating };
   cache.userRatings = { ...cache.userRatings, [userId]: userRecord };
-  saveLocalSlice();
+
+  try {
+    const res = await fetch(`/api/users/${userId}/ratings/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
+    });
+    if (res.ok) {
+      const d = await res.json();
+      if (typeof d.average === 'number') avgRatings[itemId] = d.average;
+    } else {
+      console.warn('rating: HTTP', res.status);
+    }
+  } catch (e) {
+    console.warn('rating failed:', e);
+  }
+  return getAverageRating(itemId);
 };
 
 export const getUserRating = (userId: string, itemId: string): number =>
   cache.userRatings[userId]?.[itemId] || 0;
 
+// Server-computed community average, falling back to the editorial rating.
 export const getAverageRating = (itemId: string): number => {
-  let sum = 0;
-  let count = 0;
-  Object.values(cache.userRatings).forEach(userRecord => {
-    if (userRecord[itemId]) {
-      sum += userRecord[itemId];
-      count++;
-    }
-  });
-  if (count > 0) return parseFloat((sum / count).toFixed(1));
+  if (avgRatings[itemId] !== undefined) return avgRatings[itemId];
   const item = cache.items.find(i => i.id === itemId);
   return item ? item.rating : 0;
 };
@@ -290,29 +306,28 @@ export const toggleGlobalAccess = (enabled: boolean) => {
   putSettings();
 };
 
-// ── Visit logs (per-browser, moves to DB in Step 5) ──────────────────────────
+// ── Visit logs (server-backed) ───────────────────────────────────────────────
 
 export const logVisit = (username: string, ip: string, platform: string) => {
-  const log: VisitLog = {
-    id: Date.now().toString() + Math.random().toString(36).slice(2, 7),
-    timestamp: new Date().toISOString(),
-    username: username || 'guest',
-    ip: ip || 'unknown',
-    platform: platform || 'web',
-    device: navigator.userAgent,
-  };
-  cache.visitLogs = [log, ...cache.visitLogs].slice(0, 2000);
-  saveLocalSlice();
+  fetch('/api/visits', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: username || 'guest',
+      ip: ip || 'unknown',
+      platform: platform || 'web',
+      device: navigator.userAgent,
+    }),
+  }).catch(() => {/* best effort */});
 };
 
-// ── Stats ────────────────────────────────────────────────────────────────────
+// ── Stats (server-backed) ────────────────────────────────────────────────────
 
-export const resetStats = () => {
+export const resetStats = (): Promise<unknown> => {
   cache.stats = [];
   cache.userAnalytics = [];
   cache.items = cache.items.map(item => ({ ...item, views: 0, downloads: 0 }));
-  saveLocalSlice();
-  fetch('/api/items/reset-stats', { method: 'POST', headers: authHeaders() })
+  return fetch('/api/items/reset-stats', { method: 'POST', headers: authHeaders() })
     .then(warnIfFailed('reset-stats'))
     .catch(e => console.warn('reset-stats failed:', e));
 };
@@ -326,49 +341,15 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
   else updated.downloads++;
   cache.items = cache.items.map((i, n) => (n === idx ? updated : i));
 
-  // Server-side counter (public endpoint, no key required).
+  // Telegram username, if available — lets the server build per-user analytics.
+  const tg = (window as any).Telegram?.WebApp;
+  const username = tg?.initDataUnsafe?.user?.username
+    ? tg.initDataUnsafe.user.username.toLowerCase()
+    : null;
+
   fetch(`/api/items/${itemId}/track`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type }),
+    body: JSON.stringify({ type, username }),
   }).catch(() => {/* best effort */});
-
-  // Local daily timeline.
-  const today = new Date().toISOString().split('T')[0];
-  const statIndex = cache.stats.findIndex(s => s.date === today);
-  if (statIndex >= 0) {
-    if (type === 'view') cache.stats[statIndex].views++;
-    else cache.stats[statIndex].downloads++;
-  } else {
-    cache.stats.push({
-      date: today,
-      views: type === 'view' ? 1 : 0,
-      downloads: type === 'download' ? 1 : 0,
-    });
-  }
-
-  // Local per-user analytics.
-  const tg = (window as any).Telegram?.WebApp;
-  const user = tg?.initDataUnsafe?.user;
-  if (user && user.username) {
-    const username = user.username.toLowerCase();
-    let userRecord = cache.userAnalytics.find(u => u.username === username);
-    if (!userRecord) {
-      userRecord = { username, views: 0, downloads: 0, lastActive: today, itemViews: {}, itemDownloads: {} };
-      cache.userAnalytics.push(userRecord);
-    }
-    if (!userRecord.itemViews) userRecord.itemViews = {};
-    if (!userRecord.itemDownloads) userRecord.itemDownloads = {};
-    if (type === 'view') {
-      userRecord.views++;
-      userRecord.itemViews[itemId] = (userRecord.itemViews[itemId] || 0) + 1;
-    }
-    if (type === 'download') {
-      userRecord.downloads++;
-      userRecord.itemDownloads[itemId] = (userRecord.itemDownloads[itemId] || 0) + 1;
-    }
-    userRecord.lastActive = today;
-  }
-
-  saveLocalSlice();
 };

@@ -49,8 +49,8 @@ const App: React.FC = () => {
     }
 
     const init = async () => {
-      // 1. Load catalog & settings from the server.
-      await loadDb();
+      // 1. Load catalog, settings & this user's favorites/ratings from the server.
+      await loadDb(userId);
 
       // 2. Resolve visitor IP (2s timeout, best effort).
       let ip = 'unknown';

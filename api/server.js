@@ -245,16 +245,6 @@ const DEFAULT_SETTINGS = {
   customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
-  botConfig: {
-    token: '',
-    username: 'Digital_Library_ONE_bot',
-    welcomeMessage: {
-      en: 'Welcome to OptionsData Digital Library! Access professional assets directly in Telegram.',
-      ru: 'Добро пожаловать в цифровую библиотеку OptionsData! Профессиональные активы прямо в Telegram.',
-      es: '¡Bienvenido a la biblioteca digital de OptionsData! Accede a activos profesionales directamente en Telegram.',
-    },
-    webAppUrl: '',
-  },
 };
 
 // Full app state (catalog + settings) — public read

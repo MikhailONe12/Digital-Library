@@ -17,13 +17,6 @@ export interface FileFormat {
   allowReading?: boolean;  // Per-file permission
 }
 
-export interface BotConfig {
-  token: string;
-  username: string;
-  welcomeMessage: MultilingualText;
-  webAppUrl: string;
-}
-
 export interface MediaItem {
   id: string;
   title: MultilingualText;
@@ -80,5 +73,4 @@ export interface AppState {
   customTypes: string[];
   defaultLanguage: Locale;
   globalAccess: boolean;
-  botConfig: BotConfig;
 }

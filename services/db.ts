@@ -15,17 +15,6 @@ export const setServerApiKey = (key: string) =>
 
 // ── Default (empty) state ────────────────────────────────────────────────────
 
-const DEFAULT_BOT_CONFIG = {
-  token: '',
-  username: 'Digital_Library_ONE_bot',
-  welcomeMessage: {
-    en: 'Welcome to OptionsData Digital Library! Access professional assets directly in Telegram.',
-    ru: 'Добро пожаловать в цифровую библиотеку OptionsData! Профессиональные активы прямо в Telegram.',
-    es: '¡Bienvenido a la biblioteca digital de OptionsData! Accede a activos profesionales directamente en Telegram.',
-  },
-  webAppUrl: typeof window !== 'undefined' ? window.location.origin : '',
-};
-
 const emptyState = (): AppState => ({
   items: [],
   allowedUsers: [],
@@ -38,7 +27,6 @@ const emptyState = (): AppState => ({
   customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
-  botConfig: { ...DEFAULT_BOT_CONFIG },
 });
 
 // In-memory cache — source of truth for the UI between renders.
@@ -135,7 +123,6 @@ const putSettings = () => {
     customTypes: cache.customTypes,
     defaultLanguage: cache.defaultLanguage,
     globalAccess: cache.globalAccess,
-    botConfig: cache.botConfig,
   };
   fetch('/api/settings', {
     method: 'PUT',
@@ -161,7 +148,6 @@ export const loadDb = async (): Promise<AppState> => {
           : emptyState().customTypes,
         defaultLanguage: remote.defaultLanguage || 'ru',
         globalAccess: !!remote.globalAccess,
-        botConfig: remote.botConfig || { ...DEFAULT_BOT_CONFIG },
         ...local,
       };
     } else {
@@ -301,11 +287,6 @@ export const deleteCustomType = (type: string) => {
 
 export const toggleGlobalAccess = (enabled: boolean) => {
   cache.globalAccess = enabled;
-  putSettings();
-};
-
-export const updateBotConfig = (config: AppState['botConfig']) => {
-  cache.botConfig = config;
   putSettings();
 };
 

@@ -1,13 +1,13 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { AppState, MediaItem, Locale, BotConfig, FileFormat } from '../types';
+import { AppState, MediaItem, Locale, FileFormat } from '../types';
 import { 
-  Plus, Edit2, Trash2, Key, Users, Eye, Download, LogOut, Tags,
+  Plus, Edit2, Trash2, Users, Eye, Download, LogOut, Tags,
   ShieldCheck, X, AtSign, Unlock, Lock,
   Percent, Database, Upload,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, updateBotConfig, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats, getServerApiKey, setServerApiKey } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -28,12 +28,11 @@ interface AdminProps {
 const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, setIsAdmin, lang, t }) => {
   const [apiKeyInput, setApiKeyInput] = useState('');
   // Removed 'users' from activeTab type as it is merged into security
-  const [activeTab, setActiveTab] = useState<'stats' | 'items' | 'types' | 'bot' | 'data' | 'security'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'items' | 'types' | 'data' | 'security'>('stats');
   const [editingItem, setEditingItem] = useState<Partial<MediaItem> | null>(null);
   const [newUserNickname, setNewUserNickname] = useState('');
   const [newBlacklistEntry, setNewBlacklistEntry] = useState('');
   const [newType, setNewType] = useState('');
-  const [botConfig, setBotConfig] = useState<BotConfig>(db.botConfig);
   const [importJson, setImportJson] = useState('');
   const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
   const [serverApiKeyInput, setServerApiKeyInput] = useState(() => getServerApiKey());
@@ -223,12 +222,6 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     }
   };
 
-  const handleSaveBotConfig = () => {
-    updateBotConfig(botConfig);
-    onUpdate();
-    alert('Bot Configuration Updated');
-  };
-
   const handleAddUser = () => {
     if (newUserNickname.trim()) {
       addUserToWhitelist(newUserNickname.toLowerCase());
@@ -358,7 +351,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
            ref={menuRef}
          >
           {/* REMOVED 'users' from list */}
-          {(['stats', 'security', 'items', 'bot', 'types', 'data'] as const).map(tab => (
+          {(['stats', 'security', 'items', 'types', 'data'] as const).map(tab => (
             <button 
               key={tab} 
               data-active={activeTab === tab}
@@ -784,39 +777,6 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           </div>
         )}
 
-        {activeTab === 'bot' && (
-          <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-              <h3 className="text-xs md:text-sm font-black mb-8 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
-                  {t.botSettings}
-              </h3>
-              {/* Bot settings form */}
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-3">{t.botToken}</label>
-                  <div className="relative">
-                    <Key className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                    <input 
-                      type="password" 
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-12 pr-6 py-4 text-xs font-bold focus:ring-4 focus:ring-red-500/5 focus:border-red-600 outline-none transition-all" 
-                      value={botConfig.token}
-                      onChange={e => setBotConfig({...botConfig, token: e.target.value})}
-                    />
-                  </div>
-                </div>
-                {/* ... other bot fields same as before ... */}
-                <div className="pt-4">
-                  <button 
-                    onClick={handleSaveBotConfig}
-                    className="w-full bg-red-600 py-4 md:py-6 rounded-[2rem] font-black uppercase tracking-[0.4em] text-white shadow-2xl shadow-red-200 active:scale-[0.98] transition-all hover:bg-red-700"
-                  >
-                    {t.save}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
 
         {activeTab === 'items' && (
            <div className="space-y-6">

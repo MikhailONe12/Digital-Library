@@ -131,10 +131,21 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       // Fetch the file ourselves. epub.js's own XHR loader has no timeout
       // handling and stalls indefinitely on slow connections; fetch() is
       // reliable and lets us show a spinner instead of a false timeout.
+      //
+      // The URL stored in the DB is absolute (https://library.../content/...).
+      // On iOS Telegram WebApp, fetching an absolute URL can return 404 even
+      // though the file exists; converting to a relative path keeps the request
+      // same-origin and avoids the issue.
+      let fetchUrl = activeEpubUrl;
+      try {
+        const parsed = new URL(activeEpubUrl);
+        fetchUrl = parsed.pathname + parsed.search + parsed.hash;
+      } catch { /* activeEpubUrl is already relative — use as-is */ }
+
       let data: ArrayBuffer;
       try {
-        const resp = await fetch(activeEpubUrl);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const resp = await fetch(fetchUrl);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status + ' (' + fetchUrl + ')');
         data = await resp.arrayBuffer();
       } catch (e: any) {
         if (!destroyed) {

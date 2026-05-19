@@ -132,8 +132,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     const file = stagedContentFile?.file;
     if (!file) return;
     const formData = new FormData();
-    formData.append('file', file);
     formData.append('lang', lang);
+    formData.append('file', file);
     const xhr = new XMLHttpRequest();
     setUploadState({ field: formatId, progress: 0 });
     xhr.upload.onprogress = (e) => {

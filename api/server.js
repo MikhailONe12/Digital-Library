@@ -3,8 +3,12 @@ import multer from 'multer';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import pkg from 'pg';
+
+const execFileAsync = promisify(execFile);
 
 const { Pool } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -98,6 +102,12 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'video/x-matroska',
   'audio/mpeg',
   'audio/mp3',
+  'application/x-fictionbook+xml',
+  'application/x-fictionbook',
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.pdf', '.epub', '.mp4', '.webm', '.mkv', '.mp3', '.fb2',
 ]);
 
 const fileStorage = multer.diskStorage({
@@ -116,7 +126,10 @@ const fileStorage = multer.diskStorage({
 const uploadFile = multer({
   storage: fileStorage,
   limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
-  fileFilter: (req, file, cb) => cb(null, ALLOWED_CONTENT_TYPES.has(file.mimetype)),
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, ALLOWED_CONTENT_TYPES.has(file.mimetype) || ALLOWED_EXTENSIONS.has(ext));
+  },
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -191,20 +204,44 @@ app.post('/api/upload/:itemId/file',
     if (!req.file) return res.status(400).json({ error: 'File type not allowed or missing' });
 
     const lang = (req.body.lang || 'ru').replace(/[^a-z]/g, '').slice(0, 5);
-    const ext  = path.extname(req.file.filename).slice(1); // e.g. 'pdf'
-    const url  = `${baseUrl()}/content/${req.params.itemId}/${req.file.filename}`;
+    let filename = req.file.filename;
+    let ext = path.extname(filename).slice(1).toLowerCase();
+    let size = req.file.size;
+
+    // Convert FB2 → EPUB automatically
+    if (ext === 'fb2') {
+      const dir = path.join(CONTENT_DIR, req.params.itemId);
+      const fb2Path = path.join(dir, filename);
+      const epubFilename = filename.replace(/\.fb2$/i, '.epub');
+      const epubPath = path.join(dir, epubFilename);
+      try {
+        await execFileAsync('ebook-convert', [fb2Path, epubPath], {
+          env: { ...process.env, QT_QPA_PLATFORM: 'offscreen' },
+          timeout: 120000,
+        });
+        fs.unlinkSync(fb2Path);
+        filename = epubFilename;
+        ext = 'epub';
+        size = fs.statSync(epubPath).size;
+        console.log(`FB2→EPUB: ${fb2Path} → ${epubPath}`);
+      } catch (e) {
+        console.error('FB2→EPUB conversion failed:', e.message);
+      }
+    }
+
+    const url = `${baseUrl()}/content/${req.params.itemId}/${filename}`;
 
     try {
       await pool.query(
         `INSERT INTO uploaded_files (item_id, file_type, filename, url, size_bytes, language)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [req.params.itemId, ext, req.file.filename, url, req.file.size, lang],
+        [req.params.itemId, ext, filename, url, size, lang],
       );
     } catch (e) {
       console.warn('DB write (file):', e.message);
     }
 
-    res.json({ url, filename: req.file.filename, size: formatSize(req.file.size), lang });
+    res.json({ url, filename, size: formatSize(size), lang });
   },
 );
 

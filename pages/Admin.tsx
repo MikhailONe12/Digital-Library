@@ -1074,7 +1074,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.epub,.mp4,.webm,.mkv,.mp3"
+                    accept=".pdf,.epub,.fb2,.mp4,.webm,.mkv,.mp3"
                     className="hidden"
                     onChange={() => {
                       const id = uploadingFormatId.current;

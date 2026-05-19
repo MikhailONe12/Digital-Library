@@ -1,7 +1,9 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MediaItem, Locale, FileFormat } from '../types';
-import { ArrowLeft, Download, Star, Calendar, User, FileText, Activity, BookOpen, X, Lock, Heart, Globe } from 'lucide-react';
+import { ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
+// @ts-ignore
+import ePub from 'epubjs';
 import { trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating, getAverageRating } from '../services/db';
 import { pickText, handleCoverError } from '../utils';
 
@@ -15,12 +17,15 @@ interface ItemDetailsProps {
 
 const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
+  const [activeEpubUrl, setActiveEpubUrl] = useState<string | null>(null);
   const [userRating, setUserRatingState] = useState(0);
   const [avgRating, setAvgRating] = useState(item.rating);
-  
+  const epubViewerRef = useRef<HTMLDivElement>(null);
+  const renditionRef = useRef<any>(null);
+
   const tg = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
-  
+
   const [isFav, setIsFav] = useState(false);
 
   useEffect(() => {
@@ -30,6 +35,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     setAvgRating(getAverageRating(item.id));
     onRefresh();
   }, [item.id, userId]);
+
+  useEffect(() => {
+    if (!activeEpubUrl || !epubViewerRef.current) return;
+    const book = ePub(activeEpubUrl);
+    const rendition = book.renderTo(epubViewerRef.current, {
+      width: '100%', height: '100%', spread: 'none',
+    });
+    rendition.display();
+    renditionRef.current = rendition;
+    return () => {
+      renditionRef.current = null;
+      book.destroy();
+    };
+  }, [activeEpubUrl]);
 
   const handleToggleFav = () => {
     toggleFavorite(userId, item.id);
@@ -66,8 +85,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const videoPlayer = getVideoEmbed(item.videoUrl);
 
   const handleRead = (format: FileFormat) => {
-    if (format.name.toLowerCase().includes('pdf') || format.url.toLowerCase().endsWith('.pdf')) {
+    const url = format.url.toLowerCase();
+    if (url.endsWith('.pdf') || format.name.toLowerCase().includes('pdf')) {
       setActiveReaderUrl(format.url);
+    } else if (url.endsWith('.epub')) {
+      setActiveEpubUrl(format.url);
     } else {
       window.open(format.url, '_blank');
     }
@@ -265,6 +287,44 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           </div>
         </div>
       </div>
+
+      {activeEpubUrl && (
+        <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">
+          <header className="p-5 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-600 rounded-lg text-white">
+                <BookOpen size={16} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase text-white/40 tracking-widest leading-none mb-1">EPUB Reader</p>
+                <p className="text-xs font-black text-white truncate max-w-[200px]">{pickText(item.title, lang)}</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveEpubUrl(null)}
+              className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"
+            >
+              <X size={20} />
+            </button>
+          </header>
+          <div ref={epubViewerRef} className="flex-1 bg-white overflow-hidden" />
+          <footer className="p-4 bg-slate-900 border-t border-white/5 flex items-center justify-between">
+            <button
+              onClick={() => renditionRef.current?.prev()}
+              className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <p className="text-[8px] font-black uppercase text-white/20 tracking-[0.4em]">{t.closeReader}</p>
+            <button
+              onClick={() => renditionRef.current?.next()}
+              className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"
+            >
+              <ChevronRight size={22} />
+            </button>
+          </footer>
+        </div>
+      )}
 
       {activeReaderUrl && (
         <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">

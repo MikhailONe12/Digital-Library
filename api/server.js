@@ -98,7 +98,6 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'video/x-matroska',
   'audio/mpeg',
   'audio/mp3',
-  'application/zip',
 ]);
 
 const fileStorage = multer.diskStorage({

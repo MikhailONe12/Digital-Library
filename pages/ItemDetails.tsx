@@ -83,7 +83,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   const epubViewerRef     = useRef<HTMLDivElement>(null);
   const renditionRef      = useRef<any>(null);
-  const pdfCanvasRef      = useRef<HTMLCanvasElement>(null);
+  const pdfContainerRef   = useRef<HTMLDivElement>(null);
   const pdfDocRef         = useRef<any>(null);
   const pdfRenderTaskRef  = useRef<any>(null);
   const touchStartX       = useRef(0);
@@ -193,7 +193,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       try {
         const pdfjsLib = await import('pdfjs-dist');
         pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
-        const doc = await pdfjsLib.getDocument(activeReaderUrl).promise;
+
+        // Fetch the whole file upfront and hand the bytes to pdf.js. Loading
+        // by URL makes pdf.js stream the file with HTTP range requests; when
+        // those later requests stall, pages past the first few never get
+        // their content and render blank. With the full buffer every page is
+        // available immediately.
+        const resp = await fetch(activeReaderUrl);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.arrayBuffer();
+        if (cancelled) return;
+
+        const doc = await pdfjsLib.getDocument({ data }).promise;
         if (cancelled) { try { doc.destroy(); } catch { /* noop */ } return; }
         pdfDocRef.current = doc;
 
@@ -217,19 +228,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     return () => { cancelled = true; };
   }, [activeReaderUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PDF render — re-renders on every page/scale change. Spurious effect
-  // re-runs simply re-render the same page rather than leaving it blank.
+  // PDF render — each page is drawn onto its own fresh off-screen canvas and
+  // swapped into the DOM only once fully rendered. No canvas is ever reused,
+  // so there is no stale-pixel or pdf.js canvas-in-use conflict to leave a
+  // page blank; the previous page stays visible until the new one is ready.
   useEffect(() => {
     if (!activeReaderUrl || pdfTotalPages === 0) return;
-    const doc    = pdfDocRef.current;
-    const canvas = pdfCanvasRef.current;
-    if (!doc || !canvas) return;
+    const doc       = pdfDocRef.current;
+    const container = pdfContainerRef.current;
+    if (!doc || !container) return;
 
     let disposed = false;
 
     (async () => {
-      // Cancel any in-flight render before drawing a new one. pdf.js throws if
-      // two render() calls overlap on the same canvas, so this must land.
       if (pdfRenderTaskRef.current) {
         try { pdfRenderTaskRef.current.cancel(); } catch { /* noop */ }
         pdfRenderTaskRef.current = null;
@@ -241,18 +252,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         if (!disposed) setPdfError('Ошибка загрузки страницы: ' + (e?.message || String(e)));
         return;
       }
-      if (disposed || pdfCanvasRef.current !== canvas) return;
+      if (disposed) return;
 
-      const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth || 800;
+      const containerWidth = container.parentElement?.clientWidth || window.innerWidth || 800;
       const base           = page.getViewport({ scale: 1 });
       const viewport       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
+
+      const canvas  = document.createElement('canvas');
       canvas.width  = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
+      canvas.className = 'block max-w-full';
 
       let task: any;
       try {
-        // Pass `canvas` (the pdf.js v5 recommended param) — pdf.js creates its
-        // own opaque 2D context internally.
         task = page.render({ canvas, viewport });
       } catch (e: any) {
         if (!disposed) setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
@@ -261,7 +273,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       pdfRenderTaskRef.current = task;
       try {
         await task.promise;
-        if (!disposed) setPdfError(null);
+        if (disposed) return;
+        container.replaceChildren(canvas);
+        setPdfError(null);
       } catch (e: any) {
         if (e?.name !== 'RenderingCancelledException' && !disposed) {
           setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
@@ -609,9 +623,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               onTouchStart={handleTouchStart}
               onTouchEnd={handlePdfTouchEnd}
             >
-              <canvas
-                ref={pdfCanvasRef}
-                className="max-w-full self-start"
+              <div
+                ref={pdfContainerRef}
+                className="self-start"
                 style={{ filter: PDF_FILTER[readerTheme] }}
               />
             </div>

@@ -48,7 +48,10 @@ const Home: React.FC<HomeProps> = ({
   };
 
   return (
-    <div className="px-4 sm:px-6 lg:px-10 pt-12 max-w-7xl mx-auto">
+    <div
+      className="px-4 sm:px-6 lg:px-10 max-w-7xl mx-auto"
+      style={{ paddingTop: 'calc(3rem + var(--safe-top))' }}
+    >
       <header className="mb-14 relative select-none">
         <div 
           className="flex items-center gap-4 mb-3 cursor-pointer active:opacity-70 transition-opacity"

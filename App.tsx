@@ -36,10 +36,28 @@ const App: React.FC = () => {
 
   // DATA LOAD + SECURITY CHECK + LOGGING
   useEffect(() => {
+    // Push Telegram's safe-area insets into CSS vars consumed by index.css.
+    // safeAreaInset = device notch / home indicator; contentSafeAreaInset =
+    // space taken by Telegram's own chrome. Their sum is the real padding.
+    const applyInsets = () => {
+      const sa  = tg?.safeAreaInset || {};
+      const csa = tg?.contentSafeAreaInset || {};
+      const root = document.documentElement.style;
+      root.setProperty('--tg-safe-top',    ((sa.top || 0)    + (csa.top || 0))    + 'px');
+      root.setProperty('--tg-safe-bottom', ((sa.bottom || 0) + (csa.bottom || 0)) + 'px');
+    };
+
     if (tg) {
       tg.expand();
       tg.ready();
       document.body.style.backgroundColor = '#f8fafc';
+      applyInsets();
+      // safeAreaChanged/contentSafeAreaChanged exist on Bot API 8.0+; older
+      // clients simply never fire them and we keep the env() fallback.
+      try {
+        tg.onEvent('safeAreaChanged', applyInsets);
+        tg.onEvent('contentSafeAreaChanged', applyInsets);
+      } catch { /* event unsupported on this Telegram client */ }
     }
 
     // Секретный вход через URL: ?admin=true
@@ -87,6 +105,10 @@ const App: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      try {
+        tg?.offEvent('safeAreaChanged', applyInsets);
+        tg?.offEvent('contentSafeAreaChanged', applyInsets);
+      } catch { /* event unsupported on this Telegram client */ }
     };
   }, [tg]);
 
@@ -189,7 +211,11 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen pb-10 font-sans text-slate-900 overflow-x-hidden bg-[#f8fafc]">
       {/* Precision Lang Switcher Dropdown */}
-      <div className="flex justify-end p-6 absolute top-0 right-0 z-[110]" ref={langMenuRef}>
+      <div
+        className="flex justify-end px-6 pb-6 absolute top-0 right-0 z-[110]"
+        style={{ paddingTop: 'calc(1.5rem + var(--safe-top))' }}
+        ref={langMenuRef}
+      >
         <div className="relative">
           <button 
             onClick={() => setIsLangMenuOpen(!isLangMenuOpen)} 

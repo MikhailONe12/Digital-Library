@@ -390,7 +390,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   }
 
   return (
-    <div className="p-4 pt-14 md:p-6 md:pt-16 animate-in fade-in min-h-screen pb-24 max-w-7xl mx-auto">
+    <div
+      className="p-4 md:p-6 animate-in fade-in min-h-screen pb-24 max-w-7xl mx-auto"
+      style={{ paddingTop: 'calc(3.5rem + var(--safe-top))' }}
+    >
       <header className="flex items-center justify-between mb-6 md:mb-10">
         <div>
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none mb-1">Control<span className="text-red-600">Center</span></h1>

@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Safe-area insets. On iOS the device notch / home indicator are exposed via
+   env(); inside the Telegram WebApp, Telegram's own header/footer chrome is
+   reported through --tg-safe-* (set from JS in App.tsx). max() picks whichever
+   is larger so floating UI never hides behind either. On desktop both are 0. */
+:root {
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--tg-safe-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px));
+}
+
 body {
   background-color: #f8fafc;
   color: #0f172a;

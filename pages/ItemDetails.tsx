@@ -497,7 +497,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       <div className="h-72 w-full relative overflow-hidden">
         <img src={item.coverUrl} onError={handleCoverError} className="w-full h-full object-cover blur-3xl opacity-20 scale-150" alt="" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-50" />
-        <button onClick={onBack} className="absolute top-10 left-5 p-3 bg-white/80 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-sm text-slate-900 active:scale-95 transition-all z-20">
+        <button
+          onClick={onBack}
+          className="absolute left-5 p-3 bg-white/80 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-sm text-slate-900 active:scale-95 transition-all z-20"
+          style={{ top: 'calc(2.5rem + var(--safe-top))' }}
+        >
           <ArrowLeft size={18} strokeWidth={3} />
         </button>
       </div>
@@ -609,8 +613,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       {activeEpubUrl && (
         <div className="fixed inset-0 z-[500] flex flex-col animate-in fade-in duration-300"
           style={{ background: readerTheme === 'sepia' ? '#f4ecd8' : readerTheme === 'night' ? '#0f172a' : '#1e293b' }}>
-          <header className="p-4 flex items-center justify-between border-b border-white/10 shrink-0"
-            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a' }}>
+          <header className="px-4 pb-4 flex items-center justify-between border-b border-white/10 shrink-0"
+            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a', paddingTop: 'calc(1rem + var(--safe-top))' }}>
             <div className="flex items-center gap-2">
               {toc.length > 0 && (
                 <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); }}
@@ -661,15 +665,15 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             )}
           </div>
 
-          <footer className="p-3 border-t border-white/5 flex items-center justify-between shrink-0"
-            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a' }}>
-            <button onClick={() => renditionRef.current?.prev()} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"><ChevronLeft size={22} /></button>
-            <div className="flex items-center gap-1">
-              <button onClick={() => setEpubFontSize(s => Math.max(70, s - 15))} disabled={epubFontSize <= 70} className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={15} /></button>
-              <span className="text-[9px] font-black text-white/40 w-10 text-center">{epubFontSize}%</span>
-              <button onClick={() => setEpubFontSize(s => Math.min(200, s + 15))} disabled={epubFontSize >= 200} className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomIn size={15} /></button>
+          <footer className="px-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3 shrink-0"
+            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a', paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
+            <button onClick={() => renditionRef.current?.prev()} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-95"><ChevronLeft size={26} /></button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button onClick={() => setEpubFontSize(s => Math.max(70, s - 15))} disabled={epubFontSize <= 70} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={16} /></button>
+              <span className="text-[10px] font-black text-white/50 w-11 text-center">{epubFontSize}%</span>
+              <button onClick={() => setEpubFontSize(s => Math.min(200, s + 15))} disabled={epubFontSize >= 200} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomIn size={16} /></button>
             </div>
-            <button onClick={() => renditionRef.current?.next()} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"><ChevronRight size={22} /></button>
+            <button onClick={() => renditionRef.current?.next()} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-95"><ChevronRight size={26} /></button>
           </footer>
         </div>
       )}
@@ -677,7 +681,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       {/* ── PDF Reader ─────────────────────────────────────────────────────── */}
       {activeReaderUrl && (
         <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">
-          <header className="p-4 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0">
+          <header className="px-4 pb-4 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0"
+            style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
               <div>
@@ -734,17 +739,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
           </div>
 
-          <footer className="p-3 bg-slate-900 border-t border-white/5 flex items-center justify-between shrink-0">
-            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className="p-3 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-90"><ChevronLeft size={22} /></button>
-            <div className="flex items-center gap-3">
+          <footer className="px-4 pt-3 bg-slate-900 border-t border-white/5 flex items-center justify-between gap-3 shrink-0"
+            style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
+            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-95"><ChevronLeft size={26} /></button>
+            <div className="flex flex-col items-center gap-1.5 shrink-0">
               <div className="flex items-center gap-1">
-                <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.25).toFixed(2)))} disabled={pdfScale <= 0.5} className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={15} /></button>
-                <span className="text-[9px] font-black text-white/40 w-10 text-center">{Math.round(pdfScale * 100)}%</span>
-                <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.25).toFixed(2)))} disabled={pdfScale >= 3} className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomIn size={15} /></button>
+                <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.25).toFixed(2)))} disabled={pdfScale <= 0.5} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={16} /></button>
+                <span className="text-[10px] font-black text-white/50 w-11 text-center">{Math.round(pdfScale * 100)}%</span>
+                <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.25).toFixed(2)))} disabled={pdfScale >= 3} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomIn size={16} /></button>
               </div>
               <p className="text-[9px] font-black text-white/40 tracking-widest">{pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}</p>
             </div>
-            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className="p-3 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-90"><ChevronRight size={22} /></button>
+            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-95"><ChevronRight size={26} /></button>
           </footer>
         </div>
       )}

@@ -230,6 +230,29 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     }
   };
 
+  const handleDeleteFormat = async (f: FileFormat) => {
+    if (!editingItem?.id) return;
+    if (!confirm(`Удалить файл "${f.name}" с сервера? Это действие нельзя отменить.`)) return;
+    const filename = f.url ? f.url.split('/').pop() : null;
+    if (filename) {
+      const key = getServerApiKey();
+      try {
+        const res = await fetch(`/api/upload/${editingItem.id}/${filename}`, {
+          method: 'DELETE',
+          headers: key ? { 'x-api-key': key } : {},
+        });
+        if (!res.ok) {
+          alert('Ошибка при удалении файла с сервера: ' + res.status);
+          return;
+        }
+      } catch {
+        alert('Ошибка сети при удалении файла');
+        return;
+      }
+    }
+    handleRemoveFormat(f.id);
+  };
+
   const handleAddUser = () => {
     if (newUserNickname.trim()) {
       addUserToWhitelist(newUserNickname.toLowerCase());
@@ -995,9 +1018,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 </div>
                 <div className="space-y-3">
                   {editingItem.formats && editingItem.formats.map((f) => (
-                    <div key={f.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 relative">
-                      <button onClick={() => handleRemoveFormat(f.id)} className="absolute top-2 right-2 text-slate-300 hover:text-red-600 transition-colors"><X size={14}/></button>
-                      <div className="grid grid-cols-2 gap-2 pr-6">
+                    <div key={f.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Название</label>
                           <input placeholder="PDF / EPUB / …" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
@@ -1037,6 +1059,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} />
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFormat(f)}
+                        className="mt-2 w-full py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-colors flex items-center justify-center gap-1.5"
+                      >
+                        <Trash2 size={11} /> Удалить файл с сервера
+                      </button>
                     </div>
                   ))}
                   {(!editingItem.formats || editingItem.formats.length === 0) && (

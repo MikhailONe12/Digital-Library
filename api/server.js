@@ -145,6 +145,20 @@ app.get('/api/health', async (req, res) => {
   res.json({ status: 'ok', db: dbStatus, version: '1.0.0' });
 });
 
+// Admin login: verify ADMIN_PASSWORD, return API_KEY
+app.post('/api/admin/login', (req, res) => {
+  const { password } = req.body || {};
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!adminPassword || password !== adminPassword) {
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: 'API key not configured on server' });
+  }
+  res.json({ apiKey });
+});
+
 // Upload cover image
 // POST /api/upload/:itemId/cover  (field: file)
 app.post('/api/upload/:itemId/cover',

@@ -36,6 +36,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const [importJson, setImportJson] = useState('');
   const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
   const [serverApiKeyInput, setServerApiKeyInput] = useState(() => getServerApiKey());
+  const [loginLoading, setLoginLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -303,6 +304,30 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     }
   };
 
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginLoading(true);
+    try {
+      const res = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: apiKeyInput }),
+      });
+      if (!res.ok) {
+        alert('Invalid Access Token');
+        return;
+      }
+      const { apiKey } = await res.json();
+      setServerApiKey(apiKey);
+      setServerApiKeyInput(apiKey);
+      setIsAdmin(true);
+    } catch {
+      alert('Connection error. Check your network.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6 bg-slate-50">
@@ -312,18 +337,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           </div>
           <h2 className="text-xl md:text-2xl font-black text-center mb-2 mt-8 tracking-tighter uppercase text-slate-900">{t.adminAccess}</h2>
           <p className="text-slate-400 text-center mb-8 text-[10px] font-black uppercase tracking-[0.2em]">Authorized Personnel Only</p>
-          <form onSubmit={(e) => { e.preventDefault(); if(apiKeyInput === '123123123') setIsAdmin(true); else alert('Invalid Access Token'); }} className="space-y-4">
+          <form onSubmit={handleAdminLogin} className="space-y-4">
             <div className="space-y-1">
                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-2">{t.apiKey}</label>
-                <input 
-                    type="password" 
-                    placeholder="••••••••" 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-6 focus:ring-4 focus:ring-red-500/5 focus:border-red-600 outline-none transition-all font-mono text-sm" 
-                    value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)} 
+                <input
+                    type="password"
+                    placeholder="••••••••"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-6 focus:ring-4 focus:ring-red-500/5 focus:border-red-600 outline-none transition-all font-mono text-sm"
+                    value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)}
                 />
             </div>
-            <button className="w-full bg-red-600 py-4 rounded-[2rem] font-black text-white uppercase tracking-widest shadow-xl shadow-red-200 transition-all active:scale-95 hover:bg-red-700 text-xs">
-                {t.accessDashboard}
+            <button disabled={loginLoading} className="w-full bg-red-600 py-4 rounded-[2rem] font-black text-white uppercase tracking-widest shadow-xl shadow-red-200 transition-all active:scale-95 hover:bg-red-700 text-xs disabled:opacity-60">
+                {loginLoading ? '...' : t.accessDashboard}
             </button>
             <button type="button" onClick={onBack} className="w-full text-slate-400 font-black text-[9px] uppercase tracking-[0.3em] hover:text-red-600 transition-colors py-2">
                 {t.back}

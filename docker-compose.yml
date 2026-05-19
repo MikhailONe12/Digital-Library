@@ -33,6 +33,7 @@ services:
       DB_USER: library
       DB_PASSWORD: ${DB_PASSWORD}
       API_KEY: ${API_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       BASE_URL: https://library.optionsdata.ru
       CORS_ORIGIN: https://library.optionsdata.ru
     volumes:

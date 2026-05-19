@@ -107,7 +107,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([
-  '.pdf', '.epub', '.mp4', '.webm', '.mkv', '.mp3', '.fb2',
+  '.pdf', '.epub', '.mp4', '.webm', '.mkv', '.mp3', '.fb2', '.djvu', '.djv',
 ]);
 
 const fileStorage = multer.diskStorage({
@@ -227,6 +227,26 @@ app.post('/api/upload/:itemId/file',
         console.log(`FB2→EPUB: ${fb2Path} → ${epubPath}`);
       } catch (e) {
         console.error('FB2→EPUB conversion failed:', e.message);
+      }
+    }
+
+    // Convert DJVU → PDF automatically
+    if (ext === 'djvu' || ext === 'djv') {
+      const dir = path.join(CONTENT_DIR, req.params.itemId);
+      const djvuPath = path.join(dir, filename);
+      const pdfFilename = filename.replace(/\.djvu?$/i, '.pdf');
+      const pdfPath = path.join(dir, pdfFilename);
+      try {
+        await execFileAsync('ddjvu', ['-format=pdf', djvuPath, pdfPath], {
+          timeout: 180000,
+        });
+        fs.unlinkSync(djvuPath);
+        filename = pdfFilename;
+        ext = 'pdf';
+        size = fs.statSync(pdfPath).size;
+        console.log(`DJVU→PDF: ${djvuPath} → ${pdfPath}`);
+      } catch (e) {
+        console.error('DJVU→PDF conversion failed:', e.message);
       }
     }
 

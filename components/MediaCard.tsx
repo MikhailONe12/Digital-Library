@@ -9,21 +9,20 @@ interface MediaCardProps {
   onClick: () => void;
   lang: Locale;
   isFavorited?: boolean;
+  progress?: number; // 0–100
 }
 
-const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited }) => {
-  
-  // Combine global item languages and individual file languages without duplicates
+const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited, progress }) => {
+
   const displayedLanguages = useMemo(() => {
     const fileLanguages = item.formats.map(f => f.language).filter((l): l is Locale => !!l);
     const globalLanguages = item.contentLanguages || [];
-    // Create a Set to remove duplicates, spread both arrays
     return Array.from(new Set([...globalLanguages, ...fileLanguages]));
   }, [item]);
 
   return (
-    <div 
-        onClick={onClick} 
+    <div
+        onClick={onClick}
         className="group relative bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] active:scale-[0.97] transition-all hover:shadow-[0_15px_35px_rgba(0,0,0,0.06)] hover:border-red-100"
     >
       <div className="aspect-[3/4] relative overflow-hidden">
@@ -34,15 +33,13 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited 
             alt={pickText(item.title, lang)}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent group-hover:from-red-900/40 transition-colors" />
-        
-        {/* Favorite Indicator */}
+
         {isFavorited && (
           <div className="absolute bottom-3 right-3 bg-red-600 text-white p-1.5 rounded-full shadow-lg border border-white/20 animate-in zoom-in duration-300">
             <Heart size={10} fill="currentColor" />
           </div>
         )}
 
-        {/* Top-Left Labels Group */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
           <div className="bg-red-600 text-white text-[7px] font-black uppercase px-2 py-1 rounded-md shadow-lg shadow-red-900/20 tracking-[0.1em]">
               {item.type}
@@ -62,14 +59,24 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited 
             Tier 1
           </div>
         )}
-        
+
         <div className="absolute bottom-4 left-4 right-4">
             <h3 className="text-white text-sm font-black tracking-tight leading-tight line-clamp-2 drop-shadow-sm">
                 {pickText(item.title, lang)}
             </h3>
         </div>
+
+        {/* Reading progress bar */}
+        {progress != null && progress > 0 && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
+            <div
+              className="h-full bg-red-500 transition-all duration-500"
+              style={{ width: `${Math.min(100, progress)}%` }}
+            />
+          </div>
+        )}
       </div>
-      
+
       <div className="px-4 py-3 bg-white flex items-center justify-between border-t border-slate-50">
         <div className="flex items-center gap-1.5">
           <div className={`p-1 rounded-md ${item.rating > 4.5 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>

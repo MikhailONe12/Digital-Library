@@ -70,6 +70,12 @@ export interface Bookmark {
   created_at: string;
 }
 
+export interface ReadingProgress {
+  position: string;
+  position_total: number; // PDF: total pages; EPUB: percentage 0–100
+  format_url: string | null;
+}
+
 export interface AppState {
   items: MediaItem[];
   allowedUsers: string[]; // Whitelist

@@ -642,6 +642,60 @@ app.delete('/api/users/:userId/bookmarks/:bookmarkId',
   },
 );
 
+// ── Reading progress ─────────────────────────────────────────────────────────
+
+// GET all progress for a user (used on app start to prefetch for progress bars)
+app.get('/api/users/:userId/progress', validateUserId, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT item_id, position, position_total, format_url FROM user_reading_progress WHERE user_id = $1',
+      [req.params.userId],
+    );
+    res.json({ progress: rows });
+  } catch {
+    res.json({ progress: [] });
+  }
+});
+
+// GET single-item progress
+app.get('/api/users/:userId/progress/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        'SELECT position, position_total, format_url FROM user_reading_progress WHERE user_id = $1 AND item_id = $2',
+        [req.params.userId, req.params.itemId],
+      );
+      res.json(rows[0] || null);
+    } catch {
+      res.json(null);
+    }
+  },
+);
+
+// PUT (upsert) single-item progress
+app.put('/api/users/:userId/progress/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    const position = clip(req.body?.position, 512);
+    const positionTotal = parseInt(req.body?.positionTotal ?? 0, 10) || 0;
+    const formatUrl = clip(req.body?.formatUrl, 512);
+    if (!position) return res.status(400).json({ error: 'position required' });
+    try {
+      await pool.query(
+        `INSERT INTO user_reading_progress (user_id, item_id, position, position_total, format_url)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id, item_id) DO UPDATE
+           SET position = $3, position_total = $4, format_url = $5, updated_at = NOW()`,
+        [req.params.userId, req.params.itemId, position, positionTotal, formatUrl],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
 // ── Error handlers ───────────────────────────────────────────────────────────
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

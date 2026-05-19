@@ -1,4 +1,4 @@
-import { AppState, MediaItem, Bookmark } from '../types';
+import { AppState, MediaItem, Bookmark, ReadingProgress } from '../types';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -33,6 +33,9 @@ let cache: AppState = emptyState();
 
 // Server-computed average ratings, keyed by item id.
 let avgRatings: Record<string, number> = {};
+
+// Reading progress cache, keyed by item id.
+let progressCache: Record<string, ReadingProgress> = {};
 
 // ── Item normalization (backward compatibility) ──────────────────────────────
 
@@ -97,9 +100,10 @@ const putSettings = () => {
 
 const loadUserData = async (userId: string) => {
   try {
-    const [favRes, ratRes] = await Promise.all([
+    const [favRes, ratRes, progRes] = await Promise.all([
       fetch(`/api/users/${userId}/favorites`),
       fetch(`/api/users/${userId}/ratings`),
+      fetch(`/api/users/${userId}/progress`),
     ]);
     if (favRes.ok) {
       const d = await favRes.json();
@@ -108,6 +112,13 @@ const loadUserData = async (userId: string) => {
     if (ratRes.ok) {
       const d = await ratRes.json();
       cache.userRatings = { [userId]: d.ratings || {} };
+    }
+    if (progRes.ok) {
+      const d = await progRes.json();
+      progressCache = {};
+      for (const p of (d.progress || [])) {
+        progressCache[p.item_id] = { position: p.position, position_total: p.position_total, format_url: p.format_url };
+      }
     }
   } catch (e) {
     console.warn('loadUserData failed:', e);
@@ -380,4 +391,39 @@ export const deleteBookmark = async (userId: string, bookmarkId: string): Promis
   try {
     await fetch(`/api/users/${userId}/bookmarks/${bookmarkId}`, { method: 'DELETE' });
   } catch {/* best effort */}
+};
+
+// ── Reading progress ──────────────────────────────────────────────────────────
+
+export const getReadingProgress = async (userId: string, itemId: string): Promise<ReadingProgress | null> => {
+  if (progressCache[itemId]) return progressCache[itemId];
+  try {
+    const res = await fetch(`/api/users/${userId}/progress/${itemId}`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data) { progressCache[itemId] = data; return data; }
+    }
+  } catch {/* best effort */}
+  return null;
+};
+
+export const saveReadingProgress = (
+  userId: string, itemId: string,
+  position: string, positionTotal: number, formatUrl: string,
+): void => {
+  progressCache[itemId] = { position, position_total: positionTotal, format_url: formatUrl };
+  fetch(`/api/users/${userId}/progress/${itemId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position, positionTotal, formatUrl }),
+  }).catch(() => {/* best effort */});
+};
+
+// Returns 0–100 progress percentage for a given item from cache.
+export const getProgressPercent = (itemId: string): number => {
+  const p = progressCache[itemId];
+  if (!p) return 0;
+  if (p.format_url?.endsWith('.epub')) return p.position_total; // stored as 0–100
+  if (p.position_total > 0) return Math.round((parseInt(p.position) / p.position_total) * 100);
+  return 0;
 };

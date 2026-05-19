@@ -1,12 +1,45 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { MediaItem, Locale, FileFormat, Bookmark } from '../types';
-import { ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart, Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
+  Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
+  Trash2, List, Sun, Moon, SunDim,
+} from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating, getAverageRating, getBookmarks, addBookmark, deleteBookmark } from '../services/db';
+import {
+  trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating,
+  getAverageRating, getBookmarks, addBookmark, deleteBookmark,
+  getReadingProgress, saveReadingProgress,
+} from '../services/db';
 import { pickText, handleCoverError } from '../utils';
+
+type ReaderTheme = 'default' | 'night' | 'sepia';
+
+interface TocItem { href: string; label: string; subitems?: TocItem[] }
+
+const THEME_KEY   = 'reader_theme';
+const FONT_KEY    = 'reader_font_size';
+
+const EPUB_THEMES: Record<ReaderTheme, Record<string, any>> = {
+  default: { body: { background: '#ffffff !important', color: '#1e293b !important' } },
+  night:   { body: { background: '#0f172a !important', color: '#e2e8f0 !important' }, 'a': { color: '#60a5fa !important' } },
+  sepia:   { body: { background: '#f4ecd8 !important', color: '#5b4636 !important' } },
+};
+
+const PDF_FILTER: Record<ReaderTheme, string> = {
+  default: 'none',
+  night:   'invert(0.88) hue-rotate(180deg)',
+  sepia:   'sepia(0.75) brightness(1.05)',
+};
+
+const PDF_BG: Record<ReaderTheme, string> = {
+  default: 'bg-slate-800',
+  night:   'bg-slate-950',
+  sepia:   'bg-amber-100',
+};
 
 interface ItemDetailsProps {
   item: MediaItem;
@@ -21,15 +54,25 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
 
   // PDF
-  const [pdfPage, setPdfPage]           = useState(1);
+  const [pdfPage, setPdfPage]             = useState(1);
   const [pdfTotalPages, setPdfTotalPages] = useState(0);
-  const [pdfScale, setPdfScale]         = useState(1);
+  const [pdfScale, setPdfScale]           = useState(1);
 
   // EPUB
-  const [epubFontSize, setEpubFontSize] = useState(100);
+  const [epubFontSize, setEpubFontSize] = useState<number>(() => {
+    const v = localStorage.getItem(FONT_KEY);
+    return v ? parseInt(v) : 100;
+  });
+  const [toc, setToc]         = useState<TocItem[]>([]);
+  const [showToc, setShowToc] = useState(false);
+
+  // Theme: persisted
+  const [readerTheme, setReaderTheme] = useState<ReaderTheme>(() => {
+    return (localStorage.getItem(THEME_KEY) as ReaderTheme) || 'default';
+  });
 
   // Bookmarks
-  const [bookmarks, setBookmarks]       = useState<Bookmark[]>([]);
+  const [bookmarks, setBookmarks]         = useState<Bookmark[]>([]);
   const [showBookmarks, setShowBookmarks] = useState(false);
 
   // Item
@@ -41,9 +84,15 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const renditionRef  = useRef<any>(null);
   const pdfCanvasRef  = useRef<HTMLCanvasElement>(null);
   const pdfDocRef     = useRef<any>(null);
+  const touchStartX   = useRef(0);
+  const touchStartY   = useRef(0);
 
   const tg     = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
+
+  // Persist theme & font choices
+  useEffect(() => { localStorage.setItem(THEME_KEY, readerTheme); }, [readerTheme]);
+  useEffect(() => { localStorage.setItem(FONT_KEY, String(epubFontSize)); }, [epubFontSize]);
 
   useEffect(() => {
     trackActivity('view', item.id);
@@ -53,34 +102,75 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     onRefresh();
   }, [item.id, userId]);
 
-  // Load bookmarks when any reader opens; reset when all closed
   useEffect(() => {
     if (activeReaderUrl || activeEpubUrl) {
       getBookmarks(userId, item.id).then(setBookmarks);
     } else {
       setShowBookmarks(false);
+      setShowToc(false);
       setBookmarks([]);
+      setToc([]);
     }
   }, [activeReaderUrl, activeEpubUrl]);
 
-  // EPUB init
+  // ── EPUB init ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeEpubUrl || !epubViewerRef.current) return;
     const book = ePub(activeEpubUrl);
     const rendition = book.renderTo(epubViewerRef.current, {
       width: '100%', height: '100%', spread: 'none',
     });
-    rendition.display();
+
+    // Register all themes upfront
+    Object.entries(EPUB_THEMES).forEach(([name, styles]) => {
+      rendition.themes.register(name, styles);
+    });
+    rendition.themes.select(readerTheme);
+    rendition.themes.fontSize(epubFontSize + '%');
+
+    // Load TOC
+    book.loaded.navigation.then((nav: any) => setToc(nav?.toc || []));
+
+    // Restore last position or start at beginning
+    getReadingProgress(userId, item.id).then(progress => {
+      if (progress?.format_url?.endsWith('.epub') && progress.position) {
+        rendition.display(progress.position);
+      } else {
+        rendition.display();
+      }
+    });
+
+    // Save progress on every navigation
+    rendition.on('relocated', (location: any) => {
+      const cfi = location?.start?.cfi;
+      const pct = Math.round((location?.start?.percentage || 0) * 100);
+      if (cfi) saveReadingProgress(userId, item.id, cfi, pct, activeEpubUrl);
+    });
+
+    // Swipe gestures (touches inside the epub iframe bubble up through rendition events)
+    rendition.on('touchstart', (ev: TouchEvent) => {
+      touchStartX.current = ev.changedTouches[0].clientX;
+      touchStartY.current = ev.changedTouches[0].clientY;
+    });
+    rendition.on('touchend', (ev: TouchEvent) => {
+      const dx = ev.changedTouches[0].clientX - touchStartX.current;
+      const dy = ev.changedTouches[0].clientY - touchStartY.current;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+        dx < 0 ? rendition.next() : rendition.prev();
+      }
+    });
+
     renditionRef.current = rendition;
     return () => { renditionRef.current = null; book.destroy(); };
-  }, [activeEpubUrl]);
+  }, [activeEpubUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // EPUB zoom
-  useEffect(() => {
-    renditionRef.current?.themes?.fontSize(epubFontSize + '%');
-  }, [epubFontSize]);
+  // EPUB zoom live update
+  useEffect(() => { renditionRef.current?.themes?.fontSize(epubFontSize + '%'); }, [epubFontSize]);
 
-  // PDF load
+  // EPUB theme live update
+  useEffect(() => { renditionRef.current?.themes?.select(readerTheme); }, [readerTheme]);
+
+  // ── PDF load ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeReaderUrl) {
       pdfDocRef.current?.destroy();
@@ -97,11 +187,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       const doc = await pdfjsLib.getDocument(activeReaderUrl).promise;
       if (cancelled) return;
       pdfDocRef.current = doc;
-      setPdfTotalPages(doc.numPages);
+      const total = doc.numPages;
+      setPdfTotalPages(total);
+      const progress = await getReadingProgress(userId, item.id);
+      if (progress?.format_url?.endsWith('.pdf') && progress.position) {
+        const saved = parseInt(progress.position);
+        if (saved > 0 && saved <= total) { setPdfPage(saved); return; }
+      }
       setPdfPage(1);
     })();
     return () => { cancelled = true; };
-  }, [activeReaderUrl]);
+  }, [activeReaderUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // PDF render
   useEffect(() => {
@@ -119,6 +215,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     });
     return () => renderTask?.cancel();
   }, [pdfPage, pdfTotalPages, pdfScale]);
+
+  // Save PDF progress when page changes (after doc is ready)
+  useEffect(() => {
+    if (!activeReaderUrl || pdfTotalPages === 0) return;
+    saveReadingProgress(userId, item.id, String(pdfPage), pdfTotalPages, activeReaderUrl);
+  }, [pdfPage, pdfTotalPages, activeReaderUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  const cycleTheme = () => {
+    setReaderTheme(t => t === 'default' ? 'night' : t === 'night' ? 'sepia' : 'default');
+  };
+
+  const ThemeIcon = readerTheme === 'night' ? Moon : readerTheme === 'sepia' ? SunDim : Sun;
 
   const refreshBookmarks = () => getBookmarks(userId, item.id).then(setBookmarks);
 
@@ -151,6 +261,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     setAvgRating(avg);
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handlePdfTouchEnd = (e: React.TouchEvent) => {
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) setPdfPage(p => Math.min(pdfTotalPages, p + 1));
+      else         setPdfPage(p => Math.max(1, p - 1));
+    }
+  };
+
   const getVideoEmbed = (url?: string) => {
     if (!url) return null;
     const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
@@ -174,14 +298,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     }
   };
 
-  // Shared bookmark panel used inside both readers
+  // ── Shared panels ──────────────────────────────────────────────────────────
+
   const BookmarksPanel = ({ onJump }: { onJump: (b: Bookmark) => void }) => (
     <div className="absolute inset-y-0 right-0 w-64 bg-slate-950 border-l border-white/10 flex flex-col z-10 animate-in slide-in-from-right-2 duration-200">
       <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
         <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Закладки</p>
-        <button onClick={() => setShowBookmarks(false)} className="text-white/40 hover:text-white transition-colors">
-          <X size={16} />
-        </button>
+        <button onClick={() => setShowBookmarks(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {bookmarks.length === 0 && (
@@ -201,6 +324,37 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       </div>
     </div>
   );
+
+  const TocPanel = () => {
+    const renderItems = (items: TocItem[], depth = 0) => items.map(item => (
+      <React.Fragment key={item.href}>
+        <button
+          onClick={() => { renditionRef.current?.display(item.href); setShowToc(false); }}
+          className="w-full text-left p-3 hover:bg-white/10 rounded-2xl transition-colors"
+          style={{ paddingLeft: `${12 + depth * 16}px` }}
+        >
+          <p className="text-xs font-bold text-white truncate">{item.label}</p>
+        </button>
+        {item.subitems && renderItems(item.subitems, depth + 1)}
+      </React.Fragment>
+    ));
+    return (
+      <div className="absolute inset-y-0 left-0 w-72 bg-slate-950 border-r border-white/10 flex flex-col z-10 animate-in slide-in-from-left-2 duration-200">
+        <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
+          <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Содержание</p>
+          <button onClick={() => setShowToc(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-2">
+          {toc.length === 0
+            ? <p className="text-center text-white/20 text-[10px] uppercase tracking-widest py-8">Нет содержания</p>
+            : renderItems(toc)
+          }
+        </div>
+      </div>
+    );
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="relative animate-in fade-in slide-in-from-right-4 duration-500 bg-slate-50 min-h-screen">
@@ -315,22 +469,30 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         </div>
       </div>
 
-      {/* ── EPUB Reader ─────────────────────────────────────────────────────── */}
+      {/* ── EPUB Reader ────────────────────────────────────────────────────── */}
       {activeEpubUrl && (
-        <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">
-          <header className="p-4 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0">
-            <div className="flex items-center gap-3">
+        <div className="fixed inset-0 z-[500] flex flex-col animate-in fade-in duration-300"
+          style={{ background: readerTheme === 'sepia' ? '#f4ecd8' : readerTheme === 'night' ? '#0f172a' : '#1e293b' }}>
+          <header className="p-4 flex items-center justify-between border-b border-white/10 shrink-0"
+            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a' }}>
+            <div className="flex items-center gap-2">
+              {toc.length > 0 && (
+                <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); }}
+                  className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Содержание">
+                  <List size={16} />
+                </button>
+              )}
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
-              <div>
-                <p className="text-[10px] font-black uppercase text-white/40 tracking-widest leading-none mb-1">EPUB Reader</p>
-                <p className="text-xs font-black text-white truncate max-w-[160px]">{pickText(item.title, lang)}</p>
-              </div>
+              <p className="text-xs font-black text-white truncate max-w-[130px]">{pickText(item.title, lang)}</p>
             </div>
             <div className="flex items-center gap-2">
+              <button onClick={cycleTheme} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Тема">
+                <ThemeIcon size={16} />
+              </button>
               <button onClick={handleAddEpubBookmark} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => setShowBookmarks(s => !s)} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all relative" title="Закладки">
+              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); }} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all relative" title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
               </button>
@@ -339,11 +501,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           </header>
 
           <div className="flex-1 relative overflow-hidden">
-            <div ref={epubViewerRef} className="w-full h-full bg-white" />
+            <div ref={epubViewerRef} className="w-full h-full" />
+            {showToc && <TocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
           </div>
 
-          <footer className="p-3 bg-slate-900 border-t border-white/5 flex items-center justify-between shrink-0">
+          <footer className="p-3 border-t border-white/5 flex items-center justify-between shrink-0"
+            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a' }}>
             <button onClick={() => renditionRef.current?.prev()} className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"><ChevronLeft size={22} /></button>
             <div className="flex items-center gap-1">
               <button onClick={() => setEpubFontSize(s => Math.max(70, s - 15))} disabled={epubFontSize <= 70} className="p-2 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={15} /></button>
@@ -355,7 +519,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         </div>
       )}
 
-      {/* ── PDF Reader ──────────────────────────────────────────────────────── */}
+      {/* ── PDF Reader ─────────────────────────────────────────────────────── */}
       {activeReaderUrl && (
         <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">
           <header className="p-4 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0">
@@ -367,6 +531,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <button onClick={cycleTheme} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Тема">
+                <ThemeIcon size={16} />
+              </button>
               <button onClick={handleAddPdfBookmark} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
@@ -379,10 +546,14 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           </header>
 
           <div className="flex-1 relative overflow-hidden">
-            <div className="w-full h-full overflow-y-auto bg-slate-800 flex justify-center">
+            <div
+              className={`w-full h-full overflow-y-auto ${PDF_BG[readerTheme]} flex justify-center`}
+              onTouchStart={handleTouchStart}
+              onTouchEnd={handlePdfTouchEnd}
+            >
               {pdfTotalPages === 0
                 ? <div className="flex items-center justify-center w-full"><div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" /></div>
-                : <canvas ref={pdfCanvasRef} className="max-w-full" />
+                : <canvas ref={pdfCanvasRef} className="max-w-full" style={{ filter: PDF_FILTER[readerTheme] }} />
               }
             </div>
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}

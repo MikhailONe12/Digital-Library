@@ -3,7 +3,7 @@ import React, { useRef, useState } from 'react';
 import { MediaItem, Locale } from '../types';
 import MediaCard from '../components/MediaCard';
 import { Search, TrendingUp, BarChart3, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
-import { isFavorited, getAverageRating } from '../services/db';
+import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
 
 interface HomeProps {
   items: MediaItem[];
@@ -192,12 +192,13 @@ const Home: React.FC<HomeProps> = ({
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
         {items.map(item => (
-          <MediaCard 
-            key={item.id} 
-            item={{...item, rating: getAverageRating(item.id)}} 
-            onClick={() => onOpenItem(item)} 
-            lang={lang} 
+          <MediaCard
+            key={item.id}
+            item={{...item, rating: getAverageRating(item.id)}}
+            onClick={() => onOpenItem(item)}
+            lang={lang}
             isFavorited={isFavorited(userId, item.id)}
+            progress={getProgressPercent(item.id)}
           />
         ))}
       </div>

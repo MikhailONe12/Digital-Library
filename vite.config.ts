@@ -19,6 +19,19 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
+    rollupOptions: {
+      output: {
+        // Emit .mjs assets (the pdf.js worker) as .js. Browsers reject a .mjs
+        // module unless the server sends a JS MIME type, and renaming also
+        // produces a fresh URL that bypasses any stale cached copy.
+        assetFileNames: (assetInfo) => {
+          const name = assetInfo.names?.[0] ?? assetInfo.name ?? ''
+          return name.endsWith('.mjs')
+            ? 'assets/[name]-[hash].js'
+            : 'assets/[name]-[hash][extname]'
+        },
+      },
+    },
   },
   optimizeDeps: {
     include: ['epubjs'],

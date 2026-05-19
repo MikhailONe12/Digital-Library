@@ -4,13 +4,13 @@ import { AppState, MediaItem } from '../types';
 
 const SERVER_API_KEY_STORAGE = 'library_server_api_key';
 
-// ── Server API key ───────────────────────────────────────────────────────────
+// ── Server API key (sessionStorage: cleared on tab close) ────────────────────
 
 export const getServerApiKey = (): string =>
-  localStorage.getItem(SERVER_API_KEY_STORAGE) || '';
+  sessionStorage.getItem(SERVER_API_KEY_STORAGE) || '';
 
 export const setServerApiKey = (key: string) =>
-  localStorage.setItem(SERVER_API_KEY_STORAGE, key);
+  sessionStorage.setItem(SERVER_API_KEY_STORAGE, key);
 
 // ── Default (empty) state ────────────────────────────────────────────────────
 

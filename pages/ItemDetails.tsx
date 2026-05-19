@@ -66,7 +66,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   });
   const [toc, setToc]         = useState<TocItem[]>([]);
   const [showToc, setShowToc] = useState(false);
-  const [epubError, setEpubError] = useState<string | null>(null);
+  const [epubError, setEpubError]     = useState<string | null>(null);
+  const [epubLoading, setEpubLoading] = useState(false);
 
   // Theme: persisted
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(() => {
@@ -118,75 +119,101 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   // ── EPUB init ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!activeEpubUrl || !epubViewerRef.current) return;
+    if (!activeEpubUrl) return;
     setEpubError(null);
+    setEpubLoading(true);
     let destroyed = false;
     let book: any = null;
-    let timeout: any = setTimeout(() => {
-      if (!destroyed) setEpubError('EPUB не удалось загрузить (превышено время ожидания).');
-    }, 25000);
-    const clearLoad = () => { if (timeout) { clearTimeout(timeout); timeout = null; } };
+    let timeout: any = null;
+    const clearTimer = () => { if (timeout) { clearTimeout(timeout); timeout = null; } };
 
-    try {
-      book = ePub(activeEpubUrl);
-      const rendition = book.renderTo(epubViewerRef.current, {
-        width: '100%', height: '100%', spread: 'none',
-      });
+    (async () => {
+      // Fetch the file ourselves. epub.js's own XHR loader has no timeout
+      // handling and stalls indefinitely on slow connections; fetch() is
+      // reliable and lets us show a spinner instead of a false timeout.
+      let data: ArrayBuffer;
+      try {
+        const resp = await fetch(activeEpubUrl);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        data = await resp.arrayBuffer();
+      } catch (e: any) {
+        if (!destroyed) {
+          setEpubLoading(false);
+          setEpubError('Не удалось загрузить EPUB: ' + (e?.message || String(e)));
+        }
+        return;
+      }
+      if (destroyed || !epubViewerRef.current) return;
 
-      // Register all themes upfront
-      Object.entries(EPUB_THEMES).forEach(([name, styles]) => {
-        rendition.themes.register(name, styles);
-      });
-      rendition.themes.select(readerTheme);
-      rendition.themes.fontSize(epubFontSize + '%');
-      renditionRef.current = rendition;
+      // Data is in hand — a stall from here on is a real rendering failure,
+      // not slow network, so a watchdog is meaningful.
+      timeout = setTimeout(() => {
+        if (!destroyed) {
+          setEpubLoading(false);
+          setEpubError('EPUB не удалось отобразить (ошибка читалки).');
+        }
+      }, 30000);
 
-      // Load TOC
-      book.loaded.navigation
-        .then((nav: any) => { if (!destroyed) setToc(nav?.toc || []); })
-        .catch(() => { /* TOC is optional */ });
-
-      // Restore last position, then display. display() rejects if the book
-      // failed to open, so this catch covers load + render failures.
-      getReadingProgress(userId, item.id)
-        .catch(() => null)
-        .then((progress: any) => {
-          if (destroyed) return;
-          const cfi = progress?.format_url?.endsWith('.epub') ? progress.position : undefined;
-          return rendition.display(cfi || undefined);
-        })
-        .then(() => { if (!destroyed) clearLoad(); })
-        .catch((e: any) => {
-          if (!destroyed) { clearLoad(); setEpubError('Не удалось открыть EPUB: ' + (e?.message || String(e))); }
+      try {
+        book = ePub(data);
+        const rendition = book.renderTo(epubViewerRef.current, {
+          width: '100%', height: '100%', spread: 'none',
         });
 
-      // Save progress on every navigation
-      rendition.on('relocated', (location: any) => {
-        const cfi = location?.start?.cfi;
-        const pct = Math.round((location?.start?.percentage || 0) * 100);
-        if (cfi) saveReadingProgress(userId, item.id, cfi, pct, activeEpubUrl);
-      });
+        // Register all themes upfront
+        Object.entries(EPUB_THEMES).forEach(([name, styles]) => {
+          rendition.themes.register(name, styles);
+        });
+        rendition.themes.select(readerTheme);
+        rendition.themes.fontSize(epubFontSize + '%');
+        renditionRef.current = rendition;
 
-      // Swipe gestures (touches inside the epub iframe bubble up through rendition events)
-      rendition.on('touchstart', (ev: TouchEvent) => {
-        touchStartX.current = ev.changedTouches[0].clientX;
-        touchStartY.current = ev.changedTouches[0].clientY;
-      });
-      rendition.on('touchend', (ev: TouchEvent) => {
-        const dx = ev.changedTouches[0].clientX - touchStartX.current;
-        const dy = ev.changedTouches[0].clientY - touchStartY.current;
-        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-          dx < 0 ? rendition.next() : rendition.prev();
+        // Load TOC
+        book.loaded.navigation
+          .then((nav: any) => { if (!destroyed) setToc(nav?.toc || []); })
+          .catch(() => { /* TOC is optional */ });
+
+        // Save progress on every navigation
+        rendition.on('relocated', (location: any) => {
+          const cfi = location?.start?.cfi;
+          const pct = Math.round((location?.start?.percentage || 0) * 100);
+          if (cfi) saveReadingProgress(userId, item.id, cfi, pct, activeEpubUrl);
+        });
+
+        // Swipe gestures (touches inside the epub iframe bubble up through rendition events)
+        rendition.on('touchstart', (ev: TouchEvent) => {
+          touchStartX.current = ev.changedTouches[0].clientX;
+          touchStartY.current = ev.changedTouches[0].clientY;
+        });
+        rendition.on('touchend', (ev: TouchEvent) => {
+          const dx = ev.changedTouches[0].clientX - touchStartX.current;
+          const dy = ev.changedTouches[0].clientY - touchStartY.current;
+          if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+            dx < 0 ? rendition.next() : rendition.prev();
+          }
+        });
+
+        // Restore last position, then display
+        let progress: any = null;
+        try { progress = await getReadingProgress(userId, item.id); }
+        catch { /* progress is best-effort */ }
+        if (destroyed) return;
+        const cfi = progress?.format_url?.endsWith('.epub') ? progress.position : undefined;
+
+        await rendition.display(cfi || undefined);
+        if (!destroyed) { clearTimer(); setEpubLoading(false); }
+      } catch (e: any) {
+        if (!destroyed) {
+          clearTimer();
+          setEpubLoading(false);
+          setEpubError('Не удалось открыть EPUB: ' + (e?.message || String(e)));
         }
-      });
-    } catch (e: any) {
-      clearLoad();
-      setEpubError('Не удалось открыть EPUB: ' + (e?.message || String(e)));
-    }
+      }
+    })();
 
     return () => {
       destroyed = true;
-      clearLoad();
+      clearTimer();
       renditionRef.current = null;
       try { book?.destroy(); } catch { /* noop */ }
     };
@@ -602,6 +629,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             <div ref={epubViewerRef} className="w-full h-full" />
             {showToc && <TocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
+            {epubLoading && !epubError && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" />
+              </div>
+            )}
             {epubError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center bg-slate-900">
                 <p className="text-[10px] font-black uppercase text-red-400 tracking-widest">Ошибка просмотра EPUB</p>

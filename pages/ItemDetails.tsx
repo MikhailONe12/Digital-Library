@@ -80,12 +80,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const [avgRating, setAvgRating]        = useState(item.rating);
   const [isFav, setIsFav]                = useState(false);
 
-  const epubViewerRef = useRef<HTMLDivElement>(null);
-  const renditionRef  = useRef<any>(null);
-  const pdfCanvasRef  = useRef<HTMLCanvasElement>(null);
-  const pdfDocRef     = useRef<any>(null);
-  const touchStartX   = useRef(0);
-  const touchStartY   = useRef(0);
+  const epubViewerRef     = useRef<HTMLDivElement>(null);
+  const renditionRef      = useRef<any>(null);
+  const pdfCanvasRef      = useRef<HTMLCanvasElement>(null);
+  const pdfDocRef         = useRef<any>(null);
+  const pdfRenderTaskRef  = useRef<any>(null);
+  const touchStartX       = useRef(0);
+  const touchStartY       = useRef(0);
 
   const tg     = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
@@ -199,22 +200,52 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     return () => { cancelled = true; };
   }, [activeReaderUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PDF render
+  // PDF render — exactly one render task at a time, reliably cancellable
   useEffect(() => {
+    if (!activeReaderUrl || pdfTotalPages === 0) return;
     const doc    = pdfDocRef.current;
     const canvas = pdfCanvasRef.current;
-    if (!doc || !canvas || pdfTotalPages === 0) return;
-    let renderTask: any = null;
-    doc.getPage(pdfPage).then((page: any) => {
+    if (!doc || !canvas) return;
+
+    let cancelled = false;
+
+    // Abort any render still in flight before starting a new one. The ref
+    // survives the async boundary below, so this cancel actually lands.
+    if (pdfRenderTaskRef.current) {
+      try { pdfRenderTaskRef.current.cancel(); } catch { /* noop */ }
+      pdfRenderTaskRef.current = null;
+    }
+
+    (async () => {
+      let page: any;
+      try { page = await doc.getPage(pdfPage); }
+      catch { return; }
+      if (cancelled || pdfCanvasRef.current !== canvas) return;
+
       const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth;
       const base           = page.getViewport({ scale: 1 });
-      const scaledVP       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
-      canvas.width  = scaledVP.width;
-      canvas.height = scaledVP.height;
-      renderTask = page.render({ canvasContext: canvas.getContext('2d')!, viewport: scaledVP });
-    });
-    return () => renderTask?.cancel();
-  }, [pdfPage, pdfTotalPages, pdfScale]);
+      const viewport       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
+      const ctx            = canvas.getContext('2d');
+      if (!ctx) return;
+
+      canvas.width  = viewport.width;
+      canvas.height = viewport.height;
+
+      const task = page.render({ canvasContext: ctx, viewport });
+      pdfRenderTaskRef.current = task;
+      try { await task.promise; }
+      catch { /* cancelled or superseded */ }
+      finally { if (pdfRenderTaskRef.current === task) pdfRenderTaskRef.current = null; }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (pdfRenderTaskRef.current) {
+        try { pdfRenderTaskRef.current.cancel(); } catch { /* noop */ }
+        pdfRenderTaskRef.current = null;
+      }
+    };
+  }, [pdfPage, pdfTotalPages, pdfScale, activeReaderUrl]);
 
   // Save PDF progress when page changes (after doc is ready)
   useEffect(() => {
@@ -551,11 +582,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               onTouchStart={handleTouchStart}
               onTouchEnd={handlePdfTouchEnd}
             >
-              {pdfTotalPages === 0
-                ? <div className="flex items-center justify-center w-full"><div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" /></div>
-                : <canvas ref={pdfCanvasRef} className="max-w-full" style={{ filter: PDF_FILTER[readerTheme] }} />
-              }
+              <canvas
+                ref={pdfCanvasRef}
+                className="max-w-full self-start"
+                style={{ filter: PDF_FILTER[readerTheme] }}
+              />
             </div>
+            {pdfTotalPages === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" />
+              </div>
+            )}
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
           </div>
 

@@ -57,6 +57,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const [pdfPage, setPdfPage]             = useState(1);
   const [pdfTotalPages, setPdfTotalPages] = useState(0);
   const [pdfScale, setPdfScale]           = useState(1);
+  const [pdfError, setPdfError]           = useState<string | null>(null);
 
   // EPUB
   const [epubFontSize, setEpubFontSize] = useState<number>(() => {
@@ -174,77 +175,103 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // ── PDF load ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeReaderUrl) {
+      if (pdfRenderTaskRef.current) {
+        try { pdfRenderTaskRef.current.cancel(); } catch { /* noop */ }
+        pdfRenderTaskRef.current = null;
+      }
       pdfDocRef.current?.destroy();
       pdfDocRef.current = null;
       setPdfTotalPages(0);
       setPdfPage(1);
       setPdfScale(1);
+      setPdfError(null);
       return;
     }
     let cancelled = false;
+    setPdfError(null);
     (async () => {
-      const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
-      const doc = await pdfjsLib.getDocument(activeReaderUrl).promise;
-      if (cancelled) return;
-      pdfDocRef.current = doc;
-      const total = doc.numPages;
-      setPdfTotalPages(total);
-      const progress = await getReadingProgress(userId, item.id);
-      if (progress?.format_url?.endsWith('.pdf') && progress.position) {
-        const saved = parseInt(progress.position);
-        if (saved > 0 && saved <= total) { setPdfPage(saved); return; }
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+        const doc = await pdfjsLib.getDocument(activeReaderUrl).promise;
+        if (cancelled) { try { doc.destroy(); } catch { /* noop */ } return; }
+        pdfDocRef.current = doc;
+
+        let startPage = 1;
+        try {
+          const progress = await getReadingProgress(userId, item.id);
+          if (progress?.format_url?.endsWith('.pdf') && progress.position) {
+            const saved = parseInt(progress.position);
+            if (saved > 0 && saved <= doc.numPages) startPage = saved;
+          }
+        } catch { /* progress is best-effort */ }
+        if (cancelled) return;
+
+        // Set total + page together so the render effect runs once, settled.
+        setPdfTotalPages(doc.numPages);
+        setPdfPage(startPage);
+      } catch (e: any) {
+        if (!cancelled) setPdfError('Не удалось открыть PDF: ' + (e?.message || String(e)));
       }
-      setPdfPage(1);
     })();
     return () => { cancelled = true; };
   }, [activeReaderUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // PDF render — exactly one render task at a time, reliably cancellable
+  // PDF render — re-renders on every page/scale change. Spurious effect
+  // re-runs simply re-render the same page rather than leaving it blank.
   useEffect(() => {
     if (!activeReaderUrl || pdfTotalPages === 0) return;
     const doc    = pdfDocRef.current;
     const canvas = pdfCanvasRef.current;
     if (!doc || !canvas) return;
 
-    let cancelled = false;
-
-    // Abort any render still in flight before starting a new one. The ref
-    // survives the async boundary below, so this cancel actually lands.
-    if (pdfRenderTaskRef.current) {
-      try { pdfRenderTaskRef.current.cancel(); } catch { /* noop */ }
-      pdfRenderTaskRef.current = null;
-    }
+    let disposed = false;
 
     (async () => {
-      let page: any;
-      try { page = await doc.getPage(pdfPage); }
-      catch { return; }
-      if (cancelled || pdfCanvasRef.current !== canvas) return;
-
-      const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth;
-      const base           = page.getViewport({ scale: 1 });
-      const viewport       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
-      const ctx            = canvas.getContext('2d');
-      if (!ctx) return;
-
-      canvas.width  = viewport.width;
-      canvas.height = viewport.height;
-
-      const task = page.render({ canvasContext: ctx, viewport });
-      pdfRenderTaskRef.current = task;
-      try { await task.promise; }
-      catch { /* cancelled or superseded */ }
-      finally { if (pdfRenderTaskRef.current === task) pdfRenderTaskRef.current = null; }
-    })();
-
-    return () => {
-      cancelled = true;
+      // Cancel any in-flight render before drawing a new one. pdf.js throws if
+      // two render() calls overlap on the same canvas, so this must land.
       if (pdfRenderTaskRef.current) {
         try { pdfRenderTaskRef.current.cancel(); } catch { /* noop */ }
         pdfRenderTaskRef.current = null;
       }
-    };
+
+      let page: any;
+      try { page = await doc.getPage(pdfPage); }
+      catch (e: any) {
+        if (!disposed) setPdfError('Ошибка загрузки страницы: ' + (e?.message || String(e)));
+        return;
+      }
+      if (disposed || pdfCanvasRef.current !== canvas) return;
+
+      const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth || 800;
+      const base           = page.getViewport({ scale: 1 });
+      const viewport       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
+      canvas.width  = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+
+      let task: any;
+      try {
+        // Pass `canvas` (the pdf.js v5 recommended param) — pdf.js creates its
+        // own opaque 2D context internally.
+        task = page.render({ canvas, viewport });
+      } catch (e: any) {
+        if (!disposed) setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
+        return;
+      }
+      pdfRenderTaskRef.current = task;
+      try {
+        await task.promise;
+        if (!disposed) setPdfError(null);
+      } catch (e: any) {
+        if (e?.name !== 'RenderingCancelledException' && !disposed) {
+          setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
+        }
+      } finally {
+        if (pdfRenderTaskRef.current === task) pdfRenderTaskRef.current = null;
+      }
+    })();
+
+    return () => { disposed = true; };
   }, [pdfPage, pdfTotalPages, pdfScale, activeReaderUrl]);
 
   // Save PDF progress when page changes (after doc is ready)
@@ -588,9 +615,23 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 style={{ filter: PDF_FILTER[readerTheme] }}
               />
             </div>
-            {pdfTotalPages === 0 && (
+            {pdfTotalPages === 0 && !pdfError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" />
+              </div>
+            )}
+            {pdfError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center bg-slate-900">
+                <p className="text-[10px] font-black uppercase text-red-400 tracking-widest">Ошибка просмотра PDF</p>
+                <p className="text-xs text-white/60 break-words max-w-sm">{pdfError}</p>
+                <a
+                  href={activeReaderUrl}
+                  download
+                  onClick={() => trackActivity('download', item.id)}
+                  className="bg-red-600 text-white px-5 py-3 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] flex items-center gap-2"
+                >
+                  <Download size={14} strokeWidth={3} />Скачать файл
+                </a>
               </div>
             )}
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}

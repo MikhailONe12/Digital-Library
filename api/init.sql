@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS uploaded_files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_uf_item_id ON uploaded_files(item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_uf_item_filename ON uploaded_files(item_id, filename);
 
 -- Visit logs (will replace localStorage version in Step 5)
 CREATE TABLE IF NOT EXISTS visit_logs (

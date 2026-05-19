@@ -35,6 +35,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const [newType, setNewType] = useState('');
   const [importJson, setImportJson] = useState('');
   const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
+  const [stagedCoverFile, setStagedCoverFile] = useState<File | null>(null);
+  const [stagedContentFile, setStagedContentFile] = useState<{ file: File; formatId: string } | null>(null);
   const [serverApiKeyInput, setServerApiKeyInput] = useState(() => getServerApiKey());
   const [loginLoading, setLoginLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -95,8 +97,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     };
   }, [db.visitLogs]);
 
+  const formatFileSize = (bytes: number) =>
+    bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${(bytes / 1024).toFixed(0)} KB`;
+
   const uploadCover = (itemId: string) => {
-    const file = coverInputRef.current?.files?.[0];
+    const file = stagedCoverFile;
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
@@ -107,6 +112,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     };
     xhr.onload = () => {
       setUploadState(null);
+      setStagedCoverFile(null);
       if (coverInputRef.current) coverInputRef.current.value = '';
       if (xhr.status === 200) {
         const res = JSON.parse(xhr.responseText);
@@ -123,7 +129,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   };
 
   const uploadContentFile = (itemId: string, formatId: string, lang: string) => {
-    const file = fileInputRef.current?.files?.[0];
+    const file = stagedContentFile?.file;
     if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
@@ -135,6 +141,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     };
     xhr.onload = () => {
       setUploadState(null);
+      setStagedContentFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       uploadingFormatId.current = null;
       if (xhr.status === 200) {
@@ -950,19 +957,26 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
                       <button type="button"
                         onClick={() => coverInputRef.current?.click()}
-                        disabled={uploadState?.field === 'cover'}
-                        title="Загрузить с компьютера"
+                        disabled={uploadState?.field === 'cover' || !!stagedCoverFile}
+                        title="Выбрать файл"
                         className="px-3 bg-slate-100 rounded-2xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
                         <Upload size={16} />
                       </button>
                     </div>
+                    {stagedCoverFile && !uploadState && (
+                      <div className="mt-2 flex items-center gap-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
+                        <span className="text-[9px] font-bold text-blue-700 flex-1 truncate">{stagedCoverFile.name} ({formatFileSize(stagedCoverFile.size)})</span>
+                        <button type="button" onClick={() => editingItem?.id && uploadCover(editingItem.id)} className="px-3 py-1 bg-blue-600 text-white text-[9px] font-black rounded-lg shrink-0">Загрузить</button>
+                        <button type="button" onClick={() => { setStagedCoverFile(null); if (coverInputRef.current) coverInputRef.current.value = ''; }} className="p-1 text-blue-400 hover:text-red-500 shrink-0"><X size={12} /></button>
+                      </div>
+                    )}
                     {uploadState?.field === 'cover' && (
                       <div className="mt-2 bg-slate-100 rounded-full h-2 overflow-hidden">
                         <div className="bg-red-600 h-2 rounded-full transition-all duration-300" style={{ width: `${uploadState.progress}%` }} />
                       </div>
                     )}
                     <input ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
-                      onChange={() => editingItem?.id && uploadCover(editingItem.id)} />
+                      onChange={e => setStagedCoverFile(e.target.files?.[0] || null)} />
                   </div>
                   <div>
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Видео (YouTube / Rutube / Vimeo / Twitch)</label>
@@ -1041,12 +1055,19 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
                             <button type="button"
                               onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }}
-                              disabled={uploadState !== null}
-                              title="Загрузить с компьютера"
+                              disabled={uploadState !== null || !!stagedContentFile}
+                              title="Выбрать файл"
                               className="px-2 bg-slate-100 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
                               <Upload size={12} />
                             </button>
                           </div>
+                          {stagedContentFile?.formatId === f.id && !uploadState && (
+                            <div className="mt-1 flex items-center gap-1.5 p-1.5 bg-blue-50 rounded-lg border border-blue-100">
+                              <span className="text-[8px] font-bold text-blue-700 flex-1 truncate">{stagedContentFile.file.name} ({formatFileSize(stagedContentFile.file.size)})</span>
+                              <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language || 'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">Загрузить</button>
+                              <button type="button" onClick={() => { setStagedContentFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="text-blue-400 hover:text-red-500 shrink-0"><X size={10} /></button>
+                            </div>
+                          )}
                           {uploadState?.field === f.id && (
                             <div className="mt-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
                               <div className="bg-red-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadState.progress}%` }} />
@@ -1076,10 +1097,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     type="file"
                     accept=".pdf,.epub,.fb2,.mp4,.webm,.mkv,.mp3"
                     className="hidden"
-                    onChange={() => {
+                    onChange={e => {
+                      const file = e.target.files?.[0];
                       const id = uploadingFormatId.current;
-                      const fmt = editingItem?.formats?.find(f => f.id === id);
-                      if (id && fmt && editingItem?.id) uploadContentFile(editingItem.id, id, fmt.language || 'ru');
+                      if (file && id) setStagedContentFile({ file, formatId: id });
                     }}
                   />
                 </div>

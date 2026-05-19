@@ -184,7 +184,8 @@ app.post('/api/upload/:itemId/cover',
     try {
       await pool.query(
         `INSERT INTO uploaded_files (item_id, file_type, filename, url, size_bytes)
-         VALUES ($1, 'cover', $2, $3, $4)`,
+         VALUES ($1, 'cover', $2, $3, $4)
+         ON CONFLICT (item_id, filename) DO UPDATE SET url = $3, size_bytes = $4, uploaded_at = NOW()`,
         [req.params.itemId, req.file.filename, url, req.file.size],
       );
     } catch (e) {
@@ -234,7 +235,8 @@ app.post('/api/upload/:itemId/file',
     try {
       await pool.query(
         `INSERT INTO uploaded_files (item_id, file_type, filename, url, size_bytes, language)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (item_id, filename) DO UPDATE SET url = $4, size_bytes = $5, uploaded_at = NOW()`,
         [req.params.itemId, ext, filename, url, size, lang],
       );
     } catch (e) {

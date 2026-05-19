@@ -66,6 +66,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   });
   const [toc, setToc]         = useState<TocItem[]>([]);
   const [showToc, setShowToc] = useState(false);
+  const [epubError, setEpubError] = useState<string | null>(null);
 
   // Theme: persisted
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>(() => {
@@ -118,52 +119,77 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // ── EPUB init ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!activeEpubUrl || !epubViewerRef.current) return;
-    const book = ePub(activeEpubUrl);
-    const rendition = book.renderTo(epubViewerRef.current, {
-      width: '100%', height: '100%', spread: 'none',
-    });
+    setEpubError(null);
+    let destroyed = false;
+    let book: any = null;
+    let timeout: any = setTimeout(() => {
+      if (!destroyed) setEpubError('EPUB не удалось загрузить (превышено время ожидания).');
+    }, 25000);
+    const clearLoad = () => { if (timeout) { clearTimeout(timeout); timeout = null; } };
 
-    // Register all themes upfront
-    Object.entries(EPUB_THEMES).forEach(([name, styles]) => {
-      rendition.themes.register(name, styles);
-    });
-    rendition.themes.select(readerTheme);
-    rendition.themes.fontSize(epubFontSize + '%');
+    try {
+      book = ePub(activeEpubUrl);
+      const rendition = book.renderTo(epubViewerRef.current, {
+        width: '100%', height: '100%', spread: 'none',
+      });
 
-    // Load TOC
-    book.loaded.navigation.then((nav: any) => setToc(nav?.toc || []));
+      // Register all themes upfront
+      Object.entries(EPUB_THEMES).forEach(([name, styles]) => {
+        rendition.themes.register(name, styles);
+      });
+      rendition.themes.select(readerTheme);
+      rendition.themes.fontSize(epubFontSize + '%');
+      renditionRef.current = rendition;
 
-    // Restore last position or start at beginning
-    getReadingProgress(userId, item.id).then(progress => {
-      if (progress?.format_url?.endsWith('.epub') && progress.position) {
-        rendition.display(progress.position);
-      } else {
-        rendition.display();
-      }
-    });
+      // Load TOC
+      book.loaded.navigation
+        .then((nav: any) => { if (!destroyed) setToc(nav?.toc || []); })
+        .catch(() => { /* TOC is optional */ });
 
-    // Save progress on every navigation
-    rendition.on('relocated', (location: any) => {
-      const cfi = location?.start?.cfi;
-      const pct = Math.round((location?.start?.percentage || 0) * 100);
-      if (cfi) saveReadingProgress(userId, item.id, cfi, pct, activeEpubUrl);
-    });
+      // Restore last position, then display. display() rejects if the book
+      // failed to open, so this catch covers load + render failures.
+      getReadingProgress(userId, item.id)
+        .catch(() => null)
+        .then((progress: any) => {
+          if (destroyed) return;
+          const cfi = progress?.format_url?.endsWith('.epub') ? progress.position : undefined;
+          return rendition.display(cfi || undefined);
+        })
+        .then(() => { if (!destroyed) clearLoad(); })
+        .catch((e: any) => {
+          if (!destroyed) { clearLoad(); setEpubError('Не удалось открыть EPUB: ' + (e?.message || String(e))); }
+        });
 
-    // Swipe gestures (touches inside the epub iframe bubble up through rendition events)
-    rendition.on('touchstart', (ev: TouchEvent) => {
-      touchStartX.current = ev.changedTouches[0].clientX;
-      touchStartY.current = ev.changedTouches[0].clientY;
-    });
-    rendition.on('touchend', (ev: TouchEvent) => {
-      const dx = ev.changedTouches[0].clientX - touchStartX.current;
-      const dy = ev.changedTouches[0].clientY - touchStartY.current;
-      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-        dx < 0 ? rendition.next() : rendition.prev();
-      }
-    });
+      // Save progress on every navigation
+      rendition.on('relocated', (location: any) => {
+        const cfi = location?.start?.cfi;
+        const pct = Math.round((location?.start?.percentage || 0) * 100);
+        if (cfi) saveReadingProgress(userId, item.id, cfi, pct, activeEpubUrl);
+      });
 
-    renditionRef.current = rendition;
-    return () => { renditionRef.current = null; book.destroy(); };
+      // Swipe gestures (touches inside the epub iframe bubble up through rendition events)
+      rendition.on('touchstart', (ev: TouchEvent) => {
+        touchStartX.current = ev.changedTouches[0].clientX;
+        touchStartY.current = ev.changedTouches[0].clientY;
+      });
+      rendition.on('touchend', (ev: TouchEvent) => {
+        const dx = ev.changedTouches[0].clientX - touchStartX.current;
+        const dy = ev.changedTouches[0].clientY - touchStartY.current;
+        if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+          dx < 0 ? rendition.next() : rendition.prev();
+        }
+      });
+    } catch (e: any) {
+      clearLoad();
+      setEpubError('Не удалось открыть EPUB: ' + (e?.message || String(e)));
+    }
+
+    return () => {
+      destroyed = true;
+      clearLoad();
+      renditionRef.current = null;
+      try { book?.destroy(); } catch { /* noop */ }
+    };
   }, [activeEpubUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // EPUB zoom live update
@@ -576,6 +602,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             <div ref={epubViewerRef} className="w-full h-full" />
             {showToc && <TocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
+            {epubError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center bg-slate-900">
+                <p className="text-[10px] font-black uppercase text-red-400 tracking-widest">Ошибка просмотра EPUB</p>
+                <p className="text-xs text-white/60 break-words max-w-sm">{epubError}</p>
+                <a
+                  href={activeEpubUrl ?? undefined}
+                  download
+                  onClick={() => trackActivity('download', item.id)}
+                  className="bg-red-600 text-white px-5 py-3 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] flex items-center gap-2"
+                >
+                  <Download size={14} strokeWidth={3} />Скачать файл
+                </a>
+              </div>
+            )}
           </div>
 
           <footer className="p-3 border-t border-white/5 flex items-center justify-between shrink-0"

@@ -4,6 +4,7 @@ import { MediaItem, Locale, FileFormat } from '../types';
 import { ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
+import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating, getAverageRating } from '../services/db';
 import { pickText, handleCoverError } from '../utils';
 
@@ -18,10 +19,14 @@ interface ItemDetailsProps {
 const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl] = useState<string | null>(null);
+  const [pdfPage, setPdfPage] = useState(1);
+  const [pdfTotalPages, setPdfTotalPages] = useState(0);
   const [userRating, setUserRatingState] = useState(0);
   const [avgRating, setAvgRating] = useState(item.rating);
   const epubViewerRef = useRef<HTMLDivElement>(null);
   const renditionRef = useRef<any>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
+  const pdfDocRef = useRef<any>(null);
 
   const tg = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
@@ -49,6 +54,46 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       book.destroy();
     };
   }, [activeEpubUrl]);
+
+  // Load PDF document
+  useEffect(() => {
+    if (!activeReaderUrl) {
+      pdfDocRef.current?.destroy();
+      pdfDocRef.current = null;
+      setPdfTotalPages(0);
+      setPdfPage(1);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrc;
+      const doc = await pdfjsLib.getDocument(activeReaderUrl).promise;
+      if (cancelled) return;
+      pdfDocRef.current = doc;
+      setPdfTotalPages(doc.numPages);
+      setPdfPage(1);
+    })();
+    return () => { cancelled = true; };
+  }, [activeReaderUrl]);
+
+  // Render PDF page
+  useEffect(() => {
+    const doc = pdfDocRef.current;
+    const canvas = pdfCanvasRef.current;
+    if (!doc || !canvas || pdfTotalPages === 0) return;
+    let renderTask: any = null;
+    doc.getPage(pdfPage).then((page: any) => {
+      const containerWidth = canvas.parentElement?.clientWidth || window.innerWidth;
+      const viewport = page.getViewport({ scale: 1 });
+      const scale = containerWidth / viewport.width;
+      const scaledViewport = page.getViewport({ scale });
+      canvas.width = scaledViewport.width;
+      canvas.height = scaledViewport.height;
+      renderTask = page.render({ canvasContext: canvas.getContext('2d')!, viewport: scaledViewport });
+    });
+    return () => renderTask?.cancel();
+  }, [pdfPage, pdfTotalPages]);
 
   const handleToggleFav = () => {
     toggleFavorite(userId, item.id);
@@ -328,32 +373,47 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
       {activeReaderUrl && (
         <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">
-          <header className="p-5 flex items-center justify-between bg-slate-900 border-b border-white/10">
+          <header className="p-5 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-600 rounded-lg text-white">
                 <BookOpen size={16} />
               </div>
               <div>
-                <p className="text-[10px] font-black uppercase text-white/40 tracking-widest leading-none mb-1">Reader Mode</p>
+                <p className="text-[10px] font-black uppercase text-white/40 tracking-widest leading-none mb-1">PDF Reader</p>
                 <p className="text-xs font-black text-white truncate max-w-[200px]">{pickText(item.title, lang)}</p>
               </div>
             </div>
-            <button 
+            <button
               onClick={() => setActiveReaderUrl(null)}
               className="p-3 bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-90"
             >
               <X size={20} />
             </button>
           </header>
-          <div className="flex-1 bg-slate-800 relative">
-            <iframe 
-                src={`${activeReaderUrl}#toolbar=0&navpanes=0&scrollbar=0`} 
-                className="w-full h-full border-none" 
-                title="Document Reader"
-            />
+          <div className="flex-1 overflow-y-auto bg-slate-800 flex justify-center">
+            {pdfTotalPages === 0
+              ? <div className="flex items-center justify-center w-full"><div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" /></div>
+              : <canvas ref={pdfCanvasRef} className="max-w-full" />
+            }
           </div>
-          <footer className="p-4 bg-slate-900 text-center border-t border-white/5">
-             <p className="text-[8px] font-black uppercase text-white/20 tracking-[0.4em]">{t.closeReader}</p>
+          <footer className="p-4 bg-slate-900 border-t border-white/5 flex items-center justify-between shrink-0">
+            <button
+              onClick={() => setPdfPage(p => Math.max(1, p - 1))}
+              disabled={pdfPage <= 1}
+              className="p-3 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-90"
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <p className="text-[9px] font-black uppercase text-white/40 tracking-widest">
+              {pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}
+            </p>
+            <button
+              onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))}
+              disabled={pdfPage >= pdfTotalPages}
+              className="p-3 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-90"
+            >
+              <ChevronRight size={22} />
+            </button>
           </footer>
         </div>
       )}

@@ -204,7 +204,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         const data = await resp.arrayBuffer();
         if (cancelled) return;
 
-        const doc = await pdfjsLib.getDocument({ data }).promise;
+        const doc = await pdfjsLib.getDocument({ data, wasmUrl: '/wasm/' }).promise;
         if (cancelled) { try { doc.destroy(); } catch { /* noop */ } return; }
         pdfDocRef.current = doc;
 

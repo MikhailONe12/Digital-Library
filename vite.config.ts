@@ -2,19 +2,27 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { cpSync } from 'node:fs'
 
 export default defineConfig({
   plugins: [
     react(),
     // The precaching service worker left clients (especially iOS Safari)
-    // serving a stale/mixed cache after deploys — a cached index.html pointing
-    // at JS chunks that no longer exist, which blanks the whole app.
-    // selfDestroying emits a service worker that unregisters itself and clears
-    // every cache, removing the PWA from all clients that already installed it.
+    // serving a stale/mixed cache after deploys. selfDestroying emits a
+    // service worker that unregisters itself and clears every cache.
     VitePWA({
       selfDestroying: true,
       registerType: 'autoUpdate',
     }),
+    {
+      // pdf.js v5 decodes scanned-page images (JBIG2 / JPEG2000) with
+      // WebAssembly. Ship pdf.js's wasm folder so getDocument({ wasmUrl })
+      // can load the decoders — without it scanned pages render blank.
+      name: 'copy-pdfjs-wasm',
+      closeBundle() {
+        cpSync('node_modules/pdfjs-dist/wasm', 'dist/wasm', { recursive: true })
+      },
+    },
   ],
   build: {
     outDir: 'dist',

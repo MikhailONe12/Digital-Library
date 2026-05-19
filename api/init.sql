@@ -75,3 +75,15 @@ CREATE TABLE IF NOT EXISTS user_ratings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ratings_item ON user_ratings(item_id);
+
+-- Reader bookmarks — multiple per user per item, shared across devices
+CREATE TABLE IF NOT EXISTS user_bookmarks (
+  id         TEXT        PRIMARY KEY,
+  user_id    TEXT        NOT NULL,
+  item_id    TEXT        NOT NULL,
+  position   TEXT        NOT NULL,  -- page number (PDF) or CFI string (EPUB)
+  label      TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bm_user_item ON user_bookmarks(user_id, item_id);

@@ -61,6 +61,15 @@ export interface VisitLog {
   device: string;
 }
 
+export interface Bookmark {
+  id: string;
+  user_id: string;
+  item_id: string;
+  position: string;
+  label: string;
+  created_at: string;
+}
+
 export interface AppState {
   items: MediaItem[];
   allowedUsers: string[]; // Whitelist

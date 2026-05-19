@@ -1,4 +1,4 @@
-import { AppState, MediaItem } from '../types';
+import { AppState, MediaItem, Bookmark } from '../types';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -352,4 +352,32 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ type, username }),
   }).catch(() => {/* best effort */});
+};
+
+// ── Bookmarks ─────────────────────────────────────────────────────────────────
+
+export const getBookmarks = async (userId: string, itemId: string): Promise<Bookmark[]> => {
+  try {
+    const res = await fetch(`/api/users/${userId}/bookmarks/${itemId}`);
+    const data = await res.json();
+    return data.bookmarks || [];
+  } catch {
+    return [];
+  }
+};
+
+export const addBookmark = async (userId: string, itemId: string, position: string, label: string): Promise<void> => {
+  try {
+    await fetch(`/api/users/${userId}/bookmarks/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position, label }),
+    });
+  } catch {/* best effort */}
+};
+
+export const deleteBookmark = async (userId: string, bookmarkId: string): Promise<void> => {
+  try {
+    await fetch(`/api/users/${userId}/bookmarks/${bookmarkId}`, { method: 'DELETE' });
+  } catch {/* best effort */}
 };

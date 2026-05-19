@@ -585,6 +585,63 @@ app.put('/api/users/:userId/ratings/:itemId',
   },
 );
 
+// ── Bookmarks ────────────────────────────────────────────────────────────────
+
+app.get('/api/users/:userId/bookmarks/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, item_id, position, label, created_at
+           FROM user_bookmarks
+          WHERE user_id = $1 AND item_id = $2
+          ORDER BY created_at DESC`,
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ bookmarks: rows });
+    } catch {
+      res.json({ bookmarks: [] });
+    }
+  },
+);
+
+app.post('/api/users/:userId/bookmarks/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    const position = clip(req.body?.position, 512);
+    const label    = clip(req.body?.label, 100) || 'Закладка';
+    if (!position) return res.status(400).json({ error: 'position required' });
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try {
+      await pool.query(
+        `INSERT INTO user_bookmarks (id, user_id, item_id, position, label)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [id, req.params.userId, req.params.itemId, position, label],
+      );
+      res.json({ ok: true, id });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+app.delete('/api/users/:userId/bookmarks/:bookmarkId',
+  validateUserId,
+  async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.bookmarkId))
+      return res.status(400).json({ error: 'Invalid bookmark ID' });
+    try {
+      await pool.query(
+        'DELETE FROM user_bookmarks WHERE id = $1 AND user_id = $2',
+        [req.params.bookmarkId, req.params.userId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
 // ── Error handlers ───────────────────────────────────────────────────────────
 
 app.use((req, res) => res.status(404).json({ error: 'Not found' }));

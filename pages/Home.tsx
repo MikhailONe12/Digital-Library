@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { MediaItem, Locale, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
-import { Search, TrendingUp, BarChart3, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
+import { Search, TrendingUp, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
 
 interface HomeProps {
@@ -61,9 +61,7 @@ const Home: React.FC<HomeProps> = ({
           onTouchStart={handleStart}
           onTouchEnd={handleEnd}
         >
-            <div className="p-3 bg-red-600 rounded-2xl text-white shadow-xl shadow-red-200">
-                <BarChart3 size={28} />
-            </div>
+            <img src="/icon.svg" alt="OptionsData" className="w-14 h-14 rounded-2xl shadow-xl shadow-red-200" />
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter">Options<span className="text-red-600 font-extrabold">Data</span></h1>
         </div>
         <p className="text-slate-400 text-[11px] uppercase font-black tracking-[0.5em] flex items-center gap-2 ml-1">

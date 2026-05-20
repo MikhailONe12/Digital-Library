@@ -521,7 +521,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             <h1 className="text-2xl font-black leading-tight text-slate-900 tracking-tight drop-shadow-sm mb-3">{pickText(item.title, lang)}</h1>
             <div className="flex items-center gap-3 bg-white w-fit px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
               <Star size={14} className="text-red-600 fill-red-600" />
-              <span className="text-xs font-black text-slate-900 uppercase tracking-tighter">Conviction: {avgRating} / 5</span>
+              <span className="text-xs font-black text-slate-900 uppercase tracking-tighter">{t.rating}: {avgRating} / 5</span>
             </div>
           </div>
         </div>

@@ -13,6 +13,20 @@ export default defineConfig({
     VitePWA({
       selfDestroying: true,
       registerType: 'autoUpdate',
+      includeAssets: ['icon.svg', 'icon-180.png', 'icon-192.png', 'icon-512.png'],
+      manifest: {
+        name: 'OptionsData — Digital Library',
+        short_name: 'OptionsData',
+        theme_color: '#F5312B',
+        background_color: '#f8fafc',
+        display: 'standalone',
+        icons: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+        ],
+      },
     }),
     {
       // pdf.js v5 decodes scanned-page images (JBIG2 / JPEG2000) with

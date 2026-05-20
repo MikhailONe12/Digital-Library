@@ -24,6 +24,12 @@ export interface FileFormat {
   allowReading?: boolean;  // Per-file permission
 }
 
+export interface VideoLink {
+  id: string;
+  url: string;
+  source: string; // YouTube | RuTube | Twitch | VK | custom label
+}
+
 export interface MediaItem {
   id: string;
   title: MultilingualText;
@@ -35,7 +41,8 @@ export interface MediaItem {
   publishedDate: string; // When the content was originally released (e.g. book release year)
   addedDate: string;     // When the content was added to THIS library (ISO String)
   formats: FileFormat[];
-  videoUrl?: string; 
+  videoUrl?: string;       // legacy single video (kept for backward compatibility)
+  videos?: VideoLink[];    // multiple videos with source labels
   isPrivate: boolean;
   views: number;
   downloads: number;

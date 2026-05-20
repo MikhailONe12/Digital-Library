@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { AppState, MediaItem, Locale, FileFormat, CustomType } from '../types';
-import { 
+import { AppState, MediaItem, Locale, FileFormat, CustomType, VideoLink } from '../types';
+import {
   Plus, Edit2, Trash2, Users, Eye, Download, LogOut, Tags,
   ShieldCheck, X, AtSign, Unlock, Lock,
-  Percent, Database, Upload,
+  Percent, Database, Upload, Video,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
 import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
@@ -239,6 +239,23 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     if (editingItem && editingItem.formats) {
       setEditingItem({ ...editingItem, formats: editingItem.formats.filter(f => f.id !== id) });
     }
+  };
+
+  const handleAddVideo = () => {
+    if (!editingItem) return;
+    const newVideo: VideoLink = { id: Date.now().toString(), url: '', source: 'YouTube' };
+    setEditingItem({ ...editingItem, videos: [...(editingItem.videos || []), newVideo] });
+  };
+
+  const handleUpdateVideo = (id: string, field: 'url' | 'source', value: string) => {
+    if (!editingItem) return;
+    const updated = (editingItem.videos || []).map(v => v.id === id ? { ...v, [field]: value } : v);
+    setEditingItem({ ...editingItem, videos: updated });
+  };
+
+  const handleRemoveVideo = (id: string) => {
+    if (!editingItem) return;
+    setEditingItem({ ...editingItem, videos: (editingItem.videos || []).filter(v => v.id !== id) });
   };
 
   const handleDeleteFormat = async (f: FileFormat) => {
@@ -1132,9 +1149,39 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       onChange={e => setStagedCoverFile(e.target.files?.[0] || null)} />
                   </div>
                   <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Видео (YouTube / Rutube / Vimeo / Twitch)</label>
-                    <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                      value={editingItem.videoUrl || ''} onChange={e => setEditingItem({...editingItem, videoUrl: e.target.value})} />
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2 flex items-center gap-1.5"><Video size={11} /> Видео контент</label>
+                      <button type="button" onClick={handleAddVideo} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">+ Добавить видео</button>
+                    </div>
+                    <div className="space-y-2">
+                      {(editingItem.videos || []).map(v => {
+                        const presets = ['YouTube', 'RuTube', 'Twitch', 'VK'];
+                        const isCustom = !presets.includes(v.source);
+                        return (
+                          <div key={v.id} className="p-2.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={isCustom ? '__custom__' : v.source}
+                                onChange={e => handleUpdateVideo(v.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
+                                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
+                                {presets.map(p => <option key={p} value={p}>{p}</option>)}
+                                <option value="__custom__">Свой источник…</option>
+                              </select>
+                              {isCustom && (
+                                <input type="text" placeholder="Название источника" className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                                  value={v.source} onChange={e => handleUpdateVideo(v.id, 'source', e.target.value)} />
+                              )}
+                              <button type="button" onClick={() => handleRemoveVideo(v.id)} className="p-2 text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button>
+                            </div>
+                            <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                              value={v.url} onChange={e => handleUpdateVideo(v.id, 'url', e.target.value)} />
+                          </div>
+                        );
+                      })}
+                      {(!editingItem.videos || editingItem.videos.length === 0) && (
+                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center py-3">Видео не добавлено</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

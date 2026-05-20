@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MediaItem, Locale, FileFormat, Bookmark } from '../types';
+import { MediaItem, Locale, FileFormat, Bookmark, VideoLink } from '../types';
 import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
@@ -41,7 +41,7 @@ const PDF_BG: Record<ReaderTheme, string> = {
   sepia:   'bg-amber-100',
 };
 
-const PDF_CHROME: Record<ReaderTheme, { bg: string; border: string; btn: string; text: string; sub: string }> = {
+const READER_CHROME: Record<ReaderTheme, { bg: string; border: string; btn: string; text: string; sub: string }> = {
   default: { bg: 'bg-white',     border: 'border-slate-200', btn: 'bg-slate-100 hover:bg-slate-200 text-slate-700', text: 'text-slate-900', sub: 'text-slate-400'     },
   night:   { bg: 'bg-slate-900', border: 'border-white/10',  btn: 'bg-white/10 hover:bg-white/20 text-white',       text: 'text-white',    sub: 'text-white/40'       },
   sepia:   { bg: 'bg-amber-50',  border: 'border-amber-200', btn: 'bg-amber-100 hover:bg-amber-200 text-amber-800', text: 'text-amber-900', sub: 'text-amber-700/60'  },
@@ -228,6 +228,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           }
         });
 
+        // Keyboard ← / → from inside the epub iframe (where focus usually is)
+        rendition.on('keyup', (ev: KeyboardEvent) => {
+          if (ev.key === 'ArrowLeft')  rendition.prev();
+          if (ev.key === 'ArrowRight') rendition.next();
+        });
+
         // Restore last position, then display
         let progress: any = null;
         try { progress = await getReadingProgress(userId, item.id); }
@@ -259,6 +265,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   // EPUB theme live update
   useEffect(() => { renditionRef.current?.themes?.select(readerTheme); }, [readerTheme]);
+
+  // EPUB keyboard navigation (desktop ← / →)
+  useEffect(() => {
+    if (!activeEpubUrl) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft')  renditionRef.current?.prev();
+      if (e.key === 'ArrowRight') renditionRef.current?.next();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeEpubUrl]);
 
   // ── PDF load ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -466,15 +483,32 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   const getVideoEmbed = (url?: string) => {
     if (!url) return null;
+    const host = window.location.hostname;
     const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
     if (ytMatch) return <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${ytMatch[1]}`} frameBorder="0" allowFullScreen></iframe>;
     const rtMatch = url.match(/rutube\.ru\/video\/([a-z0-9]+)/i);
     if (rtMatch) return <iframe width="100%" height="100%" src={`https://rutube.ru/play/embed/${rtMatch[1]}`} frameBorder="0" allowFullScreen></iframe>;
+    const twVod = url.match(/twitch\.tv\/videos\/(\d+)/i);
+    if (twVod) return <iframe width="100%" height="100%" src={`https://player.twitch.tv/?video=${twVod[1]}&parent=${host}&autoplay=false`} frameBorder="0" allowFullScreen></iframe>;
+    const twClip = url.match(/clips\.twitch\.tv\/([a-zA-Z0-9_-]+)/i);
+    if (twClip) return <iframe width="100%" height="100%" src={`https://clips.twitch.tv/embed?clip=${twClip[1]}&parent=${host}`} frameBorder="0" allowFullScreen></iframe>;
+    const twCh = url.match(/twitch\.tv\/([a-zA-Z0-9_]+)\/?$/i);
+    if (twCh) return <iframe width="100%" height="100%" src={`https://player.twitch.tv/?channel=${twCh[1]}&parent=${host}&autoplay=false`} frameBorder="0" allowFullScreen></iframe>;
+    const vkExt = url.match(/vk(?:video)?\.(?:com|ru)\/video_ext\.php/i);
+    if (vkExt) return <iframe width="100%" height="100%" src={url} frameBorder="0" allowFullScreen></iframe>;
+    const vkMatch = url.match(/vk(?:video)?\.(?:com|ru)\/(?:.*?)video(-?\d+)_(\d+)/i);
+    if (vkMatch) return <iframe width="100%" height="100%" src={`https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2`} frameBorder="0" allowFullScreen></iframe>;
     if (/\.(mp4|webm|ogg|mov)$/i.test(url)) return <video src={url} controls className="w-full h-full bg-slate-100" poster={item.coverUrl} />;
     return null;
   };
 
-  const videoPlayer = getVideoEmbed(item.videoUrl);
+  // Prefer the new multi-video list; fall back to the legacy single videoUrl.
+  const videoList: VideoLink[] = (item.videos && item.videos.length > 0)
+    ? item.videos
+    : (item.videoUrl ? [{ id: 'legacy', url: item.videoUrl, source: '' }] : []);
+  const playableVideos = videoList
+    .map(v => ({ ...v, embed: getVideoEmbed(v.url) }))
+    .filter(v => v.embed);
 
   const handleRead = (format: FileFormat) => {
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;
@@ -611,10 +645,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm leading-relaxed text-slate-600 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
         </div>
 
-        {videoPlayer && (
+        {playableVideos.length > 0 && (
           <div className="mt-10">
             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.preview}</h2>
-            <div className="aspect-video rounded-[2rem] overflow-hidden border-4 border-white shadow-2xl bg-slate-100 relative group">{videoPlayer}</div>
+            <div className="space-y-6">
+              {playableVideos.map(v => (
+                <div key={v.id}>
+                  {v.source && (
+                    <span className="inline-block mb-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 px-3 py-1 rounded-lg">{v.source}</span>
+                  )}
+                  <div className="aspect-video rounded-[2rem] overflow-hidden border-4 border-white shadow-2xl bg-slate-100 relative group">{v.embed}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -669,42 +712,42 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
       {/* ── EPUB Reader ────────────────────────────────────────────────────── */}
       {activeEpubUrl && (
-        <div className="fixed inset-0 z-[500] flex flex-col animate-in fade-in duration-300"
-          style={{ background: readerTheme === 'sepia' ? '#f4ecd8' : readerTheme === 'night' ? '#0f172a' : '#1e293b' }}>
-          <header className="px-4 pb-4 flex items-center justify-between border-b border-white/10 shrink-0"
-            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a', paddingTop: 'calc(1rem + var(--safe-top))' }}>
+        <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
+          <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0`}
+            style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
             <div className="flex items-center gap-2">
               {toc.length > 0 && (
                 <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); }}
-                  className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Содержание">
+                  className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Содержание">
                   <List size={16} />
                 </button>
               )}
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
-              <p className="text-xs font-black text-white truncate max-w-[130px]">{pickText(item.title, lang)}</p>
+              <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[130px]`}>{pickText(item.title, lang)}</p>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={cycleTheme} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Тема">
+              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
-              <button onClick={handleAddEpubBookmark} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Добавить закладку">
+              <button onClick={handleAddEpubBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); }} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all relative" title="Закладки">
+              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
               </button>
-              <button onClick={() => setActiveEpubUrl(null)} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all"><X size={20} /></button>
+              <button onClick={() => setActiveEpubUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
             </div>
           </header>
 
-          <div className="flex-1 relative overflow-hidden">
+          <div className="flex-1 relative overflow-hidden"
+            style={{ background: readerTheme === 'night' ? '#0f172a' : readerTheme === 'sepia' ? '#f4ecd8' : '#ffffff' }}>
             <div ref={epubViewerRef} className="w-full h-full" />
             {showToc && <TocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
             {epubLoading && !epubError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" />
+                <div className="w-8 h-8 border-4 border-slate-300 border-t-red-600 rounded-full animate-spin" />
               </div>
             )}
             {epubError && (
@@ -715,43 +758,43 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             )}
           </div>
 
-          <footer className="px-4 pt-3 border-t border-white/5 flex items-center justify-between gap-3 shrink-0"
-            style={{ background: readerTheme === 'sepia' ? '#e8d5b0' : '#0f172a', paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
-            <button onClick={() => renditionRef.current?.prev()} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-95"><ChevronLeft size={26} /></button>
+          <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}
+            style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
+            <button onClick={() => renditionRef.current?.prev()} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
             <div className="flex items-center gap-1 shrink-0">
-              <button onClick={() => setEpubFontSize(s => Math.max(70, s - 15))} disabled={epubFontSize <= 70} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={16} /></button>
-              <span className="text-[10px] font-black text-white/50 w-11 text-center">{epubFontSize}%</span>
-              <button onClick={() => setEpubFontSize(s => Math.min(200, s + 15))} disabled={epubFontSize >= 200} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomIn size={16} /></button>
+              <button onClick={() => setEpubFontSize(s => Math.max(70, s - 10))} disabled={epubFontSize <= 70} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
+              <span className={`text-[10px] font-black ${READER_CHROME[readerTheme].sub} w-11 text-center`}>{epubFontSize}%</span>
+              <button onClick={() => setEpubFontSize(s => Math.min(200, s + 10))} disabled={epubFontSize >= 200} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
             </div>
-            <button onClick={() => renditionRef.current?.next()} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 rounded-2xl text-white transition-all active:scale-95"><ChevronRight size={26} /></button>
+            <button onClick={() => renditionRef.current?.next()} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
         </div>
       )}
 
       {/* ── PDF Reader ─────────────────────────────────────────────────────── */}
       {activeReaderUrl && (
-        <div className={`fixed inset-0 z-[500] ${PDF_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
-          <header className={`px-4 pb-4 flex items-center justify-between ${PDF_CHROME[readerTheme].bg} border-b ${PDF_CHROME[readerTheme].border} shrink-0`}
+        <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
+          <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
               <div>
-                <p className={`text-[10px] font-black uppercase ${PDF_CHROME[readerTheme].sub} tracking-widest leading-none mb-1`}>PDF Reader</p>
-                <p className={`text-xs font-black ${PDF_CHROME[readerTheme].text} truncate max-w-[160px]`}>{pickText(item.title, lang)}</p>
+                <p className={`text-[10px] font-black uppercase ${READER_CHROME[readerTheme].sub} tracking-widest leading-none mb-1`}>PDF Reader</p>
+                <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[160px]`}>{pickText(item.title, lang)}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={cycleTheme} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
+              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
-              <button onClick={handleAddPdfBookmark} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
+              <button onClick={handleAddPdfBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => setShowBookmarks(s => !s)} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
+              <button onClick={() => setShowBookmarks(s => !s)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
               </button>
-              <button onClick={() => setActiveReaderUrl(null)} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
+              <button onClick={() => setActiveReaderUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
             </div>
           </header>
 
@@ -777,18 +820,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
           </div>
 
-          <footer className={`px-4 pt-3 ${PDF_CHROME[readerTheme].bg} border-t ${PDF_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}
+          <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}
             style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
-            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
+            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
             <div className="flex flex-col items-center gap-1.5 shrink-0">
               <div className="flex items-center gap-1">
-                <button onClick={() => setPdfScale(s => Math.max(0.1, +(s - 0.1).toFixed(2)))} disabled={pdfScale <= 0.1} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
-                <span className={`text-[10px] font-black ${PDF_CHROME[readerTheme].sub} w-11 text-center`}>{Math.round(pdfScale * 100)}%</span>
-                <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} disabled={pdfScale >= 3} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
+                <button onClick={() => setPdfScale(s => Math.max(0.1, +(s - 0.1).toFixed(2)))} disabled={pdfScale <= 0.1} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
+                <span className={`text-[10px] font-black ${READER_CHROME[readerTheme].sub} w-11 text-center`}>{Math.round(pdfScale * 100)}%</span>
+                <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} disabled={pdfScale >= 3} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
               </div>
-              <p className={`text-[9px] font-black ${PDF_CHROME[readerTheme].sub} tracking-widest`}>{pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}</p>
+              <p className={`text-[9px] font-black ${READER_CHROME[readerTheme].sub} tracking-widest`}>{pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}</p>
             </div>
-            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
+            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
         </div>
       )}

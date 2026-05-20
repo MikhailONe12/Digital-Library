@@ -162,7 +162,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       let data: ArrayBuffer;
       try {
         const resp = await fetch(fetchUrl, { headers: item.isPrivate ? tgHeaders() : {} });
-        if (!resp.ok) throw new Error('HTTP ' + resp.status + ' (' + fetchUrl + ')');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
         data = await resp.arrayBuffer();
       } catch (e: any) {
         if (!destroyed) {
@@ -671,14 +671,6 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center bg-slate-900">
                 <p className="text-[10px] font-black uppercase text-red-400 tracking-widest">Ошибка просмотра EPUB</p>
                 <p className="text-xs text-white/60 break-words max-w-sm">{epubError}</p>
-                <a
-                  href={activeEpubUrl ?? undefined}
-                  download
-                  onClick={() => trackActivity('download', item.id)}
-                  className="bg-red-600 text-white px-5 py-3 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] flex items-center gap-2"
-                >
-                  <Download size={14} strokeWidth={3} />Скачать файл
-                </a>
               </div>
             )}
           </div>
@@ -744,14 +736,6 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-8 text-center bg-slate-900">
                 <p className="text-[10px] font-black uppercase text-red-400 tracking-widest">Ошибка просмотра PDF</p>
                 <p className="text-xs text-white/60 break-words max-w-sm">{pdfError}</p>
-                <a
-                  href={activeReaderUrl}
-                  download
-                  onClick={() => trackActivity('download', item.id)}
-                  className="bg-red-600 text-white px-5 py-3 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] flex items-center gap-2"
-                >
-                  <Download size={14} strokeWidth={3} />Скачать файл
-                </a>
               </div>
             )}
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}

@@ -418,7 +418,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       <header className="flex items-center justify-between mb-6 md:mb-10">
         <div>
           <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none mb-1">Control<span className="text-red-600">Center</span></h1>
-          <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">Advanced Intelligence Terminal</p>
+          <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">{t.adminTerminal}</p>
         </div>
         <button onClick={onLogout} className="p-3 md:p-4 bg-white rounded-2xl text-red-600 border border-slate-200 shadow-sm active:scale-95 transition-all">
             <LogOut size={20} strokeWidth={3} />
@@ -459,7 +459,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             {/* 1. Global Access Control (Moved from Users) */}
             <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
-                   Public Access Control
+                   {t.publicAccessControl}
                 </h3>
                 <div className="flex items-center justify-between">
                    <div className="flex items-center gap-4">
@@ -467,7 +467,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                          {db.globalAccess ? <Unlock size={20} /> : <Lock size={20} />}
                       </div>
                       <div>
-                         <h3 className="text-xs font-black uppercase tracking-widest">Global Status</h3>
+                         <h3 className="text-xs font-black uppercase tracking-widest">{t.globalStatus}</h3>
                          <p className="text-[8px] font-black text-slate-400 uppercase">{db.globalAccess ? 'Open to Public' : 'Whitelist Only'}</p>
                       </div>
                    </div>
@@ -606,7 +606,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               </div>
               <div className="bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group col-span-2 md:col-span-1">
                 <div className="relative z-10">
-                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Conversion</p>
+                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t.conversion}</p>
                   <p className="text-2xl md:text-4xl font-black text-slate-900 tracking-tighter">{analytics.conversionRate}%</p>
                 </div>
                 <Percent className="absolute -right-2 -bottom-2 text-slate-50 opacity-50 md:opacity-100 group-hover:text-blue-50 transition-colors" size={60} />
@@ -649,7 +649,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 {/* Hot Assets (Views) */}
                 <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
-                        <Eye size={14} className="text-red-600" /> Hot Assets (Views)
+                        <Eye size={14} className="text-red-600" /> {t.hotAssets}
                     </h3>
                     <div className="space-y-3">
                         {analytics.topViews.map((item, idx) => (
@@ -677,7 +677,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 {/* High Utility (Downloads) */}
                 <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
-                        <Download size={14} className="text-green-600" /> High Utility (Downloads)
+                        <Download size={14} className="text-green-600" /> {t.highUtility}
                     </h3>
                     <div className="space-y-3">
                         {analytics.topDownloads.map((item, idx) => (
@@ -706,7 +706,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             {/* NEW: User Leaderboard (Restored) */}
             <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
-                    <Trophy size={14} className="text-yellow-500" /> User Leaderboard
+                    <Trophy size={14} className="text-yellow-500" /> {t.userLeaderboard}
                 </h3>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[300px]">

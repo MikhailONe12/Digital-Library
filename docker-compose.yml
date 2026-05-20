@@ -34,6 +34,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       API_KEY: ${API_KEY}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      BOT_TOKEN: ${BOT_TOKEN}
       BASE_URL: https://library.optionsdata.ru
       CORS_ORIGIN: https://library.optionsdata.ru
     volumes:

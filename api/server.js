@@ -6,6 +6,7 @@ import fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
+import { createHmac } from 'crypto';
 import pkg from 'pg';
 
 const execFileAsync = promisify(execFile);
@@ -53,6 +54,79 @@ const requireApiKey = (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
+};
+
+// ── Telegram initData validation ─────────────────────────────────────────────
+
+// Validates the Telegram WebApp initData signature with HMAC-SHA256.
+// Returns { id, username } on success, null if invalid or BOT_TOKEN not set.
+const validateTelegramInitData = (initDataRaw, botToken) => {
+  if (!botToken || !initDataRaw) return null;
+  try {
+    const params = new URLSearchParams(initDataRaw);
+    const hash = params.get('hash');
+    if (!hash) return null;
+    params.delete('hash');
+    const dataCheck = [...params.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
+    const expected = createHmac('sha256', secret).update(dataCheck).digest('hex');
+    if (expected !== hash) return null;
+    const user = JSON.parse(params.get('user') || 'null');
+    return user
+      ? { id: String(user.id), username: (user.username || '').toLowerCase() }
+      : null;
+  } catch { return null; }
+};
+
+// ── Settings cache (avoids a DB round-trip on every auth check) ───────────────
+
+let _settingsCache = null;
+let _settingsCacheAt = 0;
+const SETTINGS_TTL = 30_000;
+
+const getSettingsCached = async () => {
+  if (_settingsCache && Date.now() - _settingsCacheAt < SETTINGS_TTL) return _settingsCache;
+  try {
+    const r = await pool.query('SELECT data FROM app_settings WHERE id = 1');
+    _settingsCache = { ...DEFAULT_SETTINGS, ...(r.rows[0]?.data || {}) };
+    _settingsCacheAt = Date.now();
+  } catch { _settingsCache = _settingsCache || DEFAULT_SETTINGS; }
+  return _settingsCache;
+};
+
+const invalidateSettingsCache = () => { _settingsCacheAt = 0; };
+
+// ── User-access middleware (blacklist check + user extraction) ────────────────
+
+// Reads x-telegram-init-data header, validates signature, checks blacklist.
+// Attaches req.telegramUser = { id, username } | null.
+// Blocks with 403 if user or IP is blacklisted.
+const checkUserAccess = async (req, res, next) => {
+  const botToken = process.env.BOT_TOKEN;
+  const initDataRaw = req.headers['x-telegram-init-data'];
+  const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+
+  let telegramUser = null;
+  if (botToken && initDataRaw) telegramUser = validateTelegramInitData(initDataRaw, botToken);
+
+  try {
+    const settings = await getSettingsCached();
+    const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
+    const blocked =
+      (telegramUser && (bl.includes(telegramUser.id) || bl.includes(telegramUser.username))) ||
+      (ip && bl.includes(ip));
+    if (blocked) return res.status(403).json({ error: 'Access denied' });
+    req.telegramUser = telegramUser;
+    req.cachedSettings = settings;
+    next();
+  } catch {
+    req.telegramUser = telegramUser;
+    req.cachedSettings = DEFAULT_SETTINGS;
+    next(); // fail open — prefer availability on DB errors
+  }
 };
 
 // Block path traversal in itemId
@@ -330,8 +404,10 @@ const DEFAULT_SETTINGS = {
   globalAccess: false,
 };
 
-// Full app state (catalog + settings + average ratings) — public read
-app.get('/api/state', async (req, res) => {
+// Full app state (catalog + settings + average ratings)
+// checkUserAccess: blocks blacklisted users; extracts trusted user identity.
+// Private items are stripped server-side for non-whitelisted users.
+app.get('/api/state', checkUserAccess, async (req, res) => {
   try {
     const itemsRes = await pool.query('SELECT data FROM items ORDER BY seq');
     const setRes   = await pool.query('SELECT data FROM app_settings WHERE id = 1');
@@ -342,15 +418,79 @@ app.get('/api/state', async (req, res) => {
     const settings = setRes.rows[0]?.data || DEFAULT_SETTINGS;
     const ratings  = {};
     for (const r of rateRes.rows) ratings[r.item_id] = r.avg;
-    res.json({
-      ...DEFAULT_SETTINGS,
-      ...settings,
-      items: itemsRes.rows.map(r => r.data),
-      ratings,
-    });
+
+    // Server-side whitelist gate: hide private items from non-whitelisted users
+    const { telegramUser } = req;
+    const allowed = settings.allowedUsers || [];
+    const canSeePrivate = settings.globalAccess ||
+      (telegramUser && (
+        allowed.includes(telegramUser.id) ||
+        (telegramUser.username && allowed.includes(telegramUser.username))
+      ));
+    let items = itemsRes.rows.map(r => r.data);
+    if (!canSeePrivate) items = items.filter(item => !item.isPrivate);
+
+    res.json({ ...DEFAULT_SETTINGS, ...settings, items, ratings });
   } catch (e) {
     console.warn('GET /api/state:', e.message);
     res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// Lightweight auth check for Nginx auth_request on /content/ (IP blacklist only)
+app.get('/api/check-access', async (req, res) => {
+  const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+  try {
+    const settings = await getSettingsCached();
+    const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
+    if (ip && bl.includes(ip)) return res.status(403).end();
+    res.status(200).end();
+  } catch { res.status(200).end(); } // fail open
+});
+
+// Protected file endpoint for private items.
+// Validates user against whitelist using Telegram initData, then serves the
+// file via Nginx X-Accel-Redirect (no data passes through Node).
+app.get('/api/file/:itemId/:filename', validateItemId, async (req, res) => {
+  const { filename } = req.params;
+  if (!/^[a-zA-Z0-9._-]+$/.test(filename))
+    return res.status(400).json({ error: 'Invalid filename' });
+
+  const botToken = process.env.BOT_TOKEN;
+  const initDataRaw = req.headers['x-telegram-init-data'];
+  const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+  let telegramUser = null;
+  if (botToken && initDataRaw) telegramUser = validateTelegramInitData(initDataRaw, botToken);
+
+  try {
+    const itemRes = await pool.query('SELECT data FROM items WHERE id = $1', [req.params.itemId]);
+    const item = itemRes.rows[0]?.data;
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    if (item.isPrivate) {
+      const settings = await getSettingsCached();
+      const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
+      const blocked =
+        (telegramUser && (bl.includes(telegramUser.id) || bl.includes(telegramUser.username))) ||
+        (ip && bl.includes(ip));
+      if (blocked) return res.status(403).json({ error: 'Access denied' });
+
+      if (!settings.globalAccess) {
+        const allowed = settings.allowedUsers || [];
+        const ok = telegramUser && (
+          allowed.includes(telegramUser.id) ||
+          (telegramUser.username && allowed.includes(telegramUser.username))
+        );
+        if (!ok) return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
+    // Delegate actual file transfer to Nginx (efficient, zero-copy)
+    res.setHeader('X-Accel-Redirect', `/internal-content/${req.params.itemId}/${filename}`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.status(200).end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
@@ -432,6 +572,7 @@ app.put('/api/settings', requireApiKey, async (req, res) => {
        ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
       [JSON.stringify(req.body)],
     );
+    invalidateSettingsCache(); // blacklist/whitelist changed — clear cache immediately
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -36,6 +36,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const typedLangsRef = useRef<Set<'en' | 'ru' | 'es'>>(new Set());
   const [editingType, setEditingType] = useState<CustomType | null>(null);
   const [importJson, setImportJson] = useState('');
+  const [importConfirm, setImportConfirm] = useState('');
+  const [exportConfirm, setExportConfirm] = useState('');
   const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
   const [stagedCoverFile, setStagedCoverFile] = useState<File | null>(null);
   const [stagedContentFile, setStagedContentFile] = useState<{ file: File; formatId: string } | null>(null);
@@ -332,21 +334,41 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   };
 
   const handleImportJson = () => {
+    if (importConfirm !== 'ПЕРЕЗАПИСАТЬ') return;
     try {
       if (!importJson.trim()) return;
       const parsed = JSON.parse(importJson);
-      if (!parsed.items || !Array.isArray(parsed.items)) {
-        throw new Error('Invalid Database Format');
-      }
-      if(confirm('WARNING: This will overwrite all current app data. Continue?')) {
-        saveDb(parsed);
-        onUpdate();
-        setImportJson('');
-        alert('Database imported!');
-      }
-    } catch (e) {
-      alert('Error parsing JSON.');
+      if (!parsed.items || !Array.isArray(parsed.items)) throw new Error('Invalid format');
+      saveDb(parsed);
+      onUpdate();
+      setImportJson('');
+      setImportConfirm('');
+      alert('База данных импортирована.');
+    } catch {
+      alert('Ошибка: некорректный JSON.');
     }
+  };
+
+  const handleExportJson = () => {
+    if (exportConfirm !== 'ЭКСПОРТ') return;
+    const payload = {
+      items: db.items,
+      allowedUsers: db.allowedUsers,
+      blacklist: db.blacklist,
+      customTypes: db.customTypes,
+      defaultLanguage: db.defaultLanguage,
+      globalAccess: db.globalAccess,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `library-backup-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setExportConfirm('');
   };
 
   const handleResetStats = async () => {
@@ -833,19 +855,66 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       </button>
                   </div>
 
-                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                          <Upload size={14} /> Import Data
+                  {/* Export */}
+                  <div className="p-5 md:p-6 bg-amber-50 rounded-3xl border border-amber-200">
+                      <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-2">
+                          <Database size={14} /> ⚠ Экспорт базы данных
                       </h4>
-                      <textarea 
-                          className="w-full h-32 bg-white border border-slate-200 rounded-2xl p-4 text-[10px] font-mono mb-4 focus:border-red-600 outline-none"
-                          placeholder='Paste JSON here...'
+                      <p className="text-[9px] text-amber-600 font-bold mb-4">
+                          Скачивает полный снимок базы: контент, белый список, чёрный список, разделы. Используйте для резервного копирования перед крупными изменениями. Файл содержит чувствительные данные — храните его в безопасном месте.
+                      </p>
+                      <label className="text-[8px] font-black uppercase text-amber-700 tracking-widest ml-1">
+                          Введите «ЭКСПОРТ» для подтверждения
+                      </label>
+                      <div className="flex gap-2 mt-1">
+                          <input
+                              className="flex-1 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none"
+                              placeholder="ЭКСПОРТ"
+                              value={exportConfirm}
+                              onChange={e => setExportConfirm(e.target.value)}
+                          />
+                          <button
+                              onClick={handleExportJson}
+                              disabled={exportConfirm !== 'ЭКСПОРТ'}
+                              className="px-5 bg-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95"
+                          >
+                              Скачать
+                          </button>
+                      </div>
+                  </div>
+
+                  {/* Import */}
+                  <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-200">
+                      <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1 flex items-center gap-2">
+                          <Upload size={14} /> ⚠ Импорт базы данных
+                      </h4>
+                      <p className="text-[9px] text-red-600 font-bold mb-4">
+                          Полностью перезаписывает текущую базу данных вставленным JSON-снимком. Все текущие данные будут уничтожены без возможности восстановления. Используйте только для восстановления из резервной копии, сделанной через Экспорт выше.
+                      </p>
+                      <textarea
+                          className="w-full h-28 bg-white border border-red-200 rounded-2xl p-4 text-[10px] font-mono mb-3 focus:border-red-600 outline-none"
+                          placeholder='Вставьте JSON резервной копии...'
                           value={importJson}
                           onChange={e => setImportJson(e.target.value)}
                       />
-                      <button onClick={handleImportJson} className="w-full py-4 bg-slate-900 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">
-                          Overwrite Database
-                      </button>
+                      <label className="text-[8px] font-black uppercase text-red-700 tracking-widest ml-1">
+                          Введите «ПЕРЕЗАПИСАТЬ» для подтверждения
+                      </label>
+                      <div className="flex gap-2 mt-1">
+                          <input
+                              className="flex-1 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                              placeholder="ПЕРЕЗАПИСАТЬ"
+                              value={importConfirm}
+                              onChange={e => setImportConfirm(e.target.value)}
+                          />
+                          <button
+                              onClick={handleImportJson}
+                              disabled={importConfirm !== 'ПЕРЕЗАПИСАТЬ' || !importJson.trim()}
+                              className="px-5 bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95"
+                          >
+                              Импорт
+                          </button>
+                      </div>
                   </div>
               </div>
             </div>

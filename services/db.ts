@@ -135,7 +135,12 @@ const loadUserData = async (userId: string) => {
 
 export const loadDb = async (userId?: string): Promise<AppState> => {
   try {
-    const res = await fetch('/api/state');
+    const tg = (window as any).Telegram?.WebApp;
+    const initData = tg?.initData || '';
+    const stateHeaders: Record<string, string> = initData
+      ? { 'x-telegram-init-data': initData }
+      : {};
+    const res = await fetch('/api/state', { headers: stateHeaders });
     if (res.ok) {
       const remote = await res.json();
       cache = {

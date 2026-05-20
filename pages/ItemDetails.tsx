@@ -94,6 +94,23 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const tg     = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
 
+  // Returns x-telegram-init-data header for authenticated file requests
+  const tgHeaders = (): Record<string, string> => {
+    const initData = tg?.initData || '';
+    return initData ? { 'x-telegram-init-data': initData } : {};
+  };
+
+  // Rewrites /content/:itemId/:file → /api/file/:itemId/:file for private items
+  // so Express can gate the download behind the whitelist check.
+  const toProtectedUrl = (url: string): string => {
+    try {
+      const u = new URL(url, window.location.href);
+      const m = u.pathname.match(/^\/content\/([^/]+)\/(.+)$/);
+      if (m) return `/api/file/${m[1]}/${m[2]}`;
+    } catch { /* already relative or malformed */ }
+    return url;
+  };
+
   // Persist theme & font choices
   useEffect(() => { localStorage.setItem(THEME_KEY, readerTheme); }, [readerTheme]);
   useEffect(() => { localStorage.setItem(FONT_KEY, String(epubFontSize)); }, [epubFontSize]);
@@ -144,7 +161,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
       let data: ArrayBuffer;
       try {
-        const resp = await fetch(fetchUrl);
+        const resp = await fetch(fetchUrl, { headers: item.isPrivate ? tgHeaders() : {} });
         if (!resp.ok) throw new Error('HTTP ' + resp.status + ' (' + fetchUrl + ')');
         data = await resp.arrayBuffer();
       } catch (e: any) {
@@ -263,7 +280,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         // those later requests stall, pages past the first few never get
         // their content and render blank. With the full buffer every page is
         // available immediately.
-        const resp = await fetch(activeReaderUrl);
+        const resp = await fetch(activeReaderUrl, { headers: item.isPrivate ? tgHeaders() : {} });
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.arrayBuffer();
         if (cancelled) return;
@@ -424,13 +441,14 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const videoPlayer = getVideoEmbed(item.videoUrl);
 
   const handleRead = (format: FileFormat) => {
+    const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;
     const url = format.url.toLowerCase();
     if (url.endsWith('.pdf') || format.name.toLowerCase().includes('pdf')) {
-      setActiveReaderUrl(format.url);
+      setActiveReaderUrl(fileUrl);
     } else if (url.endsWith('.epub')) {
-      setActiveEpubUrl(format.url);
+      setActiveEpubUrl(fileUrl);
     } else {
-      window.open(format.url, '_blank');
+      window.open(fileUrl, '_blank');
     }
   };
 

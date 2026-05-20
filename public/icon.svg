@@ -1,14 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="115" fill="#F5312B"/>
-  <!-- Book spine with bands -->
-  <rect x="146" y="172" width="38" height="214" rx="9" fill="#fff"/>
-  <rect x="146" y="202" width="38" height="9" fill="#F5312B"/>
-  <rect x="146" y="347" width="38" height="9" fill="#F5312B"/>
-  <!-- Plain book -->
-  <rect x="194" y="158" width="40" height="228" rx="9" fill="#fff"/>
-  <!-- Open book: two pages -->
-  <path d="M324 374 C300 361 278 359 252 364 L252 210 C278 205 302 207 324 220 Z" fill="#fff"/>
-  <path d="M336 374 C360 361 382 359 408 364 L408 210 C382 205 358 207 336 220 Z" fill="#fff"/>
-  <!-- Bookmark ribbon -->
-  <path d="M350 206 L350 272 L366 257 L382 272 L382 206 Z" fill="#F5312B"/>
+  <g transform="translate(256,256) scale(1.5) translate(-277,-273)">
+    <!-- Book spine with bands -->
+    <rect x="146" y="172" width="38" height="214" rx="9" fill="#fff"/>
+    <rect x="146" y="202" width="38" height="9" fill="#F5312B"/>
+    <rect x="146" y="347" width="38" height="9" fill="#F5312B"/>
+    <!-- Plain book -->
+    <rect x="194" y="158" width="40" height="228" rx="9" fill="#fff"/>
+    <!-- Open book: two pages -->
+    <path d="M324 374 C300 361 278 359 252 364 L252 210 C278 205 302 207 324 220 Z" fill="#fff"/>
+    <path d="M336 374 C360 361 382 359 408 364 L408 210 C382 205 358 207 336 220 Z" fill="#fff"/>
+    <!-- Bookmark ribbon -->
+    <path d="M350 206 L350 272 L366 257 L382 272 L382 206 Z" fill="#F5312B"/>
+  </g>
 </svg>

@@ -342,9 +342,14 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       }
       if (disposed) return;
 
-      const containerWidth = container.parentElement?.clientWidth || window.innerWidth || 800;
-      const base           = page.getViewport({ scale: 1 });
-      const viewport       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
+      const parent          = container.parentElement;
+      const containerWidth  = parent?.clientWidth  || window.innerWidth  || 800;
+      const containerHeight = parent?.clientHeight || window.innerHeight || 600;
+      const base            = page.getViewport({ scale: 1 });
+      // 100% (pdfScale=1) fits the whole page inside the viewport (fit-to-page);
+      // on wide desktop screens this avoids an oversized fit-to-width render.
+      const fitScale        = Math.min(containerWidth / base.width, containerHeight / base.height);
+      const viewport        = page.getViewport({ scale: fitScale * pdfScale });
 
       const canvas  = document.createElement('canvas');
       canvas.width  = Math.floor(viewport.width);
@@ -768,7 +773,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
             <div className="flex flex-col items-center gap-1.5 shrink-0">
               <div className="flex items-center gap-1">
-                <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.1).toFixed(2)))} disabled={pdfScale <= 0.5} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
+                <button onClick={() => setPdfScale(s => Math.max(0.1, +(s - 0.1).toFixed(2)))} disabled={pdfScale <= 0.1} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
                 <span className={`text-[10px] font-black ${PDF_CHROME[readerTheme].sub} w-11 text-center`}>{Math.round(pdfScale * 100)}%</span>
                 <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} disabled={pdfScale >= 3} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
               </div>

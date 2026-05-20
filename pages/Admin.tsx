@@ -1,13 +1,13 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { AppState, MediaItem, Locale, FileFormat } from '../types';
+import { AppState, MediaItem, Locale, FileFormat, CustomType } from '../types';
 import { 
   Plus, Edit2, Trash2, Users, Eye, Download, LogOut, Tags,
   ShieldCheck, X, AtSign, Unlock, Lock,
   Percent, Database, Upload,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -32,7 +32,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const [editingItem, setEditingItem] = useState<Partial<MediaItem> | null>(null);
   const [newUserNickname, setNewUserNickname] = useState('');
   const [newBlacklistEntry, setNewBlacklistEntry] = useState('');
-  const [newType, setNewType] = useState('');
+  const [newTypeLabels, setNewTypeLabels] = useState({ en: '', ru: '', es: '' });
+  const [editingType, setEditingType] = useState<CustomType | null>(null);
   const [importJson, setImportJson] = useState('');
   const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
   const [stagedCoverFile, setStagedCoverFile] = useState<File | null>(null);
@@ -289,18 +290,38 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   };
 
   const handleAddType = () => {
-    if (newType.trim()) {
-      addCustomType(newType);
-      setNewType('');
+    const { en, ru, es } = newTypeLabels;
+    if (!en.trim() && !ru.trim() && !es.trim()) return;
+    const base = (en || ru || es).trim();
+    const id = base.normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 20) || 'CAT_' + Date.now().toString(36).slice(-5).toUpperCase();
+    addCustomType({
+      id,
+      en: en.trim() || ru.trim() || es.trim(),
+      ru: ru.trim() || en.trim() || es.trim(),
+      es: es.trim() || en.trim() || ru.trim(),
+    });
+    setNewTypeLabels({ en: '', ru: '', es: '' });
+    onUpdate();
+  };
+
+  const handleDeleteType = (id: string) => {
+    if (confirm('Удалить раздел? Элементы с этим типом сохранят своё значение.')) {
+      deleteCustomType(id);
+      setEditingType(null);
       onUpdate();
     }
   };
 
-  const handleDeleteType = (type: string) => {
-    if (confirm(`Delete sector "${type}"? This will remove it from filters and dropdowns.`)) {
-      deleteCustomType(type);
-      onUpdate();
-    }
+  const handleSaveType = () => {
+    if (!editingType) return;
+    updateCustomType(editingType.id, { en: editingType.en, ru: editingType.ru, es: editingType.es });
+    setEditingType(null);
+    onUpdate();
   };
 
   const handleToggleGlobal = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -833,7 +854,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         {activeTab === 'items' && (
            <div className="space-y-6">
                <button 
-                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0] || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })}
+                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0]?.id || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })}
                   className="w-full py-4 bg-red-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-xs shadow-xl shadow-red-200 flex items-center justify-center gap-2"
                >
                   <Plus size={18} /> {t.addContent}
@@ -859,21 +880,78 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         )}
         
         {activeTab === 'types' && (
-           <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-               <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3>
-               <div className="flex gap-2 mb-6">
-                  <input type="text" placeholder="New Sector" className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-black uppercase focus:border-red-600 outline-none" value={newType} onChange={e => setNewType(e.target.value)} />
-                  <button onClick={handleAddType} className="bg-red-600 text-white px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest">Add</button>
-               </div>
-               <div className="grid grid-cols-2 gap-2">
-                  {db.customTypes.map(type => (
-                     <div key={type} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                        <span className="text-[10px] font-black uppercase text-slate-900">{type}</span>
-                        <button onClick={() => handleDeleteType(type)}><Trash2 size={14} className="text-slate-300 hover:text-red-600" /></button>
-                     </div>
-                  ))}
-               </div>
-           </div>
+          <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+            <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3>
+
+            {/* Add new category */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6 space-y-3">
+              <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{t.addCategory}</p>
+              <div className="grid grid-cols-3 gap-2">
+                {(['ru', 'en', 'es'] as const).map(l => (
+                  <div key={l}>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{l.toUpperCase()}</label>
+                    <input
+                      type="text"
+                      className="w-full bg-white border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none"
+                      value={newTypeLabels[l]}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setNewTypeLabels(prev => {
+                          const next = { ...prev, [l]: val };
+                          if (!prev.en && l !== 'en') next.en = val;
+                          if (!prev.ru && l !== 'ru') next.ru = val;
+                          if (!prev.es && l !== 'es') next.es = val;
+                          return next;
+                        });
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+              <button onClick={handleAddType} className="w-full bg-red-600 text-white py-2.5 rounded-2xl font-black uppercase text-[10px] tracking-widest">
+                + {t.addCategory}
+              </button>
+            </div>
+
+            {/* Existing categories */}
+            <div className="space-y-2">
+              {db.customTypes.map(type => (
+                editingType?.id === type.id ? (
+                  <div key={type.id} className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
+                    <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">Редактировать раздел</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['ru', 'en', 'es'] as const).map(l => (
+                        <div key={l}>
+                          <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{l.toUpperCase()}</label>
+                          <input
+                            type="text"
+                            className="w-full bg-white border border-red-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none"
+                            value={editingType[l]}
+                            onChange={e => setEditingType({ ...editingType, [l]: e.target.value })}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={handleSaveType} className="flex-1 bg-red-600 text-white py-2 rounded-xl font-black uppercase text-[10px] tracking-widest">Сохранить</button>
+                      <button onClick={() => setEditingType(null)} className="px-5 py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">Отмена</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={type.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-black uppercase text-slate-900">{type[lang] || type.ru || type.en || type.id}</span>
+                      <span className="text-[8px] text-slate-300 ml-2">{[type.ru, type.en, type.es].filter(Boolean).join(' · ')}</span>
+                    </div>
+                    <div className="flex gap-1 shrink-0 ml-2">
+                      <button onClick={() => setEditingType(type)} className="p-1.5 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 size={13} /></button>
+                      <button onClick={() => handleDeleteType(type.id)} className="p-1.5 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={13} /></button>
+                    </div>
+                  </div>
+                )
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
@@ -925,7 +1003,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Тип</label>
                       <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.type || ''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}>
-                        {db.customTypes.map(tp => <option key={tp} value={tp}>{tp}</option>)}
+                        {db.customTypes.map(tp => <option key={tp.id} value={tp.id}>{tp[lang] || tp.ru || tp.en}</option>)}
                       </select>
                     </div>
                     <div className="flex-1">

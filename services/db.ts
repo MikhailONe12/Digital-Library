@@ -1,4 +1,4 @@
-import { AppState, MediaItem, Bookmark, ReadingProgress } from '../types';
+import { AppState, MediaItem, Bookmark, ReadingProgress, CustomType } from '../types';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -23,7 +23,13 @@ const emptyState = (): AppState => ({
   userAnalytics: [],
   userFavorites: {},
   userRatings: {},
-  customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
+  customTypes: [
+    { id: 'BOOK',    en: 'Book',    ru: 'Книга',   es: 'Libro' },
+    { id: 'ARTICLE', en: 'Article', ru: 'Статья',  es: 'Artículo' },
+    { id: 'JOURNAL', en: 'Journal', ru: 'Журнал',  es: 'Журнал' },
+    { id: 'VIDEO',   en: 'Video',   ru: 'Видео',   es: 'Vídeo' },
+    { id: 'COURSE',  en: 'Course',  ru: 'Курс',    es: 'Curso' },
+  ],
   defaultLanguage: 'ru',
   globalAccess: false,
 });
@@ -137,9 +143,14 @@ export const loadDb = async (userId?: string): Promise<AppState> => {
         items: (remote.items || []).map(normalizeItem),
         allowedUsers: remote.allowedUsers || [],
         blacklist: remote.blacklist || [],
-        customTypes: (remote.customTypes && remote.customTypes.length)
-          ? remote.customTypes
-          : emptyState().customTypes,
+        customTypes: (() => {
+          const raw = remote.customTypes;
+          if (!raw || !raw.length) return emptyState().customTypes;
+          // Migrate old string[] format to CustomType[]
+          if (typeof raw[0] === 'string')
+            return (raw as string[]).map((s: string) => ({ id: s, en: s, ru: s, es: s }));
+          return raw as CustomType[];
+        })(),
         defaultLanguage: remote.defaultLanguage || 'ru',
         globalAccess: !!remote.globalAccess,
       };
@@ -297,16 +308,20 @@ export const checkIsBlocked = (username?: string, ip?: string): boolean => {
 
 // ── Custom types ─────────────────────────────────────────────────────────────
 
-export const addCustomType = (type: string) => {
-  const upperType = type.trim().toUpperCase();
-  if (upperType && !cache.customTypes.includes(upperType)) {
-    cache.customTypes = [...cache.customTypes, upperType];
+export const addCustomType = (type: CustomType) => {
+  if (!cache.customTypes.find(t => t.id === type.id)) {
+    cache.customTypes = [...cache.customTypes, type];
     putSettings();
   }
 };
 
-export const deleteCustomType = (type: string) => {
-  cache.customTypes = cache.customTypes.filter(t => t !== type);
+export const deleteCustomType = (id: string) => {
+  cache.customTypes = cache.customTypes.filter(t => t.id !== id);
+  putSettings();
+};
+
+export const updateCustomType = (id: string, labels: { en: string; ru: string; es: string }) => {
+  cache.customTypes = cache.customTypes.map(t => t.id === id ? { ...t, ...labels } : t);
   putSettings();
 };
 

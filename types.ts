@@ -7,6 +7,13 @@ export interface MultilingualText {
   es: string;
 }
 
+export interface CustomType {
+  id: string;
+  en: string;
+  ru: string;
+  es: string;
+}
+
 export interface FileFormat {
   id: string;
   name: string;
@@ -85,7 +92,7 @@ export interface AppState {
   userAnalytics: UserAnalytics[];
   userFavorites: Record<string, string[]>; // Maps user ID to array of item IDs
   userRatings: Record<string, Record<string, number>>; // Maps user ID to { itemId: rating }
-  customTypes: string[];
+  customTypes: CustomType[];
   defaultLanguage: Locale;
   globalAccess: boolean;
 }

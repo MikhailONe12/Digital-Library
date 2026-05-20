@@ -272,9 +272,9 @@ const App: React.FC = () => {
       )}
 
       {currentPage === 'admin' && (
-        <Admin 
-          onBack={() => setCurrentPage('home')} 
-          db={db} 
+        <Admin
+          onBack={() => setCurrentPage('home')}
+          db={db}
           onUpdate={() => setDb(getDb())}
           onLogout={() => {setIsAdmin(false); setCurrentPage('home');}}
           setIsAdmin={setIsAdmin}
@@ -283,6 +283,14 @@ const App: React.FC = () => {
           t={t}
         />
       )}
+
+      {/* Version footer — readers are fixed z-[500] and cover this automatically */}
+      <div
+        className="fixed bottom-0 right-0 z-10 pointer-events-none px-4"
+        style={{ paddingBottom: 'calc(0.375rem + var(--safe-bottom))' }}
+      >
+        <p className="text-[8px] font-black text-slate-400/50 uppercase tracking-[0.25em]">{t.version}</p>
+      </div>
     </div>
   );
 };

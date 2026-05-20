@@ -6,7 +6,7 @@ export const translations = {
     library: 'Terminal',
     manage: 'Admin',
     search: 'Search Alpha, Strategies, Data...',
-    all: 'All Assets',
+    all: 'All',
     new: 'New Arrivals',
     about: 'Strategic Brief',
     preview: 'Visual Analysis',
@@ -59,13 +59,14 @@ export const translations = {
     ipAddress: 'IP Address',
     device: 'Device',
     block: 'Block',
-    unblock: 'Unblock'
+    unblock: 'Unblock',
+    version: 'Version 0.8',
   },
   ru: {
     library: 'Терминал',
     manage: 'Админ',
     search: 'Поиск активов, стратегий, данных...',
-    all: 'Все активы',
+    all: 'Все',
     new: 'Новые',
     about: 'Стратегический бриф',
     preview: 'Видеоанализ',
@@ -118,13 +119,14 @@ export const translations = {
     ipAddress: 'IP Адрес',
     device: 'Устройство',
     block: 'Блок',
-    unblock: 'Разблок'
+    unblock: 'Разблок',
+    version: 'Версия 0.8',
   },
   es: {
     library: 'Terminal',
     manage: 'Admin',
     search: 'Buscar Alpha, Estrategias, Datos...',
-    all: 'Todos los activos',
+    all: 'Todas',
     new: 'Novedades',
     about: 'Resumen Estratégico',
     preview: 'Análisis Visual',
@@ -177,6 +179,7 @@ export const translations = {
     ipAddress: 'Dirección IP',
     device: 'Dispositivo',
     block: 'Bloquear',
-    unblock: 'Desbloquear'
+    unblock: 'Desbloquear',
+    version: 'Versión 0.8',
   }
 };

@@ -1,6 +1,6 @@
 
 import React, { useRef, useState } from 'react';
-import { MediaItem, Locale } from '../types';
+import { MediaItem, Locale, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import { Search, TrendingUp, BarChart3, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
@@ -16,7 +16,7 @@ interface HomeProps {
   setContentLangFilter: (l: Locale | 'ALL') => void;
   searchField: 'all' | 'title' | 'author';
   setSearchField: (f: 'all' | 'title' | 'author') => void;
-  categories: string[];
+  categories: CustomType[];
   lang: Locale;
   t: any;
   onSecretAdminTrigger?: () => void;
@@ -179,16 +179,16 @@ const Home: React.FC<HomeProps> = ({
           {t.all}
         </button>
         {categories.map(cat => (
-          <button 
-            key={cat} 
-            onClick={() => setActiveCategory(cat)} 
+          <button
+            key={cat.id}
+            onClick={() => setActiveCategory(cat.id)}
             className={`whitespace-nowrap px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
-              activeCategory === cat 
-              ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]' 
+              activeCategory === cat.id
+              ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
               : 'bg-white text-slate-500 border border-slate-200 hover:border-red-200'
             }`}
           >
-            {cat}
+            {cat[lang] || cat.en || cat.id}
           </button>
         ))}
       </div>

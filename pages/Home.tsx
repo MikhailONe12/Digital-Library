@@ -1,6 +1,6 @@
 
 import React, { useRef, useState } from 'react';
-import { MediaItem, Locale, CustomType } from '../types';
+import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
@@ -12,8 +12,8 @@ interface HomeProps {
   setSearchQuery: (q: string) => void;
   activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW';
   setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW') => void;
-  contentLangFilter: Locale | 'ALL';
-  setContentLangFilter: (l: Locale | 'ALL') => void;
+  contentLangFilter: ContentLang | 'ALL';
+  setContentLangFilter: (l: ContentLang | 'ALL') => void;
   searchField: 'all' | 'title' | 'author';
   setSearchField: (f: 'all' | 'title' | 'author') => void;
   categories: CustomType[];
@@ -95,7 +95,7 @@ const Home: React.FC<HomeProps> = ({
                        <Globe size={12} /> {t.contentLang}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                       {(['ALL', 'en', 'ru', 'es'] as const).map(l => (
+                       {(['ALL', 'en', 'ru', 'es', 'it', 'fr', 'de'] as const).map(l => (
                           <button 
                             key={l}
                             onClick={() => setContentLangFilter(l)}

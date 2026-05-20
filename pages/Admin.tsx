@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { AppState, MediaItem, Locale, FileFormat, CustomType, VideoLink } from '../types';
+import { AppState, MediaItem, Locale, ContentLang, FileFormat, CustomType, VideoLink } from '../types';
 import {
   Plus, Edit2, Trash2, Users, Eye, Download, LogOut, Tags,
   ShieldCheck, X, AtSign, Unlock, Lock,
@@ -199,7 +199,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     }
   };
 
-  const handleToggleContentLang = (l: Locale) => {
+  const handleToggleContentLang = (l: ContentLang) => {
     if (!editingItem) return;
     const current = editingItem.contentLanguages || [];
     const updated = current.includes(l) 
@@ -1207,12 +1207,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               {/* Content Languages */}
               <div>
                 <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Языки контента</p>
-                <div className="flex gap-2">
-                  {(['ru', 'en', 'es'] as const).map(l => {
+                <div className="grid grid-cols-3 gap-2">
+                  {(['ru', 'en', 'es', 'it', 'fr', 'de'] as const).map(l => {
                     const active = (editingItem.contentLanguages || []).includes(l);
                     return (
                       <button key={l} type="button" onClick={() => handleToggleContentLang(l)}
-                        className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-300'}`}>
+                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-300'}`}>
                         {l}
                       </button>
                     );

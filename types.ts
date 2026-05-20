@@ -50,7 +50,7 @@ export interface MediaItem {
   isPrivate: boolean;
   views: number;
   downloads: number;
-  contentLanguages: Locale[]; // Global item languages
+  contentLanguages: ContentLang[]; // Global item languages
   allowDownload: boolean; // Global permission
   allowReading: boolean;  // Global permission
 }

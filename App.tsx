@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit } from './services/db';
-import { MediaItem, Locale } from './types';
+import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { pickText } from './utils';
 import Home from './pages/Home';
@@ -21,7 +21,7 @@ const App: React.FC = () => {
   // Search & Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW'>('ALL');
-  const [contentLangFilter, setContentLangFilter] = useState<Locale | 'ALL'>('ALL');
+  const [contentLangFilter, setContentLangFilter] = useState<ContentLang | 'ALL'>('ALL');
   const [searchField, setSearchField] = useState<'all' | 'title' | 'author'>('all');
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);

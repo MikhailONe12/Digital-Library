@@ -199,7 +199,7 @@ const fileStorage = multer.diskStorage({
 
 const uploadFile = multer({
   storage: fileStorage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+  limits: { fileSize: 1024 * 1024 * 1024 }, // 1 GB (videos)
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, ALLOWED_CONTENT_TYPES.has(file.mimetype) || ALLOWED_EXTENSIONS.has(ext));

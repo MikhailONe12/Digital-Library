@@ -1180,6 +1180,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                   <option value="ru">RU</option>
                                   <option value="en">EN</option>
                                   <option value="es">ES</option>
+                                  <option value="it">IT</option>
+                                  <option value="fr">FR</option>
+                                  <option value="de">DE</option>
                                 </select>
                                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
                               </div>
@@ -1248,9 +1251,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 <div className="space-y-3">
                   {editingItem.formats && editingItem.formats.map((f) => (
                     <div key={f.id} className="relative p-3 pl-9 bg-slate-50 rounded-2xl border border-slate-100">
-                      {!f.url && (
-                        <button type="button" onClick={() => handleRemoveFormat(f.id)} title="Убрать блок" className="absolute top-3 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => { if (!f.url) handleRemoveFormat(f.id); }}
+                        disabled={!!f.url}
+                        title={f.url ? 'Файл загружен — уберите его кнопкой «Удалить файл с сервера»' : 'Убрать блок'}
+                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500'}`}>
+                        <X size={14} />
+                      </button>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Название</label>
@@ -1264,6 +1272,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             <option value="ru">RU</option>
                             <option value="en">EN</option>
                             <option value="es">ES</option>
+                            <option value="it">IT</option>
+                            <option value="fr">FR</option>
+                            <option value="de">DE</option>
                           </select>
                         </div>
                         <div className="col-span-2">
@@ -1287,8 +1298,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             </div>
                           )}
                           {uploadState?.field === f.id && (
-                            <div className="mt-1 bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                              <div className="bg-red-600 h-1.5 rounded-full transition-all duration-300" style={{ width: `${uploadState.progress}%` }} />
+                            <div className="mt-1.5">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[8px] font-black uppercase text-red-600 tracking-widest">{uploadState.progress < 100 ? 'Загрузка…' : 'Обработка…'}</span>
+                                <span className="text-[8px] font-black text-slate-500 tabular-nums">{uploadState.progress}%</span>
+                              </div>
+                              <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
+                                <div className="bg-red-600 h-2 rounded-full transition-all duration-200" style={{ width: `${uploadState.progress}%` }} />
+                              </div>
                             </div>
                           )}
                         </div>

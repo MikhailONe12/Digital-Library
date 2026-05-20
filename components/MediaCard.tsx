@@ -1,6 +1,6 @@
 
 import React, { useMemo } from 'react';
-import { MediaItem, Locale } from '../types';
+import { MediaItem, Locale, ContentLang } from '../types';
 import { TrendingUp, ShieldCheck, Heart } from 'lucide-react';
 import { pickText, handleCoverError } from '../utils';
 
@@ -15,7 +15,7 @@ interface MediaCardProps {
 const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited, progress }) => {
 
   const displayedLanguages = useMemo(() => {
-    const fileLanguages = item.formats.map(f => f.language).filter((l): l is Locale => !!l);
+    const fileLanguages = item.formats.map(f => f.language).filter((l): l is ContentLang => !!l);
     const globalLanguages = item.contentLanguages || [];
     return Array.from(new Set([...globalLanguages, ...fileLanguages]));
   }, [item]);

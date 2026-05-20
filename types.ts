@@ -1,6 +1,9 @@
 
 export type Locale = 'en' | 'ru' | 'es';
 
+// Language tag for content files/videos (superset of UI locales)
+export type ContentLang = Locale | 'it' | 'fr' | 'de';
+
 export interface MultilingualText {
   en: string;
   ru: string;
@@ -19,7 +22,7 @@ export interface FileFormat {
   name: string;
   url: string;
   size: string;
-  language?: Locale; // Language specific to this file
+  language?: ContentLang; // Language specific to this file
   allowDownload?: boolean; // Per-file permission
   allowReading?: boolean;  // Per-file permission
 }
@@ -28,7 +31,7 @@ export interface VideoLink {
   id: string;
   url: string;
   source: string; // YouTube | RuTube | Twitch | VK | custom label
-  language?: Locale; // Language of this video
+  language?: ContentLang; // Language of this video
 }
 
 export interface MediaItem {

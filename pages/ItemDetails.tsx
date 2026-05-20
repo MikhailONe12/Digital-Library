@@ -36,9 +36,15 @@ const PDF_FILTER: Record<ReaderTheme, string> = {
 };
 
 const PDF_BG: Record<ReaderTheme, string> = {
-  default: 'bg-slate-800',
+  default: 'bg-gray-100',
   night:   'bg-slate-950',
   sepia:   'bg-amber-100',
+};
+
+const PDF_CHROME: Record<ReaderTheme, { bg: string; border: string; btn: string; text: string; sub: string }> = {
+  default: { bg: 'bg-white',     border: 'border-slate-200', btn: 'bg-slate-100 hover:bg-slate-200 text-slate-700', text: 'text-slate-900', sub: 'text-slate-400'     },
+  night:   { bg: 'bg-slate-900', border: 'border-white/10',  btn: 'bg-white/10 hover:bg-white/20 text-white',       text: 'text-white',    sub: 'text-white/40'       },
+  sepia:   { bg: 'bg-amber-50',  border: 'border-amber-200', btn: 'bg-amber-100 hover:bg-amber-200 text-amber-800', text: 'text-amber-900', sub: 'text-amber-700/60'  },
 };
 
 interface ItemDetailsProps {
@@ -58,6 +64,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const [pdfTotalPages, setPdfTotalPages] = useState(0);
   const [pdfScale, setPdfScale]           = useState(1);
   const [pdfError, setPdfError]           = useState<string | null>(null);
+  const pdfTotalPagesRef = useRef(0);
 
   // EPUB
   const [epubFontSize, setEpubFontSize] = useState<number>(() => {
@@ -335,14 +342,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       }
       if (disposed) return;
 
-      const containerWidth = container.parentElement?.clientWidth || window.innerWidth || 800;
-      const base           = page.getViewport({ scale: 1 });
-      const viewport       = page.getViewport({ scale: (containerWidth / base.width) * pdfScale });
+      const parent          = container.parentElement;
+      const containerWidth  = parent?.clientWidth  || window.innerWidth  || 800;
+      const containerHeight = parent?.clientHeight || window.innerHeight || 600;
+      const base            = page.getViewport({ scale: 1 });
+      // 100% (pdfScale=1) fits the whole page inside the viewport (fit-to-page);
+      // on wide desktop screens this avoids an oversized fit-to-width render.
+      const fitScale        = Math.min(containerWidth / base.width, containerHeight / base.height);
+      const viewport        = page.getViewport({ scale: fitScale * pdfScale });
 
       const canvas  = document.createElement('canvas');
       canvas.width  = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
-      canvas.className = 'block max-w-full';
+      canvas.className = 'block';
 
       let task: any;
       try {
@@ -374,6 +386,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     if (!activeReaderUrl || pdfTotalPages === 0) return;
     saveReadingProgress(userId, item.id, String(pdfPage), pdfTotalPages, activeReaderUrl);
   }, [pdfPage, pdfTotalPages, activeReaderUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep ref in sync for keyboard handler closure
+  useEffect(() => { pdfTotalPagesRef.current = pdfTotalPages; }, [pdfTotalPages]);
+
+  // Keyboard navigation (desktop ← / →)
+  useEffect(() => {
+    if (!activeReaderUrl) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft')  setPdfPage(p => Math.max(1, p - 1));
+      if (e.key === 'ArrowRight') setPdfPage(p => Math.min(pdfTotalPagesRef.current, p + 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeReaderUrl]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -420,6 +446,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   };
 
   const handlePdfTouchEnd = (e: React.TouchEvent) => {
+    if (pdfScale !== 1) return; // when zoomed, let native scroll handle touch
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
@@ -690,40 +717,40 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
       {/* ── PDF Reader ─────────────────────────────────────────────────────── */}
       {activeReaderUrl && (
-        <div className="fixed inset-0 z-[500] bg-slate-900 flex flex-col animate-in fade-in duration-300">
-          <header className="px-4 pb-4 flex items-center justify-between bg-slate-900 border-b border-white/10 shrink-0"
+        <div className={`fixed inset-0 z-[500] ${PDF_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
+          <header className={`px-4 pb-4 flex items-center justify-between ${PDF_CHROME[readerTheme].bg} border-b ${PDF_CHROME[readerTheme].border} shrink-0`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
               <div>
-                <p className="text-[10px] font-black uppercase text-white/40 tracking-widest leading-none mb-1">PDF Reader</p>
-                <p className="text-xs font-black text-white truncate max-w-[160px]">{pickText(item.title, lang)}</p>
+                <p className={`text-[10px] font-black uppercase ${PDF_CHROME[readerTheme].sub} tracking-widest leading-none mb-1`}>PDF Reader</p>
+                <p className={`text-xs font-black ${PDF_CHROME[readerTheme].text} truncate max-w-[160px]`}>{pickText(item.title, lang)}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={cycleTheme} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Тема">
+              <button onClick={cycleTheme} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
-              <button onClick={handleAddPdfBookmark} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all" title="Добавить закладку">
+              <button onClick={handleAddPdfBookmark} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => setShowBookmarks(s => !s)} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all relative" title="Закладки">
+              <button onClick={() => setShowBookmarks(s => !s)} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
               </button>
-              <button onClick={() => setActiveReaderUrl(null)} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-xl text-white transition-all"><X size={20} /></button>
+              <button onClick={() => setActiveReaderUrl(null)} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
             </div>
           </header>
 
           <div className="flex-1 relative overflow-hidden">
             <div
-              className={`w-full h-full overflow-y-auto ${PDF_BG[readerTheme]} flex justify-center`}
+              className={`w-full h-full overflow-auto ${PDF_BG[readerTheme]}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handlePdfTouchEnd}
             >
               <div
                 ref={pdfContainerRef}
-                className="self-start"
+                className="mx-auto w-fit"
                 style={{ filter: PDF_FILTER[readerTheme] }}
               />
             </div>
@@ -741,18 +768,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
           </div>
 
-          <footer className="px-4 pt-3 bg-slate-900 border-t border-white/5 flex items-center justify-between gap-3 shrink-0"
+          <footer className={`px-4 pt-3 ${PDF_CHROME[readerTheme].bg} border-t ${PDF_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}
             style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
-            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-95"><ChevronLeft size={26} /></button>
+            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
             <div className="flex flex-col items-center gap-1.5 shrink-0">
               <div className="flex items-center gap-1">
-                <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.25).toFixed(2)))} disabled={pdfScale <= 0.5} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomOut size={16} /></button>
-                <span className="text-[10px] font-black text-white/50 w-11 text-center">{Math.round(pdfScale * 100)}%</span>
-                <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.25).toFixed(2)))} disabled={pdfScale >= 3} className="p-2.5 bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-xl text-white transition-all"><ZoomIn size={16} /></button>
+                <button onClick={() => setPdfScale(s => Math.max(0.1, +(s - 0.1).toFixed(2)))} disabled={pdfScale <= 0.1} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
+                <span className={`text-[10px] font-black ${PDF_CHROME[readerTheme].sub} w-11 text-center`}>{Math.round(pdfScale * 100)}%</span>
+                <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} disabled={pdfScale >= 3} className={`p-2.5 ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
               </div>
-              <p className="text-[9px] font-black text-white/40 tracking-widest">{pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}</p>
+              <p className={`text-[9px] font-black ${PDF_CHROME[readerTheme].sub} tracking-widest`}>{pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}</p>
             </div>
-            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className="flex-1 max-w-[150px] py-4 flex items-center justify-center bg-white/10 hover:bg-white/20 disabled:opacity-30 rounded-2xl text-white transition-all active:scale-95"><ChevronRight size={26} /></button>
+            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${PDF_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
         </div>
       )}

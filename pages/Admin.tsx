@@ -581,14 +581,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
                       <Monitor size={14} className="text-blue-600" /> {t.accessLogs}
                 </h3>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto overflow-y-auto max-h-[420px]">
                     <table className="w-full text-left border-collapse min-w-[500px]">
-                        <thead>
+                        <thead className="sticky top-0 z-10 bg-white">
                             <tr className="border-b border-slate-100">
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest">Time</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest">User</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest">{t.ipAddress}</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest text-right">{t.device}</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">Time</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">User</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{t.ipAddress}</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest text-right bg-white">{t.device}</th>
                             </tr>
                         </thead>
                         <tbody className="text-[10px] font-mono">

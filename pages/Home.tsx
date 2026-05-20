@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { MediaItem, Locale, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
-import { Search, TrendingUp, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
 
 interface HomeProps {
@@ -65,7 +65,7 @@ const Home: React.FC<HomeProps> = ({
             <h1 className="text-4xl font-black text-slate-900 tracking-tighter">Options<span className="text-red-600 font-extrabold">Data</span></h1>
         </div>
         <p className="text-slate-400 text-[11px] uppercase font-black tracking-[0.5em] flex items-center gap-2 ml-1">
-            Digital Library <TrendingUp size={14} className="text-red-600" />
+            Digital Library
         </p>
       </header>
 

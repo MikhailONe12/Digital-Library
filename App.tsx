@@ -212,8 +212,11 @@ const App: React.FC = () => {
     <div className="min-h-screen pb-10 font-sans text-slate-900 overflow-x-hidden bg-[#f8fafc]">
       {/* Precision Lang Switcher Dropdown */}
       <div
-        className="flex justify-end px-6 pb-6 absolute top-0 right-0 z-[110]"
-        style={{ paddingTop: 'calc(1.5rem + var(--safe-top))' }}
+        className={`flex justify-end px-6 pb-6 absolute top-0 right-0 z-[110] ${
+          currentPage === 'home'
+            ? 'pt-[calc(6.75rem_+_var(--safe-top))] sm:pt-[calc(1.5rem_+_var(--safe-top))]'
+            : 'pt-[calc(1.5rem_+_var(--safe-top))]'
+        }`}
         ref={langMenuRef}
       >
         <div className="relative">

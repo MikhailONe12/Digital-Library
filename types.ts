@@ -28,6 +28,7 @@ export interface VideoLink {
   id: string;
   url: string;
   source: string; // YouTube | RuTube | Twitch | VK | custom label
+  language?: Locale; // Language of this video
 }
 
 export interface MediaItem {

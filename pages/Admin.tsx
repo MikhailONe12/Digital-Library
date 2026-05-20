@@ -5,7 +5,8 @@ import {
   Plus, Edit2, Trash2, Users, Eye, Download, LogOut, Tags,
   ShieldCheck, X, AtSign, Unlock, Lock,
   Percent, Database, Upload, Video,
-  Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4
+  Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4,
+  ChevronDown
 } from 'lucide-react';
 import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
@@ -243,11 +244,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
   const handleAddVideo = () => {
     if (!editingItem) return;
-    const newVideo: VideoLink = { id: Date.now().toString(), url: '', source: 'YouTube' };
+    const newVideo: VideoLink = { id: Date.now().toString(), url: '', source: 'YouTube', language: 'ru' };
     setEditingItem({ ...editingItem, videos: [...(editingItem.videos || []), newVideo] });
   };
 
-  const handleUpdateVideo = (id: string, field: 'url' | 'source', value: string) => {
+  const handleUpdateVideo = (id: string, field: 'url' | 'source' | 'language', value: string) => {
     if (!editingItem) return;
     const updated = (editingItem.videos || []).map(v => v.id === id ? { ...v, [field]: value } : v);
     setEditingItem({ ...editingItem, videos: updated });
@@ -1158,20 +1159,34 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         const presets = ['YouTube', 'RuTube', 'Twitch', 'VK'];
                         const isCustom = !presets.includes(v.source);
                         return (
-                          <div key={v.id} className="p-2.5 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={isCustom ? '__custom__' : v.source}
-                                onChange={e => handleUpdateVideo(v.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
-                                className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
-                                {presets.map(p => <option key={p} value={p}>{p}</option>)}
-                                <option value="__custom__">Свой источник…</option>
-                              </select>
+                          <div key={v.id} className="relative p-2.5 pl-9 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                            <button type="button" onClick={() => handleRemoveVideo(v.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="relative">
+                                <select
+                                  value={isCustom ? '__custom__' : v.source}
+                                  onChange={e => handleUpdateVideo(v.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
+                                  className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
+                                  {presets.map(p => <option key={p} value={p}>{p}</option>)}
+                                  <option value="__custom__">Свой источник…</option>
+                                </select>
+                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                              </div>
+                              <div className="relative">
+                                <select
+                                  value={v.language || 'ru'}
+                                  onChange={e => handleUpdateVideo(v.id, 'language', e.target.value)}
+                                  className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
+                                  <option value="ru">RU</option>
+                                  <option value="en">EN</option>
+                                  <option value="es">ES</option>
+                                </select>
+                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                              </div>
                               {isCustom && (
                                 <input type="text" placeholder="Название источника" className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
                                   value={v.source} onChange={e => handleUpdateVideo(v.id, 'source', e.target.value)} />
                               )}
-                              <button type="button" onClick={() => handleRemoveVideo(v.id)} className="p-2 text-slate-300 hover:text-red-500 shrink-0"><X size={14} /></button>
                             </div>
                             <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
                               value={v.url} onChange={e => handleUpdateVideo(v.id, 'url', e.target.value)} />
@@ -1232,7 +1247,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 </div>
                 <div className="space-y-3">
                   {editingItem.formats && editingItem.formats.map((f) => (
-                    <div key={f.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div key={f.id} className="relative p-3 pl-9 bg-slate-50 rounded-2xl border border-slate-100">
+                      {!f.url && (
+                        <button type="button" onClick={() => handleRemoveFormat(f.id)} title="Убрать блок" className="absolute top-3 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+                      )}
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Название</label>

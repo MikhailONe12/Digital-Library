@@ -355,6 +355,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       canvas.width  = Math.floor(viewport.width);
       canvas.height = Math.floor(viewport.height);
       canvas.className = 'block';
+      // Apply filter directly to canvas — parent-div filters are not composited
+      // correctly with GPU-accelerated canvas on desktop Chromium/Safari.
+      canvas.style.filter = PDF_FILTER[readerTheme];
 
       let task: any;
       try {
@@ -400,6 +403,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [activeReaderUrl]);
+
+  // Live-update canvas filter when PDF theme changes without re-rendering the page
+  useEffect(() => {
+    const canvas = pdfContainerRef.current?.firstElementChild as HTMLElement | null;
+    if (canvas) canvas.style.filter = PDF_FILTER[readerTheme];
+  }, [readerTheme]);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -474,6 +483,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       setActiveReaderUrl(fileUrl);
     } else if (url.endsWith('.epub')) {
       setActiveEpubUrl(fileUrl);
+    } else if (url.endsWith('.djvu') || url.endsWith('.djv')) {
+      // Server auto-converts DjVu→PDF on upload; old DB entries may still have
+      // a .djvu URL — point to the converted .pdf so the built-in reader opens it.
+      setActiveReaderUrl(fileUrl.replace(/\.djvu?$/i, '.pdf'));
     } else {
       window.open(fileUrl, '_blank');
     }
@@ -748,11 +761,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               onTouchStart={handleTouchStart}
               onTouchEnd={handlePdfTouchEnd}
             >
-              <div
-                ref={pdfContainerRef}
-                className="mx-auto w-fit"
-                style={{ filter: PDF_FILTER[readerTheme] }}
-              />
+              <div ref={pdfContainerRef} className="mx-auto w-fit" />
             </div>
             {pdfTotalPages === 0 && !pdfError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

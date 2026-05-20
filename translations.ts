@@ -68,6 +68,9 @@ export const translations = {
     globalStatus: 'Global Status',
     adminTerminal: 'Advanced Intelligence Terminal',
     version: 'Version 0.8',
+    noFavoritesYet: 'No favorites yet',
+    noRecentItems: 'No recent items',
+    noResults: 'Nothing here yet',
   },
   ru: {
     library: 'Терминал',
@@ -135,6 +138,9 @@ export const translations = {
     globalStatus: 'Глобальный статус',
     adminTerminal: 'Терминал управления контентом',
     version: 'Версия 0.8',
+    noFavoritesYet: 'Нет избранного',
+    noRecentItems: 'Нет новинок',
+    noResults: 'Здесь пока ничего нет',
   },
   es: {
     library: 'Terminal',
@@ -202,5 +208,8 @@ export const translations = {
     globalStatus: 'Estado Global',
     adminTerminal: 'Terminal de Gestión de Contenido',
     version: 'Versión 0.8',
+    noFavoritesYet: 'Sin favoritos aún',
+    noRecentItems: 'Sin novedades',
+    noResults: 'Todavía no hay nada',
   }
 };

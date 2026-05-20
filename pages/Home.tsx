@@ -210,7 +210,7 @@ const Home: React.FC<HomeProps> = ({
                   {activeCategory === 'FAVORITES' ? <Heart size={40} /> : activeCategory === 'NEW' ? <Sparkles size={40} /> : <Search size={40} />}
               </div>
               <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">
-                {activeCategory === 'FAVORITES' ? 'No favorites yet' : activeCategory === 'NEW' ? 'No recent drops' : 'No Alpha Found'}
+                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : t.noResults}
               </p>
           </div>
       )}

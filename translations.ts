@@ -83,7 +83,7 @@ export const translations = {
     data: 'Данные',
     addContent: 'Регистрация актива',
     save: 'Подтвердить изменения',
-    author: 'Аналитик',
+    author: 'Автор',
     published: 'Дата выпуска',
     description: 'Резюме',
     rating: 'Оценка',

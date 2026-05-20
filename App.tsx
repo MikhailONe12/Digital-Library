@@ -21,7 +21,7 @@ const App: React.FC = () => {
   // Search & Filters State
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW'>('ALL');
-  const [contentLangFilter, setContentLangFilter] = useState<ContentLang | 'ALL'>('ALL');
+  const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>([]);
   const [searchField, setSearchField] = useState<'all' | 'title' | 'author'>('all');
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
@@ -127,9 +127,9 @@ const App: React.FC = () => {
     });
 
     // 2. Filter by Content Language
-    if (contentLangFilter !== 'ALL') {
-      availableItems = availableItems.filter(item => 
-        item.contentLanguages.includes(contentLangFilter)
+    if (contentLangFilter.length > 0) {
+      availableItems = availableItems.filter(item =>
+        contentLangFilter.some(l => item.contentLanguages.includes(l))
       );
     }
 

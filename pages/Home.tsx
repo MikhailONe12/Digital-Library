@@ -12,8 +12,8 @@ interface HomeProps {
   setSearchQuery: (q: string) => void;
   activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW';
   setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW') => void;
-  contentLangFilter: ContentLang | 'ALL';
-  setContentLangFilter: (l: ContentLang | 'ALL') => void;
+  contentLangFilter: ContentLang[];
+  setContentLangFilter: (langs: ContentLang[]) => void;
   searchField: 'all' | 'title' | 'author';
   setSearchField: (f: 'all' | 'title' | 'author') => void;
   categories: CustomType[];
@@ -79,7 +79,7 @@ const Home: React.FC<HomeProps> = ({
           />
           <button 
             onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all ${isFilterOpen || contentLangFilter !== 'ALL' || searchField !== 'all' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-red-600 hover:bg-slate-50'}`}
+            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-red-600 hover:bg-slate-50'}`}
           >
             <SlidersHorizontal size={18} strokeWidth={2.5} />
           </button>
@@ -95,16 +95,30 @@ const Home: React.FC<HomeProps> = ({
                        <Globe size={12} /> {t.contentLang}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                       {(['ALL', 'en', 'ru', 'es', 'it', 'fr', 'de'] as const).map(l => (
-                          <button 
-                            key={l}
-                            onClick={() => setContentLangFilter(l)}
-                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${contentLangFilter === l ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:border-slate-300'}`}
-                          >
-                             {l === 'ALL' ? t.anyLang : l}
-                             {contentLangFilter === l && <Check size={10} strokeWidth={4} />}
-                          </button>
-                       ))}
+                       {/* ALL button — clears selection */}
+                       <button
+                         onClick={() => setContentLangFilter([])}
+                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${contentLangFilter.length === 0 ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:border-slate-300'}`}
+                       >
+                         {t.anyLang}
+                         {contentLangFilter.length === 0 && <Check size={10} strokeWidth={4} />}
+                       </button>
+                       {(['en', 'ru', 'es', 'it', 'fr', 'de'] as const).map(l => {
+                         const active = contentLangFilter.includes(l);
+                         const toggle = () => setContentLangFilter(
+                           active ? contentLangFilter.filter(x => x !== l) : [...contentLangFilter, l]
+                         );
+                         return (
+                           <button
+                             key={l}
+                             onClick={toggle}
+                             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:border-slate-300'}`}
+                           >
+                             {l}
+                             {active && <Check size={10} strokeWidth={4} />}
+                           </button>
+                         );
+                       })}
                     </div>
                  </div>
 

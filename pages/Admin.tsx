@@ -1015,7 +1015,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         value={editingItem.author || ''} onChange={e => setEditingItem({...editingItem, author: e.target.value})} />
                     </div>
                   </div>
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
                       <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Дата публикации</label>
                       <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"

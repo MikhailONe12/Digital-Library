@@ -33,6 +33,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const [newUserNickname, setNewUserNickname] = useState('');
   const [newBlacklistEntry, setNewBlacklistEntry] = useState('');
   const [newTypeLabels, setNewTypeLabels] = useState({ en: '', ru: '', es: '' });
+  const typedLangsRef = useRef<Set<'en' | 'ru' | 'es'>>(new Set());
   const [editingType, setEditingType] = useState<CustomType | null>(null);
   const [importJson, setImportJson] = useState('');
   const [uploadState, setUploadState] = useState<{ field: string; progress: number } | null>(null);
@@ -306,6 +307,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       es: es.trim() || en.trim() || ru.trim(),
     });
     setNewTypeLabels({ en: '', ru: '', es: '' });
+    typedLangsRef.current.clear();
     onUpdate();
   };
 
@@ -896,11 +898,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       value={newTypeLabels[l]}
                       onChange={e => {
                         const val = e.target.value;
+                        typedLangsRef.current.add(l);
                         setNewTypeLabels(prev => {
                           const next = { ...prev, [l]: val };
-                          if (!prev.en && l !== 'en') next.en = val;
-                          if (!prev.ru && l !== 'ru') next.ru = val;
-                          if (!prev.es && l !== 'es') next.es = val;
+                          (['en', 'ru', 'es'] as const).forEach(other => {
+                            if (other !== l && !typedLangsRef.current.has(other)) next[other] = val;
+                          });
                           return next;
                         });
                       }}

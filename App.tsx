@@ -212,27 +212,28 @@ const App: React.FC = () => {
     <div className="min-h-screen pb-10 font-sans text-slate-900 overflow-x-hidden bg-[#f8fafc]">
       {/* Precision Lang Switcher Dropdown */}
       <div
-        className={`flex justify-end px-6 pb-6 absolute top-0 right-0 z-[110] ${
+        className={`absolute top-0 left-0 right-0 z-[110] pointer-events-none ${
           currentPage === 'home'
-            ? 'pt-[calc(6.75rem_+_var(--safe-top))] sm:pt-[calc(1.5rem_+_var(--safe-top))]'
+            ? 'pt-[calc(6.75rem_+_var(--safe-top))] sm:pt-[calc(3.75rem_+_var(--safe-top))]'
             : 'pt-[calc(1.5rem_+_var(--safe-top))]'
         }`}
         ref={langMenuRef}
       >
-        <div className="relative">
-          <button 
-            onClick={() => setIsLangMenuOpen(!isLangMenuOpen)} 
+        <div className={`flex justify-end ${currentPage === 'home' ? 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-10' : 'px-6'}`}>
+        <div className="relative pointer-events-auto">
+          <button
+            onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
             className="flex items-center gap-2 bg-white/70 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-200 text-[10px] font-bold uppercase tracking-widest text-red-600 shadow-sm transition-all hover:bg-white active:scale-95"
           >
             <Globe size={14} />
             {lang}
             <ChevronDown size={12} className={`transition-transform duration-300 ${isLangMenuOpen ? 'rotate-180' : ''}`} />
           </button>
-          
+
           {isLangMenuOpen && (
             <div className="absolute right-0 mt-2 w-24 bg-white/90 backdrop-blur-xl border border-slate-200 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] overflow-hidden z-[120] animate-in fade-in zoom-in-95 duration-200">
                {(['en', 'ru', 'es'] as Locale[]).map((l) => (
-                  <button 
+                  <button
                     key={l}
                     onClick={() => selectLang(l)}
                     className={`w-full text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-colors ${lang === l ? 'text-red-600 bg-red-50/50' : 'text-slate-500'}`}
@@ -242,6 +243,7 @@ const App: React.FC = () => {
                ))}
             </div>
           )}
+        </div>
         </div>
       </div>
 

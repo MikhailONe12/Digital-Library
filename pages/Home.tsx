@@ -155,11 +155,11 @@ const Home: React.FC<HomeProps> = ({
 
       <div className="flex gap-3 overflow-x-auto pb-10 mt-4 no-scrollbar scroll-smooth">
         {/* Favorites Button */}
-        <button 
-          onClick={() => setActiveCategory('FAVORITES')} 
-          className={`flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl transition-all duration-300 ${
-            activeCategory === 'FAVORITES' 
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]' 
+        <button
+          onClick={() => setActiveCategory('FAVORITES')}
+          className={`flex-shrink-0 w-14 h-[2.45rem] flex items-center justify-center rounded-2xl transition-all duration-300 ${
+            activeCategory === 'FAVORITES'
+            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
             : 'bg-white text-red-600 border border-slate-200 hover:border-red-200'
           }`}
           aria-label="Favorites"
@@ -168,11 +168,11 @@ const Home: React.FC<HomeProps> = ({
         </button>
 
         {/* New Arrivals Button */}
-        <button 
-          onClick={() => setActiveCategory('NEW')} 
-          className={`flex-shrink-0 flex items-center gap-2 px-6 h-14 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
-            activeCategory === 'NEW' 
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]' 
+        <button
+          onClick={() => setActiveCategory('NEW')}
+          className={`flex-shrink-0 flex items-center gap-2 px-6 h-[2.45rem] rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+            activeCategory === 'NEW'
+            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
             : 'bg-white text-red-600 border border-slate-200 hover:border-red-200'
           }`}
         >
@@ -180,11 +180,11 @@ const Home: React.FC<HomeProps> = ({
           {t.new}
         </button>
 
-        <button 
-          onClick={() => setActiveCategory('ALL')} 
-          className={`whitespace-nowrap px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
-            activeCategory === 'ALL' 
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]' 
+        <button
+          onClick={() => setActiveCategory('ALL')}
+          className={`whitespace-nowrap px-10 py-[0.7rem] rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+            activeCategory === 'ALL'
+            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
             : 'bg-white text-slate-500 border border-slate-200 hover:border-red-200'
           }`}
         >
@@ -194,7 +194,7 @@ const Home: React.FC<HomeProps> = ({
           <button
             key={cat.id}
             onClick={() => setActiveCategory(cat.id)}
-            className={`whitespace-nowrap px-10 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+            className={`whitespace-nowrap px-10 py-[0.7rem] rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
               activeCategory === cat.id
               ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
               : 'bg-white text-slate-500 border border-slate-200 hover:border-red-200'

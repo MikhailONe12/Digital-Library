@@ -32,7 +32,7 @@ const EPUB_THEMES: Record<ReaderTheme, Record<string, any>> = {
 const PDF_FILTER: Record<ReaderTheme, string> = {
   default: 'none',
   night:   'invert(0.88) hue-rotate(180deg)',
-  sepia:   'sepia(0.75) brightness(1.05)',
+  sepia:   'sepia(1) brightness(0.95)',
 };
 
 const PDF_BG: Record<ReaderTheme, string> = {

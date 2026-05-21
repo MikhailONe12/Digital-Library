@@ -620,7 +620,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     const cfi = renditionRef.current?.currentLocation()?.start?.cfi;
     if (!cfi) return;
     setBookmarkName('');
-    setBookmarkDraft({ position: cfi, defaultLabel: `Закладка ${bookmarks.length + 1}` });
+    setBookmarkDraft({ position: cfi, defaultLabel: `Закладка ${bookmarks.filter(b => !/^\d+$/.test(b.position)).length + 1}` });
   };
 
   const handleSaveBookmark = async () => {
@@ -711,17 +711,22 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   // ── Shared panels ──────────────────────────────────────────────────────────
 
-  const BookmarksPanel = ({ onJump }: { onJump: (b: Bookmark) => void }) => (
+  const BookmarksPanel = ({ onJump, isEpub }: { onJump: (b: Bookmark) => void; isEpub: boolean }) => {
+    // Bookmarks aren't tagged with a format, but their position type is
+    // unambiguous: PDF stores a page number, EPUB stores an "epubcfi(...)"
+    // string. Show only the ones that belong to the current reader.
+    const visible = bookmarks.filter(b => isEpub ? !/^\d+$/.test(b.position) : /^\d+$/.test(b.position));
+    return (
     <div className="absolute inset-y-0 right-0 w-64 bg-slate-950 border-l border-white/10 flex flex-col z-30 animate-in slide-in-from-right-2 duration-200">
       <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
         <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Закладки</p>
         <button onClick={() => setShowBookmarks(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {bookmarks.length === 0 && (
+        {visible.length === 0 && (
           <p className="text-center text-white/20 text-[10px] uppercase tracking-widest py-8">Нет закладок</p>
         )}
-        {bookmarks.map(b => (
+        {visible.map(b => (
           <div key={b.id} className="flex items-center gap-2 p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-colors group">
             <button onClick={() => { onJump(b); setShowBookmarks(false); }} className="flex-1 text-left min-w-0">
               <p className="text-xs font-bold text-white truncate">{b.label}</p>
@@ -734,7 +739,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         ))}
       </div>
     </div>
-  );
+    );
+  };
 
   const EpubTocPanel = () => {
     const renderItems = (items: TocItem[], depth = 0) => items.map(tocItem => (
@@ -1080,7 +1086,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </button>
               <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
-                {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
+                {bookmarks.filter(b => !/^\d+$/.test(b.position)).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.filter(b => !/^\d+$/.test(b.position)).length}</span>}
               </button>
               <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
                 <Highlighter size={16} />
@@ -1094,7 +1100,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             style={{ background: readerTheme === 'night' ? '#0f172a' : readerTheme === 'sepia' ? '#f4ecd8' : '#ffffff' }}>
             <div ref={epubViewerRef} className="w-full h-full" />
             {showToc && <EpubTocPanel />}
-            {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
+            {showBookmarks && <BookmarksPanel isEpub={true} onJump={b => renditionRef.current?.display(b.position)} />}
             {showAnnotations && <AnnotationsPanel isEpub={true} />}
             {annotationDraft !== null && AnnotationSheet({})}
             {bookmarkDraft !== null && BookmarkSheet({})}
@@ -1151,7 +1157,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </button>
               <button onClick={() => { setShowBookmarks(s => !s); setShowAnnotations(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
-                {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
+                {bookmarks.filter(b => /^\d+$/.test(b.position)).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.filter(b => /^\d+$/.test(b.position)).length}</span>}
               </button>
               <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
                 <Highlighter size={16} />
@@ -1205,7 +1211,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </div>
             )}
             {showToc && <PdfTocPanel />}
-            {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
+            {showBookmarks && <BookmarksPanel isEpub={false} onJump={b => { setPdfPage(parseInt(b.position)); }} />}
             {showAnnotations && <AnnotationsPanel isEpub={false} />}
             {annotationDraft !== null && AnnotationSheet({ isPdf: true })}
             {bookmarkDraft !== null && BookmarkSheet({})}

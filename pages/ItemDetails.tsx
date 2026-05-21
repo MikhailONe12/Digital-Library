@@ -783,37 +783,56 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   );
 
   const AnnotationSheet = ({ isPdf }: { isPdf?: boolean }) => (
-    <div className="absolute inset-0 z-30 pointer-events-none flex items-end">
-      <div className="pointer-events-auto w-full bg-slate-900/97 backdrop-blur-xl border-t border-white/10 p-4 space-y-3 animate-in slide-in-from-bottom-2 duration-200">
-        {annotationDraft?.text && (
-          <p className="text-[11px] text-white/50 italic line-clamp-2 px-1">"{annotationDraft.text}"</p>
-        )}
-        {isPdf && !annotationDraft?.text && (
-          <p className="text-[10px] text-white/40 uppercase tracking-widest px-1">Заметка · стр. {annotationDraft?.page}</p>
-        )}
-        <textarea
-          value={draftNote}
-          onChange={e => setDraftNote(e.target.value)}
-          placeholder="Добавить заметку…"
-          className="w-full bg-white/10 text-white text-xs rounded-xl p-3 resize-none outline-none placeholder:text-white/30 border border-white/10 focus:border-white/30 transition-colors"
-          rows={3}
-          autoFocus
-        />
+    <div className="fixed inset-x-0 bottom-0 z-[600] animate-in slide-in-from-bottom-3 duration-200"
+      style={{ paddingBottom: 'calc(var(--safe-bottom, 0px))' }}>
+      <div className="mx-auto max-w-2xl bg-white rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.18)] border-t border-slate-200 p-5 space-y-4">
+        {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+          <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+            {isPdf ? `Заметка · стр. ${annotationDraft?.page}` : 'Выделение'}
+          </p>
+          <button onClick={handleCancelAnnotation} className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Selected text quote (EPUB only) */}
+        {annotationDraft?.text && (
+          <div className="bg-slate-50 rounded-2xl px-4 py-3 border-l-4 border-red-500">
+            <p className="text-xs text-slate-600 italic line-clamp-3">"{annotationDraft.text}"</p>
+          </div>
+        )}
+
+        {/* Note input */}
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Комментарий (необязательно)</label>
+          <textarea
+            value={draftNote}
+            onChange={e => setDraftNote(e.target.value)}
+            placeholder="Напишите заметку здесь…"
+            className="w-full bg-slate-50 text-slate-900 text-sm rounded-2xl p-4 resize-none outline-none placeholder:text-slate-400 border-2 border-slate-200 focus:border-red-400 transition-colors"
+            rows={3}
+            autoFocus
+          />
+        </div>
+
+        {/* Color picker + actions */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 mr-1">Цвет:</span>
             {(['yellow', 'green', 'blue', 'pink'] as HighlightColor[]).map(c => (
               <button
                 key={c}
                 onClick={() => setDraftColor(c)}
-                className={`w-6 h-6 rounded-full transition-all ${HIGHLIGHT_COLOR_BG[c]} ${
-                  draftColor === c ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900 scale-110' : 'opacity-60 hover:opacity-100'
+                className={`w-7 h-7 rounded-full transition-all ${HIGHLIGHT_COLOR_BG[c]} ${
+                  draftColor === c ? 'ring-2 ring-slate-700 ring-offset-2 scale-110 shadow-md' : 'opacity-50 hover:opacity-90 hover:scale-105'
                 }`}
               />
             ))}
           </div>
           <div className="flex gap-2">
-            <button onClick={handleCancelAnnotation} className="px-3 py-1.5 text-white/40 text-xs font-bold hover:text-white transition-colors">Отмена</button>
-            <button onClick={handleSaveAnnotation} className="px-4 py-1.5 bg-red-600 text-white text-xs font-black rounded-xl hover:bg-red-700 transition-colors">Сохранить</button>
+            <button onClick={handleCancelAnnotation} className="px-4 py-2 text-slate-500 text-xs font-bold hover:text-slate-800 transition-colors rounded-xl hover:bg-slate-100">Отмена</button>
+            <button onClick={handleSaveAnnotation} className="px-5 py-2 bg-red-600 text-white text-xs font-black rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-md shadow-red-200">Сохранить</button>
           </div>
         </div>
       </div>

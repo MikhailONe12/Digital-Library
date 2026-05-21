@@ -236,10 +236,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
         // Restore last position, then display
         let progress: any = null;
-        try { progress = await getReadingProgress(userId, item.id); }
+        try { progress = await getReadingProgress(userId, item.id, activeEpubUrl); }
         catch { /* progress is best-effort */ }
         if (destroyed) return;
-        const cfi = progress?.format_url?.endsWith('.epub') ? progress.position : undefined;
+        const cfi = progress?.position;
 
         await rendition.display(cfi || undefined);
         if (!destroyed) { clearTimer(); setEpubLoading(false); }
@@ -315,8 +315,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
         let startPage = 1;
         try {
-          const progress = await getReadingProgress(userId, item.id);
-          if (progress?.format_url?.endsWith('.pdf') && progress.position) {
+          const progress = await getReadingProgress(userId, item.id, activeReaderUrl);
+          if (progress?.position) {
             const saved = parseInt(progress.position);
             if (saved > 0 && saved <= doc.numPages) startPage = saved;
           }

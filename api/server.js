@@ -32,6 +32,36 @@ const pool = new Pool({
 const initDb = async () => {
   const sql = fs.readFileSync(path.join(__dirname, 'init.sql'), 'utf8');
   await pool.query(sql);
+
+  // Migrate user_reading_progress: expand PK to (user_id, item_id, format_url).
+  // Safe to run on every startup (all steps are idempotent).
+  await pool.query(`
+    -- 1. Fill NULLs so we can set NOT NULL
+    UPDATE user_reading_progress SET format_url = '' WHERE format_url IS NULL;
+    -- 2. Set column NOT NULL + default (noop if already correct)
+    ALTER TABLE user_reading_progress
+      ALTER COLUMN format_url SET NOT NULL,
+      ALTER COLUMN format_url SET DEFAULT '';
+  `).catch(() => {/* already correct */});
+
+  await pool.query(`
+    -- 3. Expand PK to (user_id, item_id, format_url) if not already done.
+    DO $$
+    DECLARE pk_cols TEXT;
+    BEGIN
+      SELECT string_agg(a.attname, ',' ORDER BY array_position(c.conkey, a.attnum))
+        INTO pk_cols
+      FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+      WHERE c.contype = 'p' AND c.conrelid = 'user_reading_progress'::regclass;
+
+      IF pk_cols IS DISTINCT FROM 'user_id,item_id,format_url' THEN
+        ALTER TABLE user_reading_progress DROP CONSTRAINT user_reading_progress_pkey;
+        ALTER TABLE user_reading_progress ADD PRIMARY KEY (user_id, item_id, format_url);
+      END IF;
+    END $$;
+  `).catch(e => console.warn('progress PK migration skipped:', e.message));
+
   console.log('DB: schema initialized');
 };
 
@@ -820,7 +850,7 @@ app.get('/api/users/:userId/progress', validateUserId, async (req, res) => {
   }
 });
 
-// GET single-item progress
+// GET single-item progress — returns all format rows for this item
 app.get('/api/users/:userId/progress/:itemId',
   validateUserId, validateItemId,
   async (req, res) => {
@@ -829,27 +859,27 @@ app.get('/api/users/:userId/progress/:itemId',
         'SELECT position, position_total, format_url FROM user_reading_progress WHERE user_id = $1 AND item_id = $2',
         [req.params.userId, req.params.itemId],
       );
-      res.json(rows[0] || null);
+      res.json(rows);
     } catch {
-      res.json(null);
+      res.json([]);
     }
   },
 );
 
-// PUT (upsert) single-item progress
+// PUT (upsert) single-item+format progress
 app.put('/api/users/:userId/progress/:itemId',
   validateUserId, validateItemId,
   async (req, res) => {
     const position = clip(req.body?.position, 512);
     const positionTotal = parseInt(req.body?.positionTotal ?? 0, 10) || 0;
-    const formatUrl = clip(req.body?.formatUrl, 512);
+    const formatUrl = clip(req.body?.formatUrl, 512) || '';
     if (!position) return res.status(400).json({ error: 'position required' });
     try {
       await pool.query(
         `INSERT INTO user_reading_progress (user_id, item_id, position, position_total, format_url)
          VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (user_id, item_id) DO UPDATE
-           SET position = $3, position_total = $4, format_url = $5, updated_at = NOW()`,
+         ON CONFLICT (user_id, item_id, format_url) DO UPDATE
+           SET position = $3, position_total = $4, updated_at = NOW()`,
         [req.params.userId, req.params.itemId, position, positionTotal, formatUrl],
       );
       res.json({ ok: true });

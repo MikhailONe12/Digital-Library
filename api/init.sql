@@ -89,13 +89,13 @@ CREATE TABLE IF NOT EXISTS user_bookmarks (
 
 CREATE INDEX IF NOT EXISTS idx_bm_user_item ON user_bookmarks(user_id, item_id);
 
--- Reading progress: last position per user per item (upsert on update)
+-- Reading progress: one row per user per file (upsert on update)
 CREATE TABLE IF NOT EXISTS user_reading_progress (
   user_id        TEXT        NOT NULL,
   item_id        TEXT        NOT NULL,
   position       TEXT        NOT NULL,   -- page number (PDF) or CFI string (EPUB)
-  position_total INT         NOT NULL DEFAULT 0,  -- total pages (PDF); 0 for EPUB
-  format_url     TEXT,
+  position_total INT         NOT NULL DEFAULT 0,  -- total pages (PDF); 0–100 for EPUB
+  format_url     TEXT        NOT NULL DEFAULT '', -- identifies which file
   updated_at     TIMESTAMPTZ DEFAULT NOW(),
-  PRIMARY KEY (user_id, item_id)
+  PRIMARY KEY (user_id, item_id, format_url)
 );

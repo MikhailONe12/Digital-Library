@@ -123,6 +123,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const pdfRenderTaskRef  = useRef<any>(null);
   const touchStartX       = useRef(0);
   const touchStartY       = useRef(0);
+  // True while the annotation sheet is open — used to suspend ←/→ page
+  // navigation so arrow keys move the text cursor inside the note textarea.
+  const annotationOpenRef = useRef(false);
 
   const tg     = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
@@ -143,6 +146,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     } catch { /* already relative or malformed */ }
     return url;
   };
+
+  // Keep ref in sync so keyboard handlers can read the latest value
+  useEffect(() => { annotationOpenRef.current = annotationDraft !== null; }, [annotationDraft]);
 
   // Persist theme & font choices
   useEffect(() => { localStorage.setItem(THEME_KEY, readerTheme); }, [readerTheme]);
@@ -271,6 +277,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
         // Keyboard ← / → from inside the epub iframe (where focus usually is)
         rendition.on('keyup', (ev: KeyboardEvent) => {
+          if (annotationOpenRef.current) return; // typing a note — let arrows move the cursor
           if (ev.key === 'ArrowLeft')  rendition.prev();
           if (ev.key === 'ArrowRight') rendition.next();
         });
@@ -330,6 +337,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   useEffect(() => {
     if (!activeEpubUrl) return;
     const onKey = (e: KeyboardEvent) => {
+      if (annotationOpenRef.current) return; // typing a note — let arrows move the cursor
       if (e.key === 'ArrowLeft')  renditionRef.current?.prev();
       if (e.key === 'ArrowRight') renditionRef.current?.next();
     };
@@ -499,6 +507,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   useEffect(() => {
     if (!activeReaderUrl) return;
     const onKey = (e: KeyboardEvent) => {
+      if (annotationOpenRef.current) return; // typing a note — let arrows move the cursor
       if (e.key === 'ArrowLeft')  setPdfPage(p => Math.max(1, p - 1));
       if (e.key === 'ArrowRight') setPdfPage(p => Math.min(pdfTotalPagesRef.current, p + 1));
     };
@@ -1007,7 +1016,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showToc && <EpubTocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
             {showAnnotations && <AnnotationsPanel isEpub={true} />}
-            {annotationDraft !== null && <AnnotationSheet />}
+            {annotationDraft !== null && AnnotationSheet({})}
             {epubLoading && !epubError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-8 h-8 border-4 border-slate-300 border-t-red-600 rounded-full animate-spin" />
@@ -1084,6 +1093,25 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             >
               <div ref={pdfContainerRef} className="mx-auto w-fit" />
             </div>
+            {/* Sticky-note markers for annotations on the current page */}
+            {annotations.filter(a => a.page === pdfPage).length > 0 && (
+              <div className="absolute top-3 right-3 z-20 flex flex-col gap-2 max-w-[220px]">
+                {annotations.filter(a => a.page === pdfPage).map(a => (
+                  <div key={a.id} className={`group relative px-3 py-2 rounded-2xl shadow-lg border border-black/5 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`}>
+                    <p className="text-[11px] font-bold text-slate-900 leading-snug pr-4 break-words">
+                      {a.note || a.selected_text || 'Заметка'}
+                    </p>
+                    <button
+                      onClick={() => handleDeleteAnnotation(a.id)}
+                      className="absolute top-1 right-1 p-1 text-slate-900/40 hover:text-red-700 transition-colors"
+                      title="Удалить"
+                    >
+                      <X size={12} strokeWidth={3} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {pdfTotalPages === 0 && !pdfError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-8 h-8 border-4 border-white/10 border-t-red-600 rounded-full animate-spin" />
@@ -1098,7 +1126,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showToc && <PdfTocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
             {showAnnotations && <AnnotationsPanel isEpub={false} />}
-            {annotationDraft !== null && <AnnotationSheet isPdf={true} />}
+            {annotationDraft !== null && AnnotationSheet({ isPdf: true })}
           </div>
 
           <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}

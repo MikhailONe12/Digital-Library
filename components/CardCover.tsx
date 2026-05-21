@@ -3,6 +3,7 @@ import { MediaItem, Locale } from '../types';
 import { pickText, COVER_FALLBACK, handleCoverError, getVideoPoster } from '../utils';
 import { getPdfThumbnail } from '../services/pdfThumb';
 import { getEpubThumbnail } from '../services/epubThumb';
+import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
 
 interface CardCoverProps {
   item: MediaItem;
@@ -20,11 +21,18 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
     ? formats.find(f => /\.(pdf|djvu?)$/i.test(f.url || ''))
     : undefined;
 
+  // YouTube exposes a poster synchronously; direct video files need a frame grab.
+  const firstVideoUrl = item.videos?.[0]?.url || item.videoUrl;
+  const youtubePoster = !hasCover ? getVideoPoster(firstVideoUrl) : null;
+  const directVideoUrl = (!hasCover && !epubFormat && !pdfFormat && !youtubePoster && isDirectVideo(firstVideoUrl))
+    ? firstVideoUrl
+    : undefined;
+
   const [thumb, setThumb] = useState<string | null>(null);
   const ref = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    if (hasCover || (!epubFormat && !pdfFormat) || !ref.current) return;
+    if (hasCover || (!epubFormat && !pdfFormat && !directVideoUrl) || !ref.current) return;
     let cancelled = false;
     const el = ref.current;
     const io = new IntersectionObserver(entries => {
@@ -43,18 +51,15 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
       } else if (pdfFormat) {
         const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
         getPdfThumbnail(url).then(d => { if (!cancelled && d) setThumb(d); });
+      } else if (directVideoUrl) {
+        getVideoThumbnail(directVideoUrl).then(d => { if (!cancelled && d) setThumb(d); });
       }
     }, { rootMargin: '200px' });
     io.observe(el);
     return () => { cancelled = true; io.disconnect(); };
-  }, [hasCover, epubFormat, pdfFormat]);
+  }, [hasCover, epubFormat, pdfFormat, directVideoUrl]);
 
-  // Fall back to a video frame (e.g. YouTube) when there's no cover or document thumbnail.
-  const videoPoster = !hasCover
-    ? getVideoPoster(item.videos?.[0]?.url || item.videoUrl)
-    : null;
-
-  const src = hasCover ? item.coverUrl : (thumb || videoPoster || COVER_FALLBACK);
+  const src = hasCover ? item.coverUrl : (thumb || youtubePoster || COVER_FALLBACK);
 
   return (
     <img

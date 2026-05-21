@@ -16,6 +16,7 @@ import {
   getAnnotations, addAnnotation, deleteAnnotation,
 } from '../services/db';
 import { pickText, handleCoverError, getVideoPoster } from '../utils';
+import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
 
 type ReaderTheme = 'default' | 'night' | 'sepia';
 
@@ -716,10 +717,23 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     .map(v => ({ ...v, embed: getVideoEmbed(v.url) }))
     .filter(v => v.embed);
 
-  // No cover uploaded? Derive one from the first video (e.g. YouTube frame).
+  // No cover uploaded? Derive one from the first video (YouTube frame, or a
+  // grabbed frame for direct video files — the latter resolves asynchronously).
+  const [videoFrame, setVideoFrame] = useState<string>('');
+  const firstVideoUrl = videoList[0]?.url;
+  const youtubePoster = (item.coverUrl && item.coverUrl.trim()) ? null : getVideoPoster(firstVideoUrl);
+
+  useEffect(() => {
+    setVideoFrame('');
+    if ((item.coverUrl && item.coverUrl.trim()) || youtubePoster || !isDirectVideo(firstVideoUrl)) return;
+    let cancelled = false;
+    getVideoThumbnail(firstVideoUrl!).then(d => { if (!cancelled && d) setVideoFrame(d); });
+    return () => { cancelled = true; };
+  }, [firstVideoUrl, item.coverUrl, youtubePoster]);
+
   const coverSrc = (item.coverUrl && item.coverUrl.trim())
     ? item.coverUrl
-    : (getVideoPoster(videoList[0]?.url) || item.coverUrl || '');
+    : (youtubePoster || videoFrame || item.coverUrl || '');
 
   const handleRead = (format: FileFormat) => {
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;

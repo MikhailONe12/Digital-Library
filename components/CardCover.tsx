@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { MediaItem, Locale } from '../types';
-import { pickText, COVER_FALLBACK, handleCoverError } from '../utils';
+import { pickText, COVER_FALLBACK, handleCoverError, getVideoPoster } from '../utils';
 import { getPdfThumbnail } from '../services/pdfThumb';
 import { getEpubThumbnail } from '../services/epubThumb';
 
@@ -49,7 +49,12 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
     return () => { cancelled = true; io.disconnect(); };
   }, [hasCover, epubFormat, pdfFormat]);
 
-  const src = hasCover ? item.coverUrl : (thumb || COVER_FALLBACK);
+  // Fall back to a video frame (e.g. YouTube) when there's no cover or document thumbnail.
+  const videoPoster = !hasCover
+    ? getVideoPoster(item.videos?.[0]?.url || item.videoUrl)
+    : null;
+
+  const src = hasCover ? item.coverUrl : (thumb || videoPoster || COVER_FALLBACK);
 
   return (
     <img

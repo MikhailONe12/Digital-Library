@@ -15,7 +15,7 @@ import {
   getReadingProgress, saveReadingProgress,
   getAnnotations, addAnnotation, deleteAnnotation,
 } from '../services/db';
-import { pickText, handleCoverError } from '../utils';
+import { pickText, handleCoverError, getVideoPoster } from '../utils';
 
 type ReaderTheme = 'default' | 'night' | 'sepia';
 
@@ -716,6 +716,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     .map(v => ({ ...v, embed: getVideoEmbed(v.url) }))
     .filter(v => v.embed);
 
+  // No cover uploaded? Derive one from the first video (e.g. YouTube frame).
+  const coverSrc = (item.coverUrl && item.coverUrl.trim())
+    ? item.coverUrl
+    : (getVideoPoster(videoList[0]?.url) || item.coverUrl || '');
+
   const handleRead = (format: FileFormat) => {
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;
     const url = format.url.toLowerCase();
@@ -962,7 +967,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   return (
     <div className="relative animate-in fade-in slide-in-from-right-4 duration-500 bg-slate-50 min-h-screen">
       <div className="h-72 w-full relative overflow-hidden">
-        <img src={item.coverUrl} onError={handleCoverError} className="w-full h-full object-cover blur-3xl opacity-20 scale-150" alt="" />
+        <img src={coverSrc} onError={handleCoverError} className="w-full h-full object-cover blur-3xl opacity-20 scale-150" alt="" />
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-50" />
         <button
           onClick={onBack}
@@ -976,7 +981,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       <div className="px-6 -mt-32 relative z-10 pb-20 max-w-4xl mx-auto">
         <div className="flex gap-6 items-start">
           <div className="relative">
-            <img src={item.coverUrl} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white" alt="" />
+            <img src={coverSrc} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white" alt="" />
             <button onClick={handleToggleFav} className="absolute -bottom-3 -right-3 bg-red-600 text-white p-2.5 rounded-2xl shadow-xl active:scale-90 transition-all hover:bg-red-700 focus:outline-none" aria-label="Toggle Favorite">
               <Heart size={20} fill={isFav ? "white" : "none"} strokeWidth={isFav ? 0 : 3} />
             </button>
@@ -1015,10 +1020,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           </div>
         </div>
 
-        <div className="mt-8">
-          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
-          <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm leading-relaxed text-slate-600 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
-        </div>
+        {pickText(item.description, lang, '').trim() && (
+          <div className="mt-8">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
+            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm leading-relaxed text-slate-600 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
+          </div>
+        )}
 
         {playableVideos.length > 0 && (
           <div className="mt-10">
@@ -1036,10 +1043,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           </div>
         )}
 
+        {item.formats.length > 0 && (
         <div className="mt-10">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.downloads}</h2>
           <div className="space-y-4">
-            {item.formats.length > 0 ? item.formats.map(f => {
+            {item.formats.map(f => {
               const isFileReadAllowed     = (item.allowReading !== false) && (f.allowReading !== false);
               const isFileDownloadAllowed = (item.allowDownload !== false) && (f.allowDownload !== false);
               return (
@@ -1078,11 +1086,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                   </div>
                 </div>
               );
-            }) : (
-              <div className="p-10 text-center bg-white rounded-[2rem] border border-dashed border-slate-200 text-slate-400 text-xs font-bold uppercase tracking-widest">{t.noDownloads}</div>
-            )}
+            })}
           </div>
         </div>
+        )}
       </div>
 
       {/* ── EPUB Reader ────────────────────────────────────────────────────── */}

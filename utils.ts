@@ -22,3 +22,17 @@ export const handleCoverError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   const img = e.currentTarget;
   if (img.src !== COVER_FALLBACK) img.src = COVER_FALLBACK;
 };
+
+export const getYouTubeId = (url: string): string | null => {
+  if (!url) return null;
+  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
+  return m ? m[1] : null;
+};
+
+// Best-effort cover image derived from a video URL. YouTube exposes a stable
+// thumbnail of an early representative frame; other sources fall back to null.
+export const getVideoPoster = (videoUrl?: string | null): string | null => {
+  const yt = getYouTubeId(videoUrl || '');
+  if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
+  return null;
+};

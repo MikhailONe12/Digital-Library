@@ -94,6 +94,20 @@ export interface ReadingProgress {
   format_url: string | null;
 }
 
+export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink';
+
+export interface Annotation {
+  id: string;
+  item_id: string;
+  format_url: string;
+  cfi_range?: string | null;
+  page?: number | null;
+  selected_text: string;
+  note?: string | null;
+  color: HighlightColor;
+  created_at: string;
+}
+
 export interface AppState {
   items: MediaItem[];
   allowedUsers: string[]; // Whitelist

@@ -1,10 +1,10 @@
 
 import React, { useEffect, useRef, useState } from 'react';
-import { MediaItem, Locale, FileFormat, Bookmark, VideoLink } from '../types';
+import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor } from '../types';
 import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
-  Trash2, List, Sun, Moon, SunDim,
+  Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine,
 } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
@@ -13,12 +13,28 @@ import {
   trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating,
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,
   getReadingProgress, saveReadingProgress,
+  getAnnotations, addAnnotation, deleteAnnotation,
 } from '../services/db';
 import { pickText, handleCoverError } from '../utils';
 
 type ReaderTheme = 'default' | 'night' | 'sepia';
 
 interface TocItem { href: string; label: string; subitems?: TocItem[] }
+interface PdfTocItem { title: string; page: number; level: number; }
+
+const HIGHLIGHT_COLORS: Record<HighlightColor, Record<string, string>> = {
+  yellow: { fill: '#fbbf24', 'fill-opacity': '0.38' },
+  green:  { fill: '#34d399', 'fill-opacity': '0.38' },
+  blue:   { fill: '#60a5fa', 'fill-opacity': '0.38' },
+  pink:   { fill: '#f472b6', 'fill-opacity': '0.38' },
+};
+
+const HIGHLIGHT_COLOR_BG: Record<HighlightColor, string> = {
+  yellow: 'bg-yellow-400',
+  green:  'bg-green-400',
+  blue:   'bg-blue-400',
+  pink:   'bg-pink-400',
+};
 
 const THEME_KEY   = 'reader_theme';
 const FONT_KEY    = 'reader_font_size';
@@ -81,9 +97,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     return (localStorage.getItem(THEME_KEY) as ReaderTheme) || 'default';
   });
 
+  // PDF TOC
+  const [pdfToc, setPdfToc] = useState<PdfTocItem[]>([]);
+
   // Bookmarks
   const [bookmarks, setBookmarks]         = useState<Bookmark[]>([]);
   const [showBookmarks, setShowBookmarks] = useState(false);
+
+  // Annotations
+  const [annotations, setAnnotations]         = useState<Annotation[]>([]);
+  const [showAnnotations, setShowAnnotations] = useState(false);
+  const [annotationDraft, setAnnotationDraft] = useState<{ cfiRange?: string; page?: number; text: string } | null>(null);
+  const [draftNote, setDraftNote]             = useState('');
+  const [draftColor, setDraftColor]           = useState<HighlightColor>('yellow');
 
   // Item
   const [userRating, setUserRatingState] = useState(0);
@@ -133,13 +159,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   useEffect(() => {
     if (activeReaderUrl || activeEpubUrl) {
       getBookmarks(userId, item.id).then(setBookmarks);
+      // PDF annotations load here; EPUB loads them inside the epub effect after display()
+      if (activeReaderUrl) getAnnotations(userId, item.id).then(setAnnotations);
     } else {
       setShowBookmarks(false);
       setShowToc(false);
+      setShowAnnotations(false);
+      setAnnotationDraft(null);
       setBookmarks([]);
+      setAnnotations([]);
       setToc([]);
+      setPdfToc([]);
     }
-  }, [activeReaderUrl, activeEpubUrl]);
+  }, [activeReaderUrl, activeEpubUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── EPUB init ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -215,6 +247,15 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           if (cfi) saveReadingProgress(userId, item.id, cfi, pct, activeEpubUrl);
         });
 
+        // Capture text selection → open annotation sheet
+        rendition.on('selected', (cfiRange: string, contents: any) => {
+          const selectedText = contents?.window?.getSelection()?.toString().trim() || '';
+          if (!selectedText) return;
+          setAnnotationDraft({ cfiRange, text: selectedText });
+          setDraftNote('');
+          setDraftColor('yellow');
+        });
+
         // Swipe gestures (touches inside the epub iframe bubble up through rendition events)
         rendition.on('touchstart', (ev: TouchEvent) => {
           touchStartX.current = ev.changedTouches[0].clientX;
@@ -242,7 +283,26 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         const cfi = progress?.position;
 
         await rendition.display(cfi || undefined);
-        if (!destroyed) { clearTimer(); setEpubLoading(false); }
+        if (!destroyed) {
+          clearTimer();
+          setEpubLoading(false);
+          // Load annotations and apply saved highlights
+          const existingAnnotations = await getAnnotations(userId, item.id);
+          if (!destroyed) {
+            setAnnotations(existingAnnotations);
+            existingAnnotations
+              .filter(a => a.cfi_range && a.format_url === activeEpubUrl)
+              .forEach(a => {
+                try {
+                  rendition.annotations.add(
+                    'highlight', a.cfi_range!, {},
+                    undefined, `ann-${a.id}`,
+                    HIGHLIGHT_COLORS[a.color as HighlightColor] || HIGHLIGHT_COLORS.yellow,
+                  );
+                } catch { /* skip invalid CFI */ }
+              });
+          }
+        }
       } catch (e: any) {
         if (!destroyed) {
           clearTimer();
@@ -326,6 +386,31 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         // Set total + page together so the render effect runs once, settled.
         setPdfTotalPages(doc.numPages);
         setPdfPage(startPage);
+
+        // Load PDF outline (TOC) — async, best-effort
+        try {
+          const outline = await doc.getOutline();
+          if (!cancelled && outline) {
+            const resolveOutline = async (items: any[], level = 0): Promise<PdfTocItem[]> => {
+              const result: PdfTocItem[] = [];
+              for (const oi of items) {
+                let page = 0;
+                if (oi.dest) {
+                  try {
+                    let dest = oi.dest;
+                    if (typeof dest === 'string') dest = await doc.getDestination(dest);
+                    if (Array.isArray(dest) && dest[0]) page = (await doc.getPageIndex(dest[0])) + 1;
+                  } catch { /* skip */ }
+                }
+                result.push({ title: oi.title || '…', page, level });
+                if (oi.items?.length) result.push(...await resolveOutline(oi.items, level + 1));
+              }
+              return result;
+            };
+            const resolved = await resolveOutline(outline);
+            if (!cancelled) setPdfToc(resolved);
+          }
+        } catch { /* TOC optional */ }
       } catch (e: any) {
         if (!cancelled) setPdfError('Не удалось открыть PDF: ' + (e?.message || String(e)));
       }
@@ -436,6 +521,55 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const ThemeIcon = readerTheme === 'night' ? Moon : readerTheme === 'sepia' ? SunDim : Sun;
 
   const refreshBookmarks = () => getBookmarks(userId, item.id).then(setBookmarks);
+
+  const handleSaveAnnotation = async () => {
+    if (!annotationDraft) return;
+    const { cfiRange, page, text } = annotationDraft;
+    const formatUrl = activeEpubUrl || activeReaderUrl || '';
+    const id = await addAnnotation(userId, item.id, formatUrl, cfiRange || null, page || null, text, draftNote, draftColor);
+    if (id) {
+      const ann: Annotation = {
+        id, item_id: item.id, format_url: formatUrl,
+        cfi_range: cfiRange, page: page || null,
+        selected_text: text, note: draftNote || null,
+        color: draftColor, created_at: new Date().toISOString(),
+      };
+      setAnnotations(prev => [ann, ...prev]);
+      if (cfiRange && renditionRef.current) {
+        try {
+          renditionRef.current.annotations.add(
+            'highlight', cfiRange, {},
+            undefined, `ann-${id}`,
+            HIGHLIGHT_COLORS[draftColor],
+          );
+        } catch { /* skip */ }
+      }
+    }
+    setAnnotationDraft(null);
+    if (renditionRef.current) {
+      try {
+        renditionRef.current.getContents()?.forEach((c: any) => c.window?.getSelection()?.removeAllRanges());
+      } catch { /* noop */ }
+    }
+  };
+
+  const handleCancelAnnotation = () => {
+    setAnnotationDraft(null);
+    if (renditionRef.current) {
+      try {
+        renditionRef.current.getContents()?.forEach((c: any) => c.window?.getSelection()?.removeAllRanges());
+      } catch { /* noop */ }
+    }
+  };
+
+  const handleDeleteAnnotation = async (id: string) => {
+    const ann = annotations.find(a => a.id === id);
+    if (ann?.cfi_range && renditionRef.current) {
+      try { renditionRef.current.annotations.remove(ann.cfi_range, 'highlight'); } catch { /* noop */ }
+    }
+    await deleteAnnotation(userId, id);
+    setAnnotations(prev => prev.filter(a => a.id !== id));
+  };
 
   const handleAddPdfBookmark = async () => {
     await addBookmark(userId, item.id, String(pdfPage), `Страница ${pdfPage}`);
@@ -553,17 +687,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     </div>
   );
 
-  const TocPanel = () => {
-    const renderItems = (items: TocItem[], depth = 0) => items.map(item => (
-      <React.Fragment key={item.href}>
+  const EpubTocPanel = () => {
+    const renderItems = (items: TocItem[], depth = 0) => items.map(tocItem => (
+      <React.Fragment key={tocItem.href}>
         <button
-          onClick={() => { renditionRef.current?.display(item.href); setShowToc(false); }}
+          onClick={() => { renditionRef.current?.display(tocItem.href); setShowToc(false); }}
           className="w-full text-left p-3 hover:bg-white/10 rounded-2xl transition-colors"
           style={{ paddingLeft: `${12 + depth * 16}px` }}
         >
-          <p className="text-xs font-bold text-white truncate">{item.label}</p>
+          <p className="text-xs font-bold text-white truncate">{tocItem.label}</p>
         </button>
-        {item.subitems && renderItems(item.subitems, depth + 1)}
+        {tocItem.subitems && renderItems(tocItem.subitems, depth + 1)}
       </React.Fragment>
     ));
     return (
@@ -581,6 +715,110 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       </div>
     );
   };
+
+  const PdfTocPanel = () => (
+    <div className="absolute inset-y-0 left-0 w-72 bg-slate-950 border-r border-white/10 flex flex-col z-10 animate-in slide-in-from-left-2 duration-200">
+      <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
+        <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Содержание</p>
+        <button onClick={() => setShowToc(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-2">
+        {pdfToc.length === 0
+          ? <p className="text-center text-white/20 text-[10px] uppercase tracking-widest py-8">Нет содержания</p>
+          : pdfToc.map((tocItem, i) => (
+              <button
+                key={i}
+                onClick={() => { if (tocItem.page > 0) { setPdfPage(tocItem.page); setShowToc(false); } }}
+                disabled={tocItem.page === 0}
+                className="w-full text-left p-3 hover:bg-white/10 rounded-2xl transition-colors disabled:opacity-40 flex items-center justify-between gap-2"
+                style={{ paddingLeft: `${12 + tocItem.level * 16}px` }}
+              >
+                <p className="text-xs font-bold text-white truncate">{tocItem.title}</p>
+                {tocItem.page > 0 && <span className="text-[9px] text-white/30 shrink-0">{tocItem.page}</span>}
+              </button>
+            ))
+        }
+      </div>
+    </div>
+  );
+
+  const AnnotationsPanel = ({ isEpub }: { isEpub: boolean }) => (
+    <div className="absolute inset-y-0 right-0 w-72 bg-slate-950 border-l border-white/10 flex flex-col z-10 animate-in slide-in-from-right-2 duration-200">
+      <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
+        <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Аннотации</p>
+        <button onClick={() => setShowAnnotations(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {annotations.length === 0 && (
+          <p className="text-center text-white/20 text-[10px] uppercase tracking-widest py-8">Нет аннотаций</p>
+        )}
+        {annotations.map(a => (
+          <div key={a.id} className="p-3 bg-white/5 rounded-2xl group">
+            <div className="flex items-start gap-2">
+              <div className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`} />
+              <button
+                onClick={() => {
+                  if (isEpub && a.cfi_range) renditionRef.current?.display(a.cfi_range);
+                  else if (!isEpub && a.page) setPdfPage(a.page);
+                  setShowAnnotations(false);
+                }}
+                className="flex-1 text-left min-w-0"
+              >
+                {a.selected_text && (
+                  <p className="text-[11px] text-white/50 italic line-clamp-2">"{a.selected_text}"</p>
+                )}
+                {a.note && <p className="text-xs font-bold text-white mt-0.5">{a.note}</p>}
+                <p className="text-[9px] text-white/25 mt-1">
+                  {a.page ? `Стр. ${a.page} · ` : ''}{new Date(a.created_at).toLocaleDateString()}
+                </p>
+              </button>
+              <button onClick={() => handleDeleteAnnotation(a.id)} className="p-1.5 text-white/20 hover:text-red-400 transition-colors shrink-0">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const AnnotationSheet = ({ isPdf }: { isPdf?: boolean }) => (
+    <div className="absolute inset-0 z-30 pointer-events-none flex items-end">
+      <div className="pointer-events-auto w-full bg-slate-900/97 backdrop-blur-xl border-t border-white/10 p-4 space-y-3 animate-in slide-in-from-bottom-2 duration-200">
+        {annotationDraft?.text && (
+          <p className="text-[11px] text-white/50 italic line-clamp-2 px-1">"{annotationDraft.text}"</p>
+        )}
+        {isPdf && !annotationDraft?.text && (
+          <p className="text-[10px] text-white/40 uppercase tracking-widest px-1">Заметка · стр. {annotationDraft?.page}</p>
+        )}
+        <textarea
+          value={draftNote}
+          onChange={e => setDraftNote(e.target.value)}
+          placeholder="Добавить заметку…"
+          className="w-full bg-white/10 text-white text-xs rounded-xl p-3 resize-none outline-none placeholder:text-white/30 border border-white/10 focus:border-white/30 transition-colors"
+          rows={3}
+          autoFocus
+        />
+        <div className="flex items-center justify-between">
+          <div className="flex gap-2">
+            {(['yellow', 'green', 'blue', 'pink'] as HighlightColor[]).map(c => (
+              <button
+                key={c}
+                onClick={() => setDraftColor(c)}
+                className={`w-6 h-6 rounded-full transition-all ${HIGHLIGHT_COLOR_BG[c]} ${
+                  draftColor === c ? 'ring-2 ring-white ring-offset-1 ring-offset-slate-900 scale-110' : 'opacity-60 hover:opacity-100'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleCancelAnnotation} className="px-3 py-1.5 text-white/40 text-xs font-bold hover:text-white transition-colors">Отмена</button>
+            <button onClick={handleSaveAnnotation} className="px-4 py-1.5 bg-red-600 text-white text-xs font-black rounded-xl hover:bg-red-700 transition-colors">Сохранить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -717,13 +955,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
             <div className="flex items-center gap-2">
               {toc.length > 0 && (
-                <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); }}
+                <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); setShowAnnotations(false); }}
                   className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Содержание">
                   <List size={16} />
                 </button>
               )}
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
-              <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[130px]`}>{pickText(item.title, lang)}</p>
+              <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[120px]`}>{pickText(item.title, lang)}</p>
             </div>
             <div className="flex items-center gap-2">
               <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
@@ -732,9 +970,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <button onClick={handleAddEpubBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
+              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
+              </button>
+              <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
+                <Highlighter size={16} />
+                {annotations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.length}</span>}
               </button>
               <button onClick={() => setActiveEpubUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
             </div>
@@ -743,8 +985,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           <div className="flex-1 relative overflow-hidden"
             style={{ background: readerTheme === 'night' ? '#0f172a' : readerTheme === 'sepia' ? '#f4ecd8' : '#ffffff' }}>
             <div ref={epubViewerRef} className="w-full h-full" />
-            {showToc && <TocPanel />}
+            {showToc && <EpubTocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
+            {showAnnotations && <AnnotationsPanel isEpub={true} />}
+            {annotationDraft !== null && <AnnotationSheet />}
             {epubLoading && !epubError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-8 h-8 border-4 border-slate-300 border-t-red-600 rounded-full animate-spin" />
@@ -776,11 +1020,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
           <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              {pdfToc.length > 0 && (
+                <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); setShowAnnotations(false); }}
+                  className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Содержание">
+                  <List size={16} />
+                </button>
+              )}
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
               <div>
                 <p className={`text-[10px] font-black uppercase ${READER_CHROME[readerTheme].sub} tracking-widest leading-none mb-1`}>PDF Reader</p>
-                <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[160px]`}>{pickText(item.title, lang)}</p>
+                <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[110px]`}>{pickText(item.title, lang)}</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -790,9 +1040,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <button onClick={handleAddPdfBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => setShowBookmarks(s => !s)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
+              <button onClick={() => { setShowBookmarks(s => !s); setShowAnnotations(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.length}</span>}
+              </button>
+              <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
+                <Highlighter size={16} />
+                {annotations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.length}</span>}
+              </button>
+              <button
+                onClick={() => { setAnnotationDraft({ page: pdfPage, text: '' }); setDraftNote(''); setDraftColor('yellow'); setShowAnnotations(false); }}
+                className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить заметку">
+                <PenLine size={16} />
               </button>
               <button onClick={() => setActiveReaderUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
             </div>
@@ -817,7 +1076,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 <p className="text-xs text-white/60 break-words max-w-sm">{pdfError}</p>
               </div>
             )}
+            {showToc && <PdfTocPanel />}
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
+            {showAnnotations && <AnnotationsPanel isEpub={false} />}
+            {annotationDraft !== null && <AnnotationSheet isPdf={true} />}
           </div>
 
           <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}

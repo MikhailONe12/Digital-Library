@@ -18,12 +18,24 @@ const App: React.FC = () => {
   const [isBlocked, setIsBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Search & Filters State
+  // Search & Filters State — persisted across sessions
+  const _savedFilters = (() => {
+    try { return JSON.parse(localStorage.getItem('library_filters') || '{}'); } catch { return {}; }
+  })();
+
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY'>('ALL');
-  const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>([]);
-  const [searchField, setSearchField] = useState<'all' | 'title' | 'author'>('all');
-  const [sortBy, setSortBy] = useState<'recent' | 'rating' | 'views' | 'alpha'>('recent');
+  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY'>(
+    _savedFilters.activeCategory || 'ALL',
+  );
+  const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>(
+    _savedFilters.contentLangFilter || [],
+  );
+  const [searchField, setSearchField] = useState<'all' | 'title' | 'author'>(
+    _savedFilters.searchField || 'all',
+  );
+  const [sortBy, setSortBy] = useState<'recent' | 'rating' | 'views' | 'alpha'>(
+    _savedFilters.sortBy || 'recent',
+  );
   const [viewHistory, setViewHistory] = useState<string[]>(getViewHistory());
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
@@ -177,6 +189,13 @@ const App: React.FC = () => {
     }
     return sorted;
   }, [db.items, db.globalAccess, searchQuery, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
+
+  // Persist filter state whenever it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('library_filters', JSON.stringify({ searchField, sortBy, contentLangFilter, activeCategory }));
+    } catch { /* quota */ }
+  }, [searchField, sortBy, contentLangFilter, activeCategory]);
 
   const selectLang = (l: Locale) => {
     setLang(l);

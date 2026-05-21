@@ -89,6 +89,22 @@ CREATE TABLE IF NOT EXISTS user_bookmarks (
 
 CREATE INDEX IF NOT EXISTS idx_bm_user_item ON user_bookmarks(user_id, item_id);
 
+-- User annotations: highlights + notes for EPUB/PDF readers
+CREATE TABLE IF NOT EXISTS user_annotations (
+  id            TEXT        PRIMARY KEY,
+  user_id       TEXT        NOT NULL,
+  item_id       TEXT        NOT NULL,
+  format_url    TEXT        NOT NULL DEFAULT '',
+  cfi_range     TEXT,
+  page          INT,
+  selected_text TEXT        NOT NULL DEFAULT '',
+  note          TEXT,
+  color         TEXT        NOT NULL DEFAULT 'yellow',
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ann_user_item ON user_annotations(user_id, item_id);
+
 -- Reading progress: one row per user per file (upsert on update)
 CREATE TABLE IF NOT EXISTS user_reading_progress (
   user_id        TEXT        NOT NULL,

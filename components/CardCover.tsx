@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MediaItem, Locale } from '../types';
 import { pickText, COVER_FALLBACK, handleCoverError } from '../utils';
 import { getPdfThumbnail } from '../services/pdfThumb';
+import { getEpubThumbnail } from '../services/epubThumb';
 
 interface CardCoverProps {
   item: MediaItem;
@@ -11,27 +12,42 @@ interface CardCoverProps {
 const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
   const hasCover = !!item.coverUrl && item.coverUrl.trim() !== '';
   // Thumbnail fallback only for public items (private content needs auth headers).
+  const formats = item.formats || [];
+  const epubFormat = (!hasCover && !item.isPrivate)
+    ? formats.find(f => /\.epub$/i.test(f.url || ''))
+    : undefined;
   const pdfFormat = (!hasCover && !item.isPrivate)
-    ? (item.formats || []).find(f => /\.(pdf|djvu?)$/i.test(f.url || ''))
+    ? formats.find(f => /\.(pdf|djvu?)$/i.test(f.url || ''))
     : undefined;
 
   const [thumb, setThumb] = useState<string | null>(null);
   const ref = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    if (hasCover || !pdfFormat || !ref.current) return;
+    if (hasCover || (!epubFormat && !pdfFormat) || !ref.current) return;
     let cancelled = false;
     const el = ref.current;
     const io = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        io.disconnect();
+      if (!entries[0].isIntersecting) return;
+      io.disconnect();
+      if (epubFormat) {
+        // Try EPUB cover first (best quality); fall back to PDF page 1
+        getEpubThumbnail(epubFormat.url).then(d => {
+          if (cancelled) return;
+          if (d) { setThumb(d); return; }
+          if (pdfFormat) {
+            const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
+            getPdfThumbnail(url).then(d2 => { if (!cancelled && d2) setThumb(d2); });
+          }
+        });
+      } else if (pdfFormat) {
         const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
         getPdfThumbnail(url).then(d => { if (!cancelled && d) setThumb(d); });
       }
     }, { rootMargin: '200px' });
     io.observe(el);
     return () => { cancelled = true; io.disconnect(); };
-  }, [hasCover, pdfFormat]);
+  }, [hasCover, epubFormat, pdfFormat]);
 
   const src = hasCover ? item.coverUrl : (thumb || COVER_FALLBACK);
 

@@ -1,4 +1,4 @@
-import { AppState, MediaItem, Bookmark, ReadingProgress, CustomType } from '../types';
+import { AppState, MediaItem, Bookmark, ReadingProgress, Annotation, HighlightColor, CustomType } from '../types';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -416,6 +416,46 @@ export const deleteBookmark = async (userId: string, bookmarkId: string): Promis
   try {
     await fetch(`/api/users/${userId}/bookmarks/${bookmarkId}`, { method: 'DELETE' });
   } catch {/* best effort */}
+};
+
+// ── Annotations (highlights + notes, server-backed) ──────────────────────────
+
+export const getAnnotations = async (userId: string, itemId: string): Promise<Annotation[]> => {
+  try {
+    const res = await fetch(`/api/users/${userId}/annotations/${itemId}`);
+    const data = await res.json();
+    return data.annotations || [];
+  } catch {
+    return [];
+  }
+};
+
+export const addAnnotation = async (
+  userId: string, itemId: string,
+  formatUrl: string,
+  cfiRange: string | null,
+  page: number | null,
+  selectedText: string,
+  note: string,
+  color: HighlightColor,
+): Promise<string | null> => {
+  try {
+    const res = await fetch(`/api/users/${userId}/annotations/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ formatUrl, cfiRange, page, selectedText, note, color }),
+    });
+    const data = await res.json();
+    return data.id || null;
+  } catch {
+    return null;
+  }
+};
+
+export const deleteAnnotation = async (userId: string, annotationId: string): Promise<void> => {
+  try {
+    await fetch(`/api/users/${userId}/annotations/${annotationId}`, { method: 'DELETE' });
+  } catch { /* best effort */ }
 };
 
 // ── View history (local, per-device) ─────────────────────────────────────────

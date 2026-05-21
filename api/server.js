@@ -835,6 +835,68 @@ app.delete('/api/users/:userId/bookmarks/:bookmarkId',
   },
 );
 
+// ── User annotations (highlights + notes) ────────────────────────────────────
+
+app.get('/api/users/:userId/annotations/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT id, item_id, format_url, cfi_range, page, selected_text, note, color, created_at
+           FROM user_annotations
+          WHERE user_id = $1 AND item_id = $2
+          ORDER BY created_at DESC`,
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ annotations: rows });
+    } catch {
+      res.json({ annotations: [] });
+    }
+  },
+);
+
+app.post('/api/users/:userId/annotations/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    const formatUrl    = clip(req.body?.formatUrl, 512) || '';
+    const cfiRange     = clip(req.body?.cfiRange, 1024);
+    const page         = Number.isInteger(parseInt(req.body?.page)) ? parseInt(req.body.page) : null;
+    const selectedText = clip(req.body?.selectedText, 2000) || '';
+    const note         = clip(req.body?.note, 2000);
+    const color        = ['yellow', 'green', 'blue', 'pink'].includes(req.body?.color)
+      ? req.body.color : 'yellow';
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    try {
+      await pool.query(
+        `INSERT INTO user_annotations
+           (id, user_id, item_id, format_url, cfi_range, page, selected_text, note, color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [id, req.params.userId, req.params.itemId, formatUrl, cfiRange, page, selectedText, note, color],
+      );
+      res.json({ ok: true, id });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+app.delete('/api/users/:userId/annotations/:annotationId',
+  validateUserId,
+  async (req, res) => {
+    if (!/^[a-zA-Z0-9_-]+$/.test(req.params.annotationId))
+      return res.status(400).json({ error: 'Invalid annotation ID' });
+    try {
+      await pool.query(
+        'DELETE FROM user_annotations WHERE id = $1 AND user_id = $2',
+        [req.params.annotationId, req.params.userId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
 // ── Reading progress ─────────────────────────────────────────────────────────
 
 // GET all progress for a user (used on app start to prefetch for progress bars)

@@ -712,7 +712,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // ── Shared panels ──────────────────────────────────────────────────────────
 
   const BookmarksPanel = ({ onJump }: { onJump: (b: Bookmark) => void }) => (
-    <div className="absolute inset-y-0 right-0 w-64 bg-slate-950 border-l border-white/10 flex flex-col z-10 animate-in slide-in-from-right-2 duration-200">
+    <div className="absolute inset-y-0 right-0 w-64 bg-slate-950 border-l border-white/10 flex flex-col z-30 animate-in slide-in-from-right-2 duration-200">
       <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
         <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Закладки</p>
         <button onClick={() => setShowBookmarks(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
@@ -792,7 +792,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   );
 
   const AnnotationsPanel = ({ isEpub }: { isEpub: boolean }) => (
-    <div className="absolute inset-y-0 right-0 w-72 bg-slate-950 border-l border-white/10 flex flex-col z-10 animate-in slide-in-from-right-2 duration-200">
+    <div className="absolute inset-y-0 right-0 w-72 bg-slate-950 border-l border-white/10 flex flex-col z-30 animate-in slide-in-from-right-2 duration-200">
       <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
         <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Аннотации</p>
         <button onClick={() => setShowAnnotations(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
@@ -857,11 +857,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
         {/* Note input */}
         <div>
-          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Комментарий (необязательно)</label>
+          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+            {isPdf ? 'Название заметки (необязательно)' : 'Комментарий (необязательно)'}
+          </label>
           <textarea
             value={draftNote}
             onChange={e => setDraftNote(e.target.value)}
-            placeholder="Напишите заметку здесь…"
+            placeholder={isPdf ? 'Например: Важный момент…' : 'Напишите заметку здесь…'}
             className="w-full bg-slate-50 text-slate-900 text-sm rounded-2xl p-4 resize-none outline-none placeholder:text-slate-400 border-2 border-slate-200 focus:border-red-400 transition-colors"
             rows={3}
             autoFocus
@@ -1150,7 +1152,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 {annotations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.length}</span>}
               </button>
               <button
-                onClick={() => { setAnnotationDraft({ page: pdfPage, text: '' }); setDraftNote(''); setDraftColor('yellow'); setShowAnnotations(false); }}
+                onClick={() => { setAnnotationDraft({ page: pdfPage, text: '' }); setDraftNote(''); setDraftColor('yellow'); }}
                 className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить заметку">
                 <PenLine size={16} />
               </button>
@@ -1168,7 +1170,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             </div>
             {/* Sticky-note markers for annotations on the current page */}
             {annotations.filter(a => a.page === pdfPage).length > 0 && (
-              <div className="absolute top-3 right-3 z-20 flex flex-col gap-2 max-w-[220px]">
+              <div className="absolute top-3 right-3 z-10 flex flex-col gap-2 max-w-[220px]">
                 {annotations.filter(a => a.page === pdfPage).map(a => (
                   <div key={a.id} className={`group relative px-3 py-2 rounded-2xl shadow-lg border border-black/5 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`}>
                     <p className="text-[11px] font-bold text-slate-900 leading-snug pr-4 break-words">

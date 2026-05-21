@@ -4,7 +4,7 @@ import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, Highlig
 import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
-  Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine,
+  Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
 } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
@@ -35,6 +35,17 @@ const HIGHLIGHT_COLOR_BG: Record<HighlightColor, string> = {
   blue:   'bg-blue-400',
   pink:   'bg-pink-400',
 };
+
+// Underline styling for the "mini" EPUB display mode (subtle, doesn't cover text)
+const HIGHLIGHT_UNDERLINE: Record<HighlightColor, Record<string, string>> = {
+  yellow: { stroke: '#f59e0b', 'stroke-opacity': '0.9', 'stroke-width': '3' },
+  green:  { stroke: '#10b981', 'stroke-opacity': '0.9', 'stroke-width': '3' },
+  blue:   { stroke: '#3b82f6', 'stroke-opacity': '0.9', 'stroke-width': '3' },
+  pink:   { stroke: '#ec4899', 'stroke-opacity': '0.9', 'stroke-width': '3' },
+};
+
+// 3-state visibility of notes/highlights: full → mini → hidden → full
+type NotesDisplay = 'full' | 'mini' | 'hidden';
 
 const THEME_KEY   = 'reader_theme';
 const FONT_KEY    = 'reader_font_size';
@@ -113,6 +124,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const [annotationDraft, setAnnotationDraft] = useState<{ cfiRange?: string; page?: number; text: string } | null>(null);
   const [draftNote, setDraftNote]             = useState('');
   const [draftColor, setDraftColor]           = useState<HighlightColor>('yellow');
+  const [notesDisplay, setNotesDisplay]       = useState<NotesDisplay>('full');
 
   // Item
   const [userRating, setUserRatingState] = useState(0);
@@ -149,6 +161,31 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     } catch { /* already relative or malformed */ }
     return url;
   };
+
+  // (Re)applies EPUB highlights/underlines for the given display mode. Removes
+  // any existing marks first so it's safe to call repeatedly (load, theme
+  // switch, mode toggle). 'hidden' clears them, 'mini' draws a thin underline,
+  // 'full' draws the colored highlight.
+  const applyEpubAnnotations = (rend: any, anns: Annotation[], mode: NotesDisplay) => {
+    if (!rend) return;
+    anns.filter(a => a.cfi_range && a.format_url === activeEpubUrl).forEach(a => {
+      try { rend.annotations.remove(a.cfi_range, 'highlight'); } catch { /* absent */ }
+      try { rend.annotations.remove(a.cfi_range, 'underline'); } catch { /* absent */ }
+      if (mode === 'hidden') return;
+      try {
+        if (mode === 'mini') {
+          rend.annotations.add('underline', a.cfi_range, {}, undefined, `ann-${a.id}`,
+            HIGHLIGHT_UNDERLINE[a.color as HighlightColor] || HIGHLIGHT_UNDERLINE.yellow);
+        } else {
+          rend.annotations.add('highlight', a.cfi_range, {}, undefined, `ann-${a.id}`,
+            HIGHLIGHT_COLORS[a.color as HighlightColor] || HIGHLIGHT_COLORS.yellow);
+        }
+      } catch { /* invalid CFI */ }
+    });
+  };
+
+  const cycleNotesDisplay = () =>
+    setNotesDisplay(m => (m === 'full' ? 'mini' : m === 'mini' ? 'hidden' : 'full'));
 
   // Keep ref in sync so keyboard handlers can read the latest value. Suspend
   // page navigation while either input sheet (note or bookmark name) is open.
@@ -302,17 +339,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           const existingAnnotations = await getAnnotations(userId, item.id);
           if (!destroyed) {
             setAnnotations(existingAnnotations);
-            existingAnnotations
-              .filter(a => a.cfi_range && a.format_url === activeEpubUrl)
-              .forEach(a => {
-                try {
-                  rendition.annotations.add(
-                    'highlight', a.cfi_range!, {},
-                    undefined, `ann-${a.id}`,
-                    HIGHLIGHT_COLORS[a.color as HighlightColor] || HIGHLIGHT_COLORS.yellow,
-                  );
-                } catch { /* skip invalid CFI */ }
-              });
+            applyEpubAnnotations(rendition, existingAnnotations, notesDisplay);
           }
         }
       } catch (e: any) {
@@ -342,23 +369,16 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     const rend = renditionRef.current;
     if (!rend || !activeEpubUrl) return;
     rend.themes?.select(readerTheme);
-    const reapply = () => {
-      annotations
-        .filter(a => a.cfi_range && a.format_url === activeEpubUrl)
-        .forEach(a => {
-          try { rend.annotations.remove(a.cfi_range, 'highlight'); } catch { /* not present */ }
-          try {
-            rend.annotations.add(
-              'highlight', a.cfi_range!, {},
-              undefined, `ann-${a.id}`,
-              HIGHLIGHT_COLORS[a.color as HighlightColor] || HIGHLIGHT_COLORS.yellow,
-            );
-          } catch { /* invalid CFI */ }
-        });
-    };
-    const timer = setTimeout(reapply, 50);
+    const timer = setTimeout(() => applyEpubAnnotations(rend, annotations, notesDisplay), 50);
     return () => clearTimeout(timer);
   }, [readerTheme]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-apply EPUB marks when the notes display mode changes
+  useEffect(() => {
+    const rend = renditionRef.current;
+    if (!rend || !activeEpubUrl) return;
+    applyEpubAnnotations(rend, annotations, notesDisplay);
+  }, [notesDisplay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // EPUB keyboard navigation (desktop ← / →)
   useEffect(() => {
@@ -556,6 +576,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   const ThemeIcon = readerTheme === 'night' ? Moon : readerTheme === 'sepia' ? SunDim : Sun;
 
+  const NotesIcon  = notesDisplay === 'full' ? Eye : notesDisplay === 'mini' ? CircleDot : EyeOff;
+  const notesTitle = notesDisplay === 'full' ? 'Заметки: показаны' : notesDisplay === 'mini' ? 'Заметки: значки' : 'Заметки: скрыты';
+
   const refreshBookmarks = () => getBookmarks(userId, item.id).then(setBookmarks);
 
   const handleSaveAnnotation = async () => {
@@ -571,13 +594,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         color: draftColor, created_at: new Date().toISOString(),
       };
       setAnnotations(prev => [ann, ...prev]);
-      if (cfiRange && renditionRef.current) {
+      if (cfiRange && renditionRef.current && notesDisplay !== 'hidden') {
         try {
-          renditionRef.current.annotations.add(
-            'highlight', cfiRange, {},
-            undefined, `ann-${id}`,
-            HIGHLIGHT_COLORS[draftColor],
-          );
+          if (notesDisplay === 'mini') {
+            renditionRef.current.annotations.add('underline', cfiRange, {}, undefined, `ann-${id}`, HIGHLIGHT_UNDERLINE[draftColor]);
+          } else {
+            renditionRef.current.annotations.add('highlight', cfiRange, {}, undefined, `ann-${id}`, HIGHLIGHT_COLORS[draftColor]);
+          }
         } catch { /* skip */ }
       }
     } else {
@@ -1081,6 +1104,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
+              <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title={notesTitle}>
+                <NotesIcon size={16} />
+              </button>
               <button onClick={handleAddEpubBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
@@ -1152,6 +1178,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
+              <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title={notesTitle}>
+                <NotesIcon size={16} />
+              </button>
               <button onClick={handleAddPdfBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
@@ -1180,24 +1209,36 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             >
               <div ref={pdfContainerRef} className="mx-auto w-fit" />
             </div>
-            {/* Sticky-note markers for annotations on the current page */}
-            {annotations.filter(a => a.page === pdfPage).length > 0 && (
-              <div className="absolute top-3 right-3 z-10 flex flex-col gap-2 max-w-[220px]">
-                {annotations.filter(a => a.page === pdfPage).map(a => (
-                  <div key={a.id} className={`group relative px-3 py-2 rounded-2xl shadow-lg border border-black/5 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`}>
-                    <p className="text-[11px] font-bold text-slate-900 leading-snug pr-4 break-words">
-                      {a.note || a.selected_text || 'Заметка'}
-                    </p>
-                    <button
-                      onClick={() => handleDeleteAnnotation(a.id)}
-                      className="absolute top-1 right-1 p-1 text-slate-900/40 hover:text-red-700 transition-colors"
-                      title="Удалить"
-                    >
-                      <X size={12} strokeWidth={3} />
-                    </button>
-                  </div>
-                ))}
-              </div>
+            {/* Note markers for the current page — full cards, mini dots, or hidden */}
+            {notesDisplay !== 'hidden' && annotations.filter(a => a.page === pdfPage).length > 0 && (
+              notesDisplay === 'full' ? (
+                <div className="absolute top-3 right-3 z-10 flex flex-col gap-2 max-w-[220px]">
+                  {annotations.filter(a => a.page === pdfPage).map(a => (
+                    <div key={a.id} className={`group relative px-3 py-2 rounded-2xl shadow-lg border border-black/5 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`}>
+                      <p className="text-[11px] font-bold text-slate-900 leading-snug pr-4 break-words">
+                        {a.note || a.selected_text || 'Заметка'}
+                      </p>
+                      <button
+                        onClick={() => handleDeleteAnnotation(a.id)}
+                        className="absolute top-1 right-1 p-1 text-slate-900/40 hover:text-red-700 transition-colors"
+                        title="Удалить"
+                      >
+                        <X size={12} strokeWidth={3} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="absolute top-3 right-3 z-10 flex flex-wrap gap-1.5 justify-end max-w-[120px]">
+                  {annotations.filter(a => a.page === pdfPage).map(a => (
+                    <div
+                      key={a.id}
+                      title={a.note || a.selected_text || 'Заметка'}
+                      className={`w-3.5 h-3.5 rounded-full shadow border border-black/10 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`}
+                    />
+                  ))}
+                </div>
+              )
             )}
             {pdfTotalPages === 0 && !pdfError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">

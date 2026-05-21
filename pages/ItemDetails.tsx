@@ -791,24 +791,29 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     </div>
   );
 
-  const AnnotationsPanel = ({ isEpub }: { isEpub: boolean }) => (
+  const AnnotationsPanel = ({ isEpub }: { isEpub: boolean }) => {
+    // Show only annotations navigable in the current reader: EPUB highlights
+    // carry a cfi_range, PDF page-notes carry a page. This keeps every list
+    // entry clickable (a cross-format entry would have no target to jump to).
+    const visible = annotations.filter(a => isEpub ? !!a.cfi_range : a.page != null);
+    return (
     <div className="absolute inset-y-0 right-0 w-72 bg-slate-950 border-l border-white/10 flex flex-col z-30 animate-in slide-in-from-right-2 duration-200">
       <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
         <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Аннотации</p>
         <button onClick={() => setShowAnnotations(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
-        {annotations.length === 0 && (
+        {visible.length === 0 && (
           <p className="text-center text-white/20 text-[10px] uppercase tracking-widest py-8">Нет аннотаций</p>
         )}
-        {annotations.map((a, i) => (
+        {visible.map((a, i) => (
           <div key={a.id} className="p-3 bg-white/5 rounded-2xl group">
             <div className="flex items-start gap-2">
               <div className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`} />
               <button
                 onClick={() => {
                   if (isEpub && a.cfi_range) renditionRef.current?.display(a.cfi_range);
-                  else if (!isEpub && a.page) setPdfPage(a.page);
+                  else if (!isEpub && a.page != null) setPdfPage(a.page);
                   setShowAnnotations(false);
                 }}
                 className="flex-1 text-left min-w-0"
@@ -818,7 +823,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 )}
                 {a.note
                   ? <p className="text-xs font-bold text-white mt-0.5">{a.note}</p>
-                  : !a.selected_text && <p className="text-xs font-bold text-white mt-0.5">Заметка {annotations.length - i}</p>
+                  : !a.selected_text && <p className="text-xs font-bold text-white mt-0.5">Заметка {visible.length - i}</p>
                 }
                 <p className="text-[9px] text-white/25 mt-1">
                   {a.page ? `Стр. ${a.page} · ` : ''}{new Date(a.created_at).toLocaleDateString()}
@@ -832,7 +837,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         ))}
       </div>
     </div>
-  );
+    );
+  };
 
   const AnnotationSheet = ({ isPdf }: { isPdf?: boolean }) => (
     <div className="fixed inset-x-0 bottom-0 z-[600] animate-in slide-in-from-bottom-3 duration-200"
@@ -1078,7 +1084,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </button>
               <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
                 <Highlighter size={16} />
-                {annotations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.length}</span>}
+                {annotations.filter(a => a.cfi_range).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.filter(a => a.cfi_range).length}</span>}
               </button>
               <button onClick={() => setActiveEpubUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
             </div>
@@ -1149,7 +1155,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </button>
               <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
                 <Highlighter size={16} />
-                {annotations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.length}</span>}
+                {annotations.filter(a => a.page != null).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.filter(a => a.page != null).length}</span>}
               </button>
               <button
                 onClick={() => { setAnnotationDraft({ page: pdfPage, text: '' }); setDraftNote(''); setDraftColor('yellow'); }}

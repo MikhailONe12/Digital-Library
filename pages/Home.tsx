@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
 
 interface HomeProps {
@@ -10,12 +10,14 @@ interface HomeProps {
   onOpenItem: (item: MediaItem) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW';
-  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW') => void;
+  activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY';
+  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY') => void;
   contentLangFilter: ContentLang[];
   setContentLangFilter: (langs: ContentLang[]) => void;
   searchField: 'all' | 'title' | 'author';
   setSearchField: (f: 'all' | 'title' | 'author') => void;
+  sortBy: 'recent' | 'rating' | 'views' | 'alpha';
+  setSortBy: (s: 'recent' | 'rating' | 'views' | 'alpha') => void;
   categories: CustomType[];
   lang: Locale;
   t: any;
@@ -23,9 +25,10 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({ 
-  items, onOpenItem, searchQuery, setSearchQuery, activeCategory, setActiveCategory, 
+  items, onOpenItem, searchQuery, setSearchQuery, activeCategory, setActiveCategory,
   contentLangFilter, setContentLangFilter, searchField, setSearchField,
-  categories, lang, t, onSecretAdminTrigger 
+  sortBy, setSortBy,
+  categories, lang, t, onSecretAdminTrigger
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -79,7 +82,7 @@ const Home: React.FC<HomeProps> = ({
           />
           <button 
             onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-red-600 hover:bg-slate-50'}`}
+            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' || sortBy !== 'recent' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-red-600 hover:bg-slate-50'}`}
           >
             <SlidersHorizontal size={18} strokeWidth={2.5} />
           </button>
@@ -148,6 +151,29 @@ const Home: React.FC<HomeProps> = ({
                         </button>
                     </div>
                  </div>
+
+                 {/* Sort */}
+                 <div className="space-y-3">
+                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 ml-1">
+                       <ArrowUpDown size={12} /> {t.sortBy}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                       {([
+                         { key: 'recent', label: t.sortRecent, icon: CalendarClock },
+                         { key: 'rating', label: t.sortRating, icon: Star },
+                         { key: 'views',  label: t.sortViews,  icon: Flame },
+                         { key: 'alpha',  label: t.sortAlpha,  icon: ArrowDownAZ },
+                       ] as const).map(({ key, label, icon: Icon }) => (
+                          <button
+                            key={key}
+                            onClick={() => setSortBy(key)}
+                            className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all border ${sortBy === key ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}
+                          >
+                             <Icon size={14} /> {label}
+                          </button>
+                       ))}
+                    </div>
+                 </div>
               </div>
            </div>
         )}
@@ -165,6 +191,20 @@ const Home: React.FC<HomeProps> = ({
           aria-label="Favorites"
         >
           <Heart size={20} fill={activeCategory === 'FAVORITES' ? 'currentColor' : 'none'} strokeWidth={3} />
+        </button>
+
+        {/* History Button */}
+        <button
+          onClick={() => setActiveCategory('HISTORY')}
+          className={`flex-shrink-0 w-14 h-[2.45rem] flex items-center justify-center rounded-2xl transition-all duration-300 ${
+            activeCategory === 'HISTORY'
+            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
+            : 'bg-white text-red-600 border border-slate-200 hover:border-red-200'
+          }`}
+          aria-label={t.history}
+          title={t.history}
+        >
+          <Clock size={20} strokeWidth={3} />
         </button>
 
         {/* New Arrivals Button */}
@@ -221,10 +261,10 @@ const Home: React.FC<HomeProps> = ({
       {items.length === 0 && (
           <div className="py-24 text-center">
               <div className="inline-flex p-6 bg-slate-100 rounded-full text-slate-300 mb-6">
-                  {activeCategory === 'FAVORITES' ? <Heart size={40} /> : activeCategory === 'NEW' ? <Sparkles size={40} /> : <Search size={40} />}
+                  {activeCategory === 'FAVORITES' ? <Heart size={40} /> : activeCategory === 'NEW' ? <Sparkles size={40} /> : activeCategory === 'HISTORY' ? <Clock size={40} /> : <Search size={40} />}
               </div>
               <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">
-                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : t.noResults}
+                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : t.noResults}
               </p>
           </div>
       )}

@@ -413,6 +413,29 @@ export const deleteBookmark = async (userId: string, bookmarkId: string): Promis
   } catch {/* best effort */}
 };
 
+// ── View history (local, per-device) ─────────────────────────────────────────
+
+const HISTORY_KEY = 'library_view_history';
+const HISTORY_MAX = 50;
+
+export const recordView = (itemId: string): string[] => {
+  let list: string[] = [];
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    list = raw ? JSON.parse(raw) : [];
+  } catch { list = []; }
+  list = [itemId, ...list.filter(id => id !== itemId)].slice(0, HISTORY_MAX);
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch {/* quota */}
+  return list;
+};
+
+export const getViewHistory = (): string[] => {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+};
+
 // ── Reading progress ──────────────────────────────────────────────────────────
 
 export const getReadingProgress = async (userId: string, itemId: string): Promise<ReadingProgress | null> => {

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit } from './services/db';
+import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { pickText } from './utils';
@@ -20,9 +20,11 @@ const App: React.FC = () => {
 
   // Search & Filters State
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW'>('ALL');
+  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY'>('ALL');
   const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>([]);
   const [searchField, setSearchField] = useState<'all' | 'title' | 'author'>('all');
+  const [sortBy, setSortBy] = useState<'recent' | 'rating' | 'views' | 'alpha'>('recent');
+  const [viewHistory, setViewHistory] = useState<string[]>(getViewHistory());
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
@@ -133,49 +135,48 @@ const App: React.FC = () => {
       );
     }
 
-    // 3. Logic for "NEW" category: Filter last 30 days based on ADDED DATE, Sort DESC, Limit 20
-    if (activeCategory === 'NEW') {
+    // 3. Search filter
+    const q = searchQuery.toLowerCase();
+    availableItems = availableItems.filter(item => {
+      const title = pickText(item.title, lang).toLowerCase();
+      const author = item.author.toLowerCase();
+      if (searchField === 'title') return title.includes(q);
+      if (searchField === 'author') return author.includes(q);
+      return title.includes(q) || author.includes(q);
+    });
+
+    // 4. Category filter
+    if (activeCategory === 'FAVORITES') {
+      availableItems = availableItems.filter(item => isFavorited(userId, item.id));
+    } else if (activeCategory === 'NEW') {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-      availableItems = availableItems
-        .filter(item => {
-           // Use addedDate to track when it arrived in the library
-           const addedDate = new Date(item.addedDate); 
-           return addedDate >= thirtyDaysAgo;
-        })
+      return availableItems
+        .filter(item => new Date(item.addedDate) >= thirtyDaysAgo)
         .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime())
         .slice(0, 20);
+    } else if (activeCategory === 'HISTORY') {
+      const order = new Map(viewHistory.map((id, i) => [id, i]));
+      return availableItems
+        .filter(item => order.has(item.id))
+        .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    } else if (activeCategory !== 'ALL') {
+      availableItems = availableItems.filter(item => item.type === activeCategory);
     }
 
-    // 4. Logic for Search and other Categories
-    return availableItems.filter(item => {
-      const title = pickText(item.title, lang);
-      const author = item.author;
-      const q = searchQuery.toLowerCase();
-      
-      let matchesSearch = false;
-      if (searchField === 'all') {
-        matchesSearch = title.toLowerCase().includes(q) || author.toLowerCase().includes(q);
-      } else if (searchField === 'title') {
-        matchesSearch = title.toLowerCase().includes(q);
-      } else if (searchField === 'author') {
-        matchesSearch = author.toLowerCase().includes(q);
-      }
-      
-      let matchesCategory = true;
-      if (activeCategory === 'FAVORITES') {
-        matchesCategory = isFavorited(userId, item.id);
-      } else if (activeCategory === 'NEW') {
-        // Already filtered above
-        matchesCategory = true; 
-      } else if (activeCategory !== 'ALL') {
-        matchesCategory = item.type === activeCategory;
-      }
-
-      return matchesSearch && matchesCategory;
-    });
-  }, [db.items, db.globalAccess, searchQuery, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField]);
+    // 5. Sorting (FAVORITES / ALL / type sections)
+    const sorted = [...availableItems];
+    if (sortBy === 'recent') {
+      sorted.sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime());
+    } else if (sortBy === 'rating') {
+      sorted.sort((a, b) => getAverageRating(b.id) - getAverageRating(a.id));
+    } else if (sortBy === 'views') {
+      sorted.sort((a, b) => (b.views || 0) - (a.views || 0));
+    } else if (sortBy === 'alpha') {
+      sorted.sort((a, b) => pickText(a.title, lang).localeCompare(pickText(b.title, lang)));
+    }
+    return sorted;
+  }, [db.items, db.globalAccess, searchQuery, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
 
   const selectLang = (l: Locale) => {
     setLang(l);
@@ -248,9 +249,9 @@ const App: React.FC = () => {
       </div>
 
       {currentPage === 'home' && (
-        <Home 
+        <Home
           items={filteredItems}
-          onOpenItem={(item) => {setSelectedItem(item); setCurrentPage('details');}}
+          onOpenItem={(item) => { setViewHistory(recordView(item.id)); setSelectedItem(item); setCurrentPage('details'); }}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           activeCategory={activeCategory}
@@ -259,6 +260,8 @@ const App: React.FC = () => {
           setContentLangFilter={setContentLangFilter}
           searchField={searchField}
           setSearchField={setSearchField}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
           categories={db.customTypes}
           lang={lang}
           t={t}

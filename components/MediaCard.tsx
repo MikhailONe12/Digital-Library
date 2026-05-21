@@ -1,8 +1,9 @@
 
 import React, { useMemo } from 'react';
 import { MediaItem, Locale, ContentLang } from '../types';
-import { TrendingUp, ShieldCheck, Heart } from 'lucide-react';
-import { pickText, handleCoverError } from '../utils';
+import { TrendingUp, ShieldCheck, Heart, BookOpen } from 'lucide-react';
+import { pickText } from '../utils';
+import CardCover from './CardCover';
 
 interface MediaCardProps {
   item: MediaItem;
@@ -26,12 +27,7 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
         className="group relative bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] active:scale-[0.97] transition-all hover:shadow-[0_15px_35px_rgba(0,0,0,0.06)] hover:border-red-100"
     >
       <div className="aspect-[3/4] relative overflow-hidden">
-        <img
-            src={item.coverUrl}
-            onError={handleCoverError}
-            className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-            alt={pickText(item.title, lang)}
-        />
+        <CardCover item={item} lang={lang} />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent group-hover:from-red-900/40 transition-colors" />
 
         {isFavorited && (
@@ -53,12 +49,20 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
           </div>
         </div>
 
-        {item.isPrivate && (
-          <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-md text-red-600 text-[8px] font-black uppercase px-2.5 py-1 rounded-lg border border-red-500/20 flex items-center gap-1 shadow-sm">
-            <ShieldCheck size={10} />
-            Tier 1
-          </div>
-        )}
+        <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
+          {item.isPrivate && (
+            <div className="bg-white/90 backdrop-blur-md text-red-600 text-[8px] font-black uppercase px-2.5 py-1 rounded-lg border border-red-500/20 flex items-center gap-1 shadow-sm">
+              <ShieldCheck size={10} />
+              Tier 1
+            </div>
+          )}
+          {progress != null && progress > 0 && (
+            <div className="bg-red-600 text-white text-[8px] font-black uppercase px-2 py-1 rounded-lg border border-white/20 flex items-center gap-1 shadow-lg shadow-red-900/20">
+              <BookOpen size={9} strokeWidth={3} />
+              {Math.min(100, Math.round(progress))}%
+            </div>
+          )}
+        </div>
 
         <div className="absolute bottom-4 left-4 right-4">
             <h3 className="text-white text-sm font-black tracking-tight leading-tight line-clamp-2 drop-shadow-sm">

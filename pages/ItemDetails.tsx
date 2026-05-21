@@ -103,6 +103,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // Bookmarks
   const [bookmarks, setBookmarks]         = useState<Bookmark[]>([]);
   const [showBookmarks, setShowBookmarks] = useState(false);
+  // Pending bookmark awaiting an optional name before it's saved
+  const [bookmarkDraft, setBookmarkDraft] = useState<{ position: string; defaultLabel: string } | null>(null);
+  const [bookmarkName, setBookmarkName]   = useState('');
 
   // Annotations
   const [annotations, setAnnotations]         = useState<Annotation[]>([]);
@@ -147,8 +150,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     return url;
   };
 
-  // Keep ref in sync so keyboard handlers can read the latest value
-  useEffect(() => { annotationOpenRef.current = annotationDraft !== null; }, [annotationDraft]);
+  // Keep ref in sync so keyboard handlers can read the latest value. Suspend
+  // page navigation while either input sheet (note or bookmark name) is open.
+  useEffect(() => { annotationOpenRef.current = annotationDraft !== null || bookmarkDraft !== null; }, [annotationDraft, bookmarkDraft]);
 
   // Persist theme & font choices
   useEffect(() => { localStorage.setItem(THEME_KEY, readerTheme); }, [readerTheme]);
@@ -172,6 +176,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       setShowToc(false);
       setShowAnnotations(false);
       setAnnotationDraft(null);
+      setBookmarkDraft(null);
       setBookmarks([]);
       setAnnotations([]);
       setToc([]);
@@ -606,17 +611,26 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     setAnnotations(prev => prev.filter(a => a.id !== id));
   };
 
-  const handleAddPdfBookmark = async () => {
-    await addBookmark(userId, item.id, String(pdfPage), `Страница ${pdfPage}`);
+  const handleAddPdfBookmark = () => {
+    setBookmarkName('');
+    setBookmarkDraft({ position: String(pdfPage), defaultLabel: `Страница ${pdfPage}` });
+  };
+
+  const handleAddEpubBookmark = () => {
+    const cfi = renditionRef.current?.currentLocation()?.start?.cfi;
+    if (!cfi) return;
+    setBookmarkName('');
+    setBookmarkDraft({ position: cfi, defaultLabel: `Закладка ${bookmarks.length + 1}` });
+  };
+
+  const handleSaveBookmark = async () => {
+    if (!bookmarkDraft) return;
+    await addBookmark(userId, item.id, bookmarkDraft.position, bookmarkName.trim() || bookmarkDraft.defaultLabel);
+    setBookmarkDraft(null);
     refreshBookmarks();
   };
 
-  const handleAddEpubBookmark = async () => {
-    const cfi = renditionRef.current?.currentLocation()?.start?.cfi;
-    if (!cfi) return;
-    await addBookmark(userId, item.id, cfi, `Закладка ${bookmarks.length + 1}`);
-    refreshBookmarks();
-  };
+  const handleCancelBookmark = () => setBookmarkDraft(null);
 
   const handleDeleteBookmark = async (id: string) => {
     await deleteBookmark(userId, id);
@@ -787,7 +801,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         {annotations.length === 0 && (
           <p className="text-center text-white/20 text-[10px] uppercase tracking-widest py-8">Нет аннотаций</p>
         )}
-        {annotations.map(a => (
+        {annotations.map((a, i) => (
           <div key={a.id} className="p-3 bg-white/5 rounded-2xl group">
             <div className="flex items-start gap-2">
               <div className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${HIGHLIGHT_COLOR_BG[a.color as HighlightColor] || 'bg-yellow-400'}`} />
@@ -802,7 +816,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 {a.selected_text && (
                   <p className="text-[11px] text-white/50 italic line-clamp-2">"{a.selected_text}"</p>
                 )}
-                {a.note && <p className="text-xs font-bold text-white mt-0.5">{a.note}</p>}
+                {a.note
+                  ? <p className="text-xs font-bold text-white mt-0.5">{a.note}</p>
+                  : !a.selected_text && <p className="text-xs font-bold text-white mt-0.5">Заметка {annotations.length - i}</p>
+                }
                 <p className="text-[9px] text-white/25 mt-1">
                   {a.page ? `Стр. ${a.page} · ` : ''}{new Date(a.created_at).toLocaleDateString()}
                 </p>
@@ -869,6 +886,35 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             <button onClick={handleCancelAnnotation} className="px-4 py-2 text-slate-500 text-xs font-bold hover:text-slate-800 transition-colors rounded-xl hover:bg-slate-100">Отмена</button>
             <button onClick={handleSaveAnnotation} className="px-5 py-2 bg-red-600 text-white text-xs font-black rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-md shadow-red-200">Сохранить</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const BookmarkSheet = () => (
+    <div className="fixed inset-x-0 bottom-0 z-[600] animate-in slide-in-from-bottom-3 duration-200"
+      style={{ paddingBottom: 'calc(var(--safe-bottom, 0px))' }}>
+      <div className="mx-auto max-w-2xl bg-white rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.18)] border-t border-slate-200 p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Новая закладка</p>
+          <button onClick={handleCancelBookmark} className="p-1.5 text-slate-300 hover:text-slate-600 transition-colors rounded-lg hover:bg-slate-100">
+            <X size={16} />
+          </button>
+        </div>
+        <div>
+          <label className="block text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Название (необязательно)</label>
+          <input
+            value={bookmarkName}
+            onChange={e => setBookmarkName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleSaveBookmark(); }}
+            placeholder={bookmarkDraft?.defaultLabel}
+            className="w-full bg-slate-50 text-slate-900 text-sm rounded-2xl p-4 outline-none placeholder:text-slate-400 border-2 border-slate-200 focus:border-red-400 transition-colors"
+            autoFocus
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={handleCancelBookmark} className="px-4 py-2 text-slate-500 text-xs font-bold hover:text-slate-800 transition-colors rounded-xl hover:bg-slate-100">Отмена</button>
+          <button onClick={handleSaveBookmark} className="px-5 py-2 bg-red-600 text-white text-xs font-black rounded-xl hover:bg-red-700 active:scale-95 transition-all shadow-md shadow-red-200">Сохранить</button>
         </div>
       </div>
     </div>
@@ -1043,6 +1089,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showBookmarks && <BookmarksPanel onJump={b => renditionRef.current?.display(b.position)} />}
             {showAnnotations && <AnnotationsPanel isEpub={true} />}
             {annotationDraft !== null && AnnotationSheet({})}
+            {bookmarkDraft !== null && BookmarkSheet({})}
             {epubLoading && !epubError && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                 <div className="w-8 h-8 border-4 border-slate-300 border-t-red-600 rounded-full animate-spin" />
@@ -1153,6 +1200,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             {showBookmarks && <BookmarksPanel onJump={b => { setPdfPage(parseInt(b.position)); }} />}
             {showAnnotations && <AnnotationsPanel isEpub={false} />}
             {annotationDraft !== null && AnnotationSheet({ isPdf: true })}
+            {bookmarkDraft !== null && BookmarkSheet({})}
           </div>
 
           <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0`}

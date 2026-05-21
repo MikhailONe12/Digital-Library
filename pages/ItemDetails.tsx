@@ -330,8 +330,30 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // EPUB zoom live update
   useEffect(() => { renditionRef.current?.themes?.fontSize(epubFontSize + '%'); }, [epubFontSize]);
 
-  // EPUB theme live update
-  useEffect(() => { renditionRef.current?.themes?.select(readerTheme); }, [readerTheme]);
+  // EPUB theme live update. themes.select() re-injects the iframe stylesheet,
+  // which can drop the SVG highlight overlay — re-apply highlights afterwards so
+  // colored selections survive a theme switch.
+  useEffect(() => {
+    const rend = renditionRef.current;
+    if (!rend || !activeEpubUrl) return;
+    rend.themes?.select(readerTheme);
+    const reapply = () => {
+      annotations
+        .filter(a => a.cfi_range && a.format_url === activeEpubUrl)
+        .forEach(a => {
+          try { rend.annotations.remove(a.cfi_range, 'highlight'); } catch { /* not present */ }
+          try {
+            rend.annotations.add(
+              'highlight', a.cfi_range!, {},
+              undefined, `ann-${a.id}`,
+              HIGHLIGHT_COLORS[a.color as HighlightColor] || HIGHLIGHT_COLORS.yellow,
+            );
+          } catch { /* invalid CFI */ }
+        });
+    };
+    const timer = setTimeout(reapply, 50);
+    return () => clearTimeout(timer);
+  }, [readerTheme]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // EPUB keyboard navigation (desktop ← / →)
   useEffect(() => {
@@ -553,6 +575,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           );
         } catch { /* skip */ }
       }
+    } else {
+      const msg = 'Не удалось сохранить заметку. Сервер недоступен — обновите API (docker compose up -d --build library-api).';
+      if (tg?.showAlert) tg.showAlert(msg); else alert(msg);
+      return; // keep the sheet open so the draft isn't lost
     }
     setAnnotationDraft(null);
     if (renditionRef.current) {

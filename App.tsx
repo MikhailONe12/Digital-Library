@@ -61,16 +61,29 @@ const App: React.FC = () => {
       root.setProperty('--tg-safe-bottom', ((sa.bottom || 0) + (csa.bottom || 0)) + 'px');
     };
 
+    // Sync colour scheme with Telegram (or OS prefers-color-scheme on web).
+    // Toggling the `dark` class on <html> flips all Tailwind dark: variants
+    // and the CSS surface tokens in index.css.
+    const applyTheme = () => {
+      const dark = tg?.colorScheme
+        ? tg.colorScheme === 'dark'
+        : window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+      document.documentElement.classList.toggle('dark', !!dark);
+    };
+    applyTheme();
+    const mql = window.matchMedia?.('(prefers-color-scheme: dark)');
+    mql?.addEventListener?.('change', applyTheme);
+
     if (tg) {
       tg.expand();
       tg.ready();
-      document.body.style.backgroundColor = '#f8fafc';
       applyInsets();
       // safeAreaChanged/contentSafeAreaChanged exist on Bot API 8.0+; older
       // clients simply never fire them and we keep the env() fallback.
       try {
         tg.onEvent('safeAreaChanged', applyInsets);
         tg.onEvent('contentSafeAreaChanged', applyInsets);
+        tg.onEvent('themeChanged', applyTheme);
       } catch { /* event unsupported on this Telegram client */ }
     }
 
@@ -119,9 +132,11 @@ const App: React.FC = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      mql?.removeEventListener?.('change', applyTheme);
       try {
         tg?.offEvent('safeAreaChanged', applyInsets);
         tg?.offEvent('contentSafeAreaChanged', applyInsets);
+        tg?.offEvent('themeChanged', applyTheme);
       } catch { /* event unsupported on this Telegram client */ }
     };
   }, [tg]);
@@ -204,10 +219,10 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+      <div className="min-h-screen bg-[#f5f5f7] dark:bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-red-100 border-t-red-600 rounded-full animate-spin" />
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Loading Library</p>
+          <div className="w-11 h-11 border-[3px] border-red-100 dark:border-white/10 border-t-red-600 rounded-full animate-spin" />
+          <p className="text-sm font-medium text-slate-400 dark:text-slate-500">Loading Library</p>
         </div>
       </div>
     );
@@ -229,7 +244,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen pb-10 font-sans text-slate-900 overflow-x-hidden bg-[#f8fafc]">
+    <div className="min-h-screen pb-10 font-sans text-slate-900 dark:text-slate-100 overflow-x-hidden bg-[#f5f5f7] dark:bg-black">
       {/* Precision Lang Switcher Dropdown */}
       <div
         className={`absolute top-0 left-0 right-0 z-[110] pointer-events-none ${
@@ -243,7 +258,7 @@ const App: React.FC = () => {
         <div className="relative pointer-events-auto">
           <button
             onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
-            className="flex items-center gap-2 bg-white/70 backdrop-blur-md px-4 py-2 rounded-xl border border-slate-200 text-[10px] font-bold uppercase tracking-widest text-red-600 shadow-sm transition-all hover:bg-white active:scale-95"
+            className="flex items-center gap-1.5 glass-card px-3.5 py-2 rounded-xl text-xs font-medium uppercase text-red-600 transition-all active:scale-95"
           >
             <Globe size={14} />
             {lang}
@@ -251,12 +266,12 @@ const App: React.FC = () => {
           </button>
 
           {isLangMenuOpen && (
-            <div className="absolute right-0 mt-2 w-24 bg-white/90 backdrop-blur-xl border border-slate-200 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] overflow-hidden z-[120] animate-in fade-in zoom-in-95 duration-200">
+            <div className="absolute right-0 mt-2 w-24 glass-card rounded-xl shadow-card-hover overflow-hidden z-[120] animate-in fade-in zoom-in-95 duration-200">
                {(['en', 'ru', 'es'] as Locale[]).map((l) => (
                   <button
                     key={l}
                     onClick={() => selectLang(l)}
-                    className={`w-full text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-colors ${lang === l ? 'text-red-600 bg-red-50/50' : 'text-slate-500'}`}
+                    className={`w-full text-left px-4 py-2.5 text-xs font-medium uppercase transition-colors hover:bg-red-500/10 hover:text-red-600 ${lang === l ? 'text-red-600 bg-red-500/10' : 'text-slate-500 dark:text-slate-300'}`}
                   >
                     {l}
                   </button>

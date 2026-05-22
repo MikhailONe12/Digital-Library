@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { MediaItem, Locale, ContentLang } from '../types';
-import { TrendingUp, ShieldCheck, Heart, BookOpen } from 'lucide-react';
+import { Star, ShieldCheck, Heart, BookOpen } from 'lucide-react';
 import { pickText } from '../utils';
 import CardCover from './CardCover';
 
@@ -24,48 +24,48 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
   return (
     <div
         onClick={onClick}
-        className="group relative bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-[0_4px_20px_rgba(0,0,0,0.03)] active:scale-[0.97] transition-all hover:shadow-[0_15px_35px_rgba(0,0,0,0.06)] hover:border-red-100"
+        className="group relative bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-black/[0.06] dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all duration-300 hover:shadow-card-hover cursor-pointer"
     >
       <div className="aspect-[3/4] relative overflow-hidden">
         <CardCover item={item} lang={lang} />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent group-hover:from-red-900/40 transition-colors" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
 
         {isFavorited && (
-          <div className="absolute bottom-3 right-3 bg-red-600 text-white p-1.5 rounded-full shadow-lg border border-white/20 animate-in zoom-in duration-300">
-            <Heart size={10} fill="currentColor" />
+          <div className="absolute bottom-3 right-3 bg-red-600 text-white p-1.5 rounded-full shadow-md animate-in zoom-in duration-300">
+            <Heart size={11} fill="currentColor" />
           </div>
         )}
 
-        <div className="absolute top-3 left-3 flex flex-col gap-1.5 items-start">
-          <div className="bg-red-600 text-white text-[7px] font-black uppercase px-2 py-1 rounded-md shadow-lg shadow-red-900/20 tracking-[0.1em]">
+        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5 items-start">
+          <div className="bg-black/35 backdrop-blur-md text-white text-[10px] font-medium capitalize px-2 py-0.5 rounded-md">
               {item.type}
           </div>
           <div className="flex flex-wrap gap-1 max-w-[100px]">
             {displayedLanguages.map(l => (
-              <div key={l} className="bg-white/80 backdrop-blur-md text-slate-900 text-[6px] font-black uppercase px-1.5 py-0.5 rounded border border-white/40 shadow-sm">
+              <div key={l} className="bg-white/85 backdrop-blur-md text-slate-700 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded">
                 {l}
               </div>
             ))}
           </div>
         </div>
 
-        <div className="absolute top-3 right-3 flex flex-col items-end gap-1.5">
+        <div className="absolute top-2.5 right-2.5 flex flex-col items-end gap-1.5">
           {item.isPrivate && (
-            <div className="bg-white/90 backdrop-blur-md text-red-600 text-[8px] font-black uppercase px-2.5 py-1 rounded-lg border border-red-500/20 flex items-center gap-1 shadow-sm">
-              <ShieldCheck size={10} />
+            <div className="bg-black/35 backdrop-blur-md text-white text-[10px] font-medium px-2 py-0.5 rounded-md flex items-center gap-1">
+              <ShieldCheck size={11} />
               Tier 1
             </div>
           )}
           {progress != null && progress > 0 && (
-            <div className="bg-red-600 text-white text-[8px] font-black uppercase px-2 py-1 rounded-lg border border-white/20 flex items-center gap-1 shadow-lg shadow-red-900/20">
-              <BookOpen size={9} strokeWidth={3} />
+            <div className="bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+              <BookOpen size={10} strokeWidth={2.5} />
               {Math.min(100, Math.round(progress))}%
             </div>
           )}
         </div>
 
-        <div className="absolute bottom-4 left-4 right-4">
-            <h3 className="text-white text-sm font-black tracking-tight leading-tight line-clamp-2 drop-shadow-sm">
+        <div className="absolute bottom-3.5 left-3.5 right-3.5">
+            <h3 className="text-white text-sm font-semibold tracking-tight leading-snug line-clamp-2 drop-shadow-sm">
                 {pickText(item.title, lang)}
             </h3>
         </div>
@@ -81,14 +81,12 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
         )}
       </div>
 
-      <div className="px-4 py-3 bg-white flex items-center justify-between border-t border-slate-50">
-        <div className="flex items-center gap-1.5">
-          <div className={`p-1 rounded-md ${item.rating > 4.5 ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-              <TrendingUp size={10} />
-          </div>
-          <span className="text-[11px] text-slate-900 font-extrabold tracking-tight">{item.rating}</span>
+      <div className="px-3.5 py-2.5 bg-white dark:bg-[#1c1c1e] flex items-center justify-between">
+        <div className="flex items-center gap-1">
+          <Star size={12} className="text-amber-400" fill="currentColor" />
+          <span className="text-xs text-slate-900 dark:text-slate-100 font-semibold tracking-tight">{item.rating}</span>
         </div>
-        <span className="text-[9px] text-slate-400 font-bold truncate max-w-[60px] uppercase tracking-tighter italic">
+        <span className="text-xs text-slate-400 dark:text-slate-500 font-normal truncate max-w-[90px]">
             {item.author.split(' ')[0]}
         </span>
       </div>

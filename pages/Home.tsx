@@ -2,7 +2,7 @@
 import React, { useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Check, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
 
 interface HomeProps {
@@ -55,56 +55,55 @@ const Home: React.FC<HomeProps> = ({
       className="px-4 sm:px-6 lg:px-10 max-w-7xl mx-auto"
       style={{ paddingTop: 'calc(3rem + var(--safe-top))' }}
     >
-      <header className="mb-14 relative select-none">
-        <div 
-          className="flex items-center gap-4 mb-3 cursor-pointer active:opacity-70 transition-opacity"
+      <header className="mb-10 relative select-none">
+        <div
+          className="flex items-center gap-3.5 mb-2 cursor-pointer active:opacity-70 transition-opacity"
           onMouseDown={handleStart}
           onMouseUp={handleEnd}
           onMouseLeave={handleEnd}
           onTouchStart={handleStart}
           onTouchEnd={handleEnd}
         >
-            <img src="/icon.svg" alt="OptionsData" className="w-14 h-14 rounded-2xl shadow-xl shadow-red-200" />
-            <h1 className="text-4xl font-black text-slate-900 tracking-tighter">Options<span className="text-red-600 font-extrabold">Data</span></h1>
+            <img src="/icon.svg" alt="OptionsData" className="w-12 h-12 rounded-2xl shadow-card" />
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">Options<span className="text-red-600">Data</span></h1>
         </div>
-        <p className="text-slate-400 text-[11px] uppercase font-black tracking-[0.5em] flex items-center gap-2 ml-1">
+        <p className="text-slate-400 dark:text-slate-500 text-sm font-normal tracking-wide ml-0.5">
             Digital Library
         </p>
       </header>
 
       <div className="relative mb-6 z-20">
         <div className="relative group">
-          <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-600 transition-colors" size={20} />
-          <input 
-            type="text" placeholder={t.search} 
-            className="w-full bg-white border border-slate-200 rounded-[2rem] py-6 pl-16 pr-16 text-sm font-medium shadow-sm focus:outline-none focus:ring-8 focus:ring-red-500/5 focus:border-red-600 transition-all placeholder:text-slate-300"
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-600 transition-colors" size={19} />
+          <input
+            type="text" placeholder={t.search}
+            className="w-full bg-slate-100 dark:bg-[#1c1c1e] border border-transparent dark:border-white/[0.08] rounded-2xl py-4 pl-14 pr-14 text-[15px] font-normal text-slate-900 dark:text-white focus:outline-none focus:bg-white dark:focus:bg-[#1c1c1e] focus:border-red-500/40 focus:ring-4 focus:ring-red-500/5 transition-all placeholder:text-slate-400"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
           />
-          <button 
+          <button
             onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' || sortBy !== 'recent' ? 'bg-red-600 text-white shadow-md' : 'text-slate-400 hover:text-red-600 hover:bg-slate-50'}`}
+            className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-2.5 rounded-xl transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' || sortBy !== 'recent' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-red-600 hover:bg-slate-200/60 dark:hover:bg-white/10'}`}
           >
-            <SlidersHorizontal size={18} strokeWidth={2.5} />
+            <SlidersHorizontal size={18} strokeWidth={2.25} />
           </button>
         </div>
 
         {/* Expandable Filter Panel */}
         {isFilterOpen && (
-           <div className="absolute top-full left-0 right-0 mt-4 bg-white/90 backdrop-blur-xl border border-white/50 rounded-[2.5rem] p-6 shadow-[0_20px_50px_rgba(0,0,0,0.1)] animate-in slide-in-from-top-4 fade-in duration-300 z-30">
-              <div className="space-y-6">
+           <div className="absolute top-full left-0 right-0 mt-3 glass-card rounded-2xl p-5 shadow-card-hover animate-in slide-in-from-top-4 fade-in duration-300 z-30">
+              <div className="space-y-5">
                  {/* Content Language Filter */}
-                 <div className="space-y-3">
-                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 ml-1">
-                       <Globe size={12} /> {t.contentLang}
+                 <div className="space-y-2.5">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2 ml-0.5">
+                       <Globe size={13} /> {t.contentLang}
                     </p>
                     <div className="flex flex-wrap gap-2">
                        {/* ALL button — clears selection */}
                        <button
                          onClick={() => setContentLangFilter([])}
-                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${contentLangFilter.length === 0 ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:border-slate-300'}`}
+                         className={`px-3.5 py-2 rounded-lg text-xs font-medium transition-all ${contentLangFilter.length === 0 ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                        >
                          {t.anyLang}
-                         {contentLangFilter.length === 0 && <Check size={10} strokeWidth={4} />}
                        </button>
                        {(['en', 'ru', 'es', 'it', 'fr', 'de'] as const).map(l => {
                          const active = contentLangFilter.includes(l);
@@ -115,10 +114,9 @@ const Home: React.FC<HomeProps> = ({
                            <button
                              key={l}
                              onClick={toggle}
-                             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-slate-900 text-white shadow-lg' : 'bg-white border border-slate-100 text-slate-400 hover:border-slate-300'}`}
+                             className={`px-3.5 py-2 rounded-lg text-xs font-medium uppercase transition-all ${active ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                            >
                              {l}
-                             {active && <Check size={10} strokeWidth={4} />}
                            </button>
                          );
                        })}
@@ -126,36 +124,36 @@ const Home: React.FC<HomeProps> = ({
                  </div>
 
                  {/* Search Field Filter */}
-                 <div className="space-y-3">
-                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 ml-1">
-                       <Search size={12} /> {t.searchIn}
+                 <div className="space-y-2.5">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2 ml-0.5">
+                       <Search size={13} /> {t.searchIn}
                     </p>
                     <div className="grid grid-cols-3 gap-2">
-                        <button 
+                        <button
                            onClick={() => setSearchField('all')}
-                           className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all border ${searchField === 'all' ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}
+                           className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-medium transition-all ${searchField === 'all' ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                         >
-                           <Sparkles size={14} /> {t.searchAll}
+                           <Sparkles size={15} /> {t.searchAll}
                         </button>
-                        <button 
+                        <button
                            onClick={() => setSearchField('title')}
-                           className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all border ${searchField === 'title' ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}
+                           className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-medium transition-all ${searchField === 'title' ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                         >
-                           <Type size={14} /> {t.searchTitle}
+                           <Type size={15} /> {t.searchTitle}
                         </button>
-                        <button 
+                        <button
                            onClick={() => setSearchField('author')}
-                           className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all border ${searchField === 'author' ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}
+                           className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-medium transition-all ${searchField === 'author' ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                         >
-                           <User size={14} /> {t.searchAuthor}
+                           <User size={15} /> {t.searchAuthor}
                         </button>
                     </div>
                  </div>
 
                  {/* Sort */}
-                 <div className="space-y-3">
-                    <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 ml-1">
-                       <ArrowUpDown size={12} /> {t.sortBy}
+                 <div className="space-y-2.5">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2 ml-0.5">
+                       <ArrowUpDown size={13} /> {t.sortBy}
                     </p>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                        {([
@@ -167,9 +165,9 @@ const Home: React.FC<HomeProps> = ({
                           <button
                             key={key}
                             onClick={() => setSortBy(key)}
-                            className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all border ${sortBy === key ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-slate-100 text-slate-400'}`}
+                            className={`flex flex-col items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-medium transition-all ${sortBy === key ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
                           >
-                             <Icon size={14} /> {label}
+                             <Icon size={15} /> {label}
                           </button>
                        ))}
                     </div>
@@ -179,53 +177,53 @@ const Home: React.FC<HomeProps> = ({
         )}
       </div>
 
-      <div className="flex gap-3 overflow-x-auto pb-10 mt-4 no-scrollbar scroll-smooth">
+      <div className="flex gap-2.5 overflow-x-auto pb-8 mt-4 no-scrollbar scroll-smooth">
         {/* Favorites Button */}
         <button
           onClick={() => setActiveCategory('FAVORITES')}
-          className={`flex-shrink-0 w-14 h-[2.45rem] flex items-center justify-center rounded-2xl transition-all duration-300 ${
+          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
             activeCategory === 'FAVORITES'
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
-            : 'bg-white text-red-600 border border-slate-200 hover:border-red-200'
+            ? 'bg-red-600 text-white'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
           }`}
           aria-label="Favorites"
         >
-          <Heart size={20} fill={activeCategory === 'FAVORITES' ? 'currentColor' : 'none'} strokeWidth={3} />
+          <Heart size={19} fill={activeCategory === 'FAVORITES' ? 'currentColor' : 'none'} strokeWidth={2.25} />
         </button>
 
         {/* History Button */}
         <button
           onClick={() => setActiveCategory('HISTORY')}
-          className={`flex-shrink-0 w-14 h-[2.45rem] flex items-center justify-center rounded-2xl transition-all duration-300 ${
+          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
             activeCategory === 'HISTORY'
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
-            : 'bg-white text-red-600 border border-slate-200 hover:border-red-200'
+            ? 'bg-red-600 text-white'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
           }`}
           aria-label={t.history}
           title={t.history}
         >
-          <Clock size={20} strokeWidth={3} />
+          <Clock size={19} strokeWidth={2.25} />
         </button>
 
         {/* New Arrivals Button */}
         <button
           onClick={() => setActiveCategory('NEW')}
-          className={`flex-shrink-0 flex items-center gap-2 px-6 h-[2.45rem] rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+          className={`flex-shrink-0 flex items-center gap-1.5 px-5 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
             activeCategory === 'NEW'
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
-            : 'bg-white text-red-600 border border-slate-200 hover:border-red-200'
+            ? 'bg-red-600 text-white'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
           }`}
         >
-          <Sparkles size={16} fill={activeCategory === 'NEW' ? 'currentColor' : 'none'} strokeWidth={3} />
+          <Sparkles size={16} fill={activeCategory === 'NEW' ? 'currentColor' : 'none'} strokeWidth={2.25} />
           {t.new}
         </button>
 
         <button
           onClick={() => setActiveCategory('ALL')}
-          className={`whitespace-nowrap px-10 py-[0.7rem] rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+          className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
             activeCategory === 'ALL'
-            ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
-            : 'bg-white text-slate-500 border border-slate-200 hover:border-red-200'
+            ? 'bg-red-600 text-white'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
           }`}
         >
           {t.all}
@@ -234,10 +232,10 @@ const Home: React.FC<HomeProps> = ({
           <button
             key={cat.id}
             onClick={() => setActiveCategory(cat.id)}
-            className={`whitespace-nowrap px-10 py-[0.7rem] rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 ${
+            className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
               activeCategory === cat.id
-              ? 'bg-red-600 text-white shadow-[0_15px_30px_rgba(220,38,38,0.25)]'
-              : 'bg-white text-slate-500 border border-slate-200 hover:border-red-200'
+              ? 'bg-red-600 text-white'
+              : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
             }`}
           >
             {cat[lang] || cat.en || cat.id}
@@ -260,10 +258,10 @@ const Home: React.FC<HomeProps> = ({
 
       {items.length === 0 && (
           <div className="py-24 text-center">
-              <div className="inline-flex p-6 bg-slate-100 rounded-full text-slate-300 mb-6">
-                  {activeCategory === 'FAVORITES' ? <Heart size={40} /> : activeCategory === 'NEW' ? <Sparkles size={40} /> : activeCategory === 'HISTORY' ? <Clock size={40} /> : <Search size={40} />}
+              <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
+                  {activeCategory === 'FAVORITES' ? <Heart size={36} /> : activeCategory === 'NEW' ? <Sparkles size={36} /> : activeCategory === 'HISTORY' ? <Clock size={36} /> : <Search size={36} />}
               </div>
-              <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">
+              <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
                 {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : t.noResults}
               </p>
           </div>

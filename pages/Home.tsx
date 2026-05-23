@@ -184,7 +184,7 @@ const Home: React.FC<HomeProps> = ({
           className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
             activeCategory === 'FAVORITES'
             ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
           aria-label="Favorites"
         >
@@ -197,7 +197,7 @@ const Home: React.FC<HomeProps> = ({
           className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
             activeCategory === 'HISTORY'
             ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
           aria-label={t.history}
           title={t.history}
@@ -211,7 +211,7 @@ const Home: React.FC<HomeProps> = ({
           className={`flex-shrink-0 flex items-center gap-1.5 px-5 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
             activeCategory === 'NEW'
             ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
         >
           <Sparkles size={16} fill={activeCategory === 'NEW' ? 'currentColor' : 'none'} strokeWidth={2.25} />
@@ -223,7 +223,7 @@ const Home: React.FC<HomeProps> = ({
           className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
             activeCategory === 'ALL'
             ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
         >
           {t.all}
@@ -235,7 +235,7 @@ const Home: React.FC<HomeProps> = ({
             className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
               activeCategory === cat.id
               ? 'bg-red-600 text-white'
-              : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-black/[0.06] dark:border-white/[0.08]'
+              : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
             }`}
           >
             {cat[lang] || cat.en || cat.id}

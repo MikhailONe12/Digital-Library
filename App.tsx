@@ -219,7 +219,7 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#fbfbfd] dark:bg-black flex items-center justify-center">
+      <div className="min-h-screen bg-white dark:bg-black flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="w-11 h-11 border-[3px] border-red-100 dark:border-white/10 border-t-red-600 rounded-full animate-spin" />
           <p className="text-sm font-medium text-slate-400 dark:text-slate-500">Loading Library</p>
@@ -244,7 +244,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen pb-10 font-sans text-slate-900 dark:text-slate-100 overflow-x-hidden bg-[#fbfbfd] dark:bg-black">
+    <div className="min-h-screen pb-10 font-sans text-slate-900 dark:text-slate-100 overflow-x-hidden bg-white dark:bg-black">
       {/* Precision Lang Switcher Dropdown */}
       <div
         className={`absolute top-0 left-0 right-0 z-[110] pointer-events-none ${

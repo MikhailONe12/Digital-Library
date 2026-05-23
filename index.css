@@ -11,7 +11,7 @@
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-bottom, 0px));
   /* Apple-style surface tokens. Light: near-white. Dark: layered greys
      (not pure black) matching iOS "elevated" backgrounds. */
-  --app-bg: #fbfbfd;
+  --app-bg: #ffffff;
   --app-text: #1d1d1f;
 }
 .dark {

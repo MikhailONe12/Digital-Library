@@ -77,7 +77,7 @@ const Home: React.FC<HomeProps> = ({
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-600 transition-colors" size={19} />
           <input
             type="text" placeholder={t.search}
-            className="w-full bg-slate-100 dark:bg-[#1c1c1e] border border-transparent dark:border-white/[0.08] rounded-2xl py-4 pl-14 pr-14 text-[15px] font-normal text-slate-900 dark:text-white focus:outline-none focus:bg-white dark:focus:bg-[#1c1c1e] focus:border-red-500/40 focus:ring-4 focus:ring-red-500/5 transition-all placeholder:text-slate-400"
+            className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-4 pl-14 pr-14 text-[15px] font-normal text-slate-900 dark:text-white shadow-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all placeholder:text-slate-400"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
           />
           <button

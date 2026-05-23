@@ -25,10 +25,10 @@ interface TocItem { href: string; label: string; subitems?: TocItem[] }
 interface PdfTocItem { title: string; page: number; level: number; }
 
 const HIGHLIGHT_COLORS: Record<HighlightColor, Record<string, string>> = {
-  yellow: { fill: '#fbbf24', 'fill-opacity': '0.38' },
-  green:  { fill: '#34d399', 'fill-opacity': '0.38' },
-  blue:   { fill: '#60a5fa', 'fill-opacity': '0.38' },
-  pink:   { fill: '#f472b6', 'fill-opacity': '0.38' },
+  yellow: { fill: '#fbbf24', 'fill-opacity': '0.5' },
+  green:  { fill: '#34d399', 'fill-opacity': '0.5' },
+  blue:   { fill: '#60a5fa', 'fill-opacity': '0.5' },
+  pink:   { fill: '#f472b6', 'fill-opacity': '0.5' },
 };
 
 const HIGHLIGHT_COLOR_BG: Record<HighlightColor, string> = {
@@ -292,13 +292,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           width: '100%', height: '100%', spread: 'none',
         });
 
-        // Tap the page (no active text selection) toggles the reader chrome.
-        rendition.hooks.content.register((contents: any) => {
-          contents.document.addEventListener('click', () => {
-            const sel = contents.window?.getSelection?.();
-            if (sel && sel.toString().trim()) return; // selecting text, not tapping
+        // Tap the page toggles the reader chrome. The decision is deferred so an
+        // in-progress text selection isn't disrupted: if, shortly after the tap,
+        // a selection exists (or an input sheet is open), it's not a bare tap and
+        // we leave the chrome alone. This keeps selection → annotation working.
+        const tapToggleChrome = (win: any) => {
+          setTimeout(() => {
+            if (annotationOpenRef.current) return;
+            const s = win?.getSelection?.();
+            if (s && s.toString().trim()) return;
             setChromeVisible(v => !v);
-          });
+          }, 130);
+        };
+        rendition.hooks.content.register((contents: any) => {
+          contents.document.addEventListener('click', () => tapToggleChrome(contents.window));
         });
 
         // Register all themes upfront

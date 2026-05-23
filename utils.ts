@@ -20,6 +20,11 @@ export const COVER_FALLBACK =
 
 export const handleCoverError = (e: React.SyntheticEvent<HTMLImageElement>) => {
   const img = e.currentTarget;
+  // maxresdefault isn't generated for every YouTube video. Fall back to
+  // mqdefault, which always exists and — unlike hqdefault — is true 16:9 with
+  // no black bars baked into the image.
+  const m = img.src.match(/img\.youtube\.com\/vi\/([^/]+)\/maxresdefault\.jpg/);
+  if (m) { img.src = `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg`; return; }
   if (img.src !== COVER_FALLBACK) img.src = COVER_FALLBACK;
 };
 
@@ -29,10 +34,11 @@ export const getYouTubeId = (url: string): string | null => {
   return m ? m[1] : null;
 };
 
-// Best-effort cover image derived from a video URL. YouTube exposes a stable
-// thumbnail of an early representative frame; other sources fall back to null.
+// Best-effort cover image derived from a video URL. For YouTube we use the
+// 16:9 maxresdefault frame (no letterboxing — handleCoverError falls back to
+// the always-present 16:9 mqdefault if maxres is missing). Other sources null.
 export const getVideoPoster = (videoUrl?: string | null): string | null => {
   const yt = getYouTubeId(videoUrl || '');
-  if (yt) return `https://img.youtube.com/vi/${yt}/hqdefault.jpg`;
+  if (yt) return `https://img.youtube.com/vi/${yt}/maxresdefault.jpg`;
   return null;
 };

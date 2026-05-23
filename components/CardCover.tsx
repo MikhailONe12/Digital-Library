@@ -29,7 +29,6 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
     : undefined;
 
   const [thumb, setThumb] = useState<string | null>(null);
-  const [isVideoThumb, setIsVideoThumb] = useState(false);
   const ref = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
@@ -53,7 +52,7 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
         const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
         getPdfThumbnail(url).then(d => { if (!cancelled && d) setThumb(d); });
       } else if (directVideoUrl) {
-        getVideoThumbnail(directVideoUrl).then(d => { if (!cancelled && d) { setThumb(d); setIsVideoThumb(true); } });
+        getVideoThumbnail(directVideoUrl).then(d => { if (!cancelled && d) setThumb(d); });
       }
     }, { rootMargin: '200px' });
     io.observe(el);
@@ -62,17 +61,12 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
 
   const src = hasCover ? item.coverUrl : (thumb || youtubePoster || COVER_FALLBACK);
 
-  // Video frames are landscape; object-cover would crop the sides and show only
-  // the centre. For auto video covers fit the full width instead (letterboxed
-  // on a dark backdrop) so more of the frame is visible.
-  const usingVideoFrame = !hasCover && ((thumb && isVideoThumb) || (!thumb && !!youtubePoster));
-
   return (
     <img
       ref={ref}
       src={src}
       onError={handleCoverError}
-      className={`w-full h-full transition-transform duration-700 group-hover:scale-110 ${usingVideoFrame ? 'object-contain bg-slate-900' : 'object-cover'}`}
+      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
       alt={pickText(item.title, lang)}
     />
   );

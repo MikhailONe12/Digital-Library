@@ -1128,13 +1128,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="relative animate-in fade-in slide-in-from-right-4 duration-500 bg-slate-50 min-h-screen">
+    <div className="relative animate-in fade-in slide-in-from-right-4 duration-500 bg-slate-50 dark:bg-black min-h-screen">
       <div className="h-72 w-full relative overflow-hidden">
         <img src={coverSrc} onError={handleCoverError} className="w-full h-full object-cover blur-3xl opacity-20 scale-150" alt="" />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-50" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-slate-50 dark:to-black" />
         <button
           onClick={onBack}
-          className="absolute left-5 p-3 bg-white/80 backdrop-blur-xl rounded-2xl border border-slate-200 shadow-sm text-slate-900 active:scale-95 transition-all z-20"
+          className="absolute left-5 p-3 bg-white/80 dark:bg-[#1c1c1e]/80 backdrop-blur-xl rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm text-slate-900 dark:text-white active:scale-95 transition-all z-20"
           style={{ top: 'calc(2.5rem + var(--safe-top))' }}
         >
           <ArrowLeft size={18} strokeWidth={3} />
@@ -1144,40 +1144,40 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
       <div className="px-6 -mt-32 relative z-10 pb-20 max-w-4xl mx-auto">
         <div className="flex gap-6 items-start">
           <div className="relative">
-            <img src={coverSrc} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white" alt="" />
+            <img src={coverSrc} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white dark:border-[#1c1c1e]" alt="" />
             <button onClick={handleToggleFav} className="absolute -bottom-3 -right-3 bg-red-600 text-white p-2.5 rounded-2xl shadow-xl active:scale-90 transition-all hover:bg-red-700 focus:outline-none" aria-label="Toggle Favorite">
               <Heart size={20} fill={isFav ? "white" : "none"} strokeWidth={isFav ? 0 : 3} />
             </button>
           </div>
           <div className="flex-1 pt-6">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] font-black uppercase text-red-600 bg-red-50 px-2 py-0.5 rounded-md tracking-widest">{item.type}</span>
+              <span className="text-[10px] font-black uppercase text-red-600 bg-red-50 dark:bg-red-500/15 px-2 py-0.5 rounded-md tracking-widest">{item.type}</span>
             </div>
-            <h1 className="text-2xl font-black leading-tight text-slate-900 tracking-tight drop-shadow-sm mb-3">{pickText(item.title, lang)}</h1>
-            <div className="flex items-center gap-3 bg-white w-fit px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+            <h1 className="text-2xl font-black leading-tight text-slate-900 dark:text-white tracking-tight drop-shadow-sm mb-3">{pickText(item.title, lang)}</h1>
+            <div className="flex items-center gap-3 bg-white dark:bg-[#1c1c1e] w-fit px-3 py-1.5 rounded-xl border border-slate-100 dark:border-white/10 shadow-sm">
               <Star size={14} className="text-red-600 fill-red-600" />
-              <span className="text-xs font-black text-slate-900 uppercase tracking-tighter">{t.rating}: {avgRating} / 5</span>
+              <span className="text-xs font-black text-slate-900 dark:text-white uppercase tracking-tighter">{t.rating}: {avgRating} / 5</span>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mt-6">
-          <div className="bg-white/60 backdrop-blur-md p-5 rounded-3xl border border-white shadow-sm">
-            <div className="flex items-center gap-3 mb-1"><User size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 tracking-widest">{t.author}</p></div>
-            <p className="text-sm font-black truncate text-slate-900 tracking-tight">{item.author}</p>
+          <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">
+            <div className="flex items-center gap-3 mb-1"><User size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.author}</p></div>
+            <p className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight">{item.author}</p>
           </div>
-          <div className="bg-white/60 backdrop-blur-md p-5 rounded-3xl border border-white shadow-sm">
-            <div className="flex items-center gap-3 mb-1"><Calendar size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 tracking-widest">{t.published}</p></div>
-            <p className="text-sm font-black truncate text-slate-900 tracking-tight">{item.publishedDate}</p>
+          <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">
+            <div className="flex items-center gap-3 mb-1"><Calendar size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.published}</p></div>
+            <p className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight">{item.publishedDate}</p>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-[2.5rem] border border-slate-100 shadow-sm mt-4 flex items-center justify-between px-8">
-          <p className="text-[10px] uppercase font-black text-slate-400 tracking-widest">{t.rateThis}</p>
+        <div className="bg-white dark:bg-[#1c1c1e] p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm mt-4 flex items-center justify-between px-8">
+          <p className="text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.rateThis}</p>
           <div className="flex gap-2">
             {[1, 2, 3, 4, 5].map(star => (
               <button key={star} onClick={() => handleRate(star)} className="focus:outline-none transition-transform active:scale-90 active:rotate-12">
-                <Star size={22} className={`transition-colors duration-300 ${star <= userRating ? "text-yellow-400 fill-yellow-400 drop-shadow-sm" : "text-slate-200 fill-slate-50"}`} strokeWidth={star <= userRating ? 0 : 2} />
+                <Star size={22} className={`transition-colors duration-300 ${star <= userRating ? "text-yellow-400 fill-yellow-400 drop-shadow-sm" : "text-slate-200 dark:text-slate-600 fill-slate-50 dark:fill-slate-700"}`} strokeWidth={star <= userRating ? 0 : 2} />
               </button>
             ))}
           </div>
@@ -1185,21 +1185,21 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
         {pickText(item.description, lang, '').trim() && (
           <div className="mt-8">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
-            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-100 shadow-sm leading-relaxed text-slate-600 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
+            <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm leading-relaxed text-slate-600 dark:text-slate-300 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
           </div>
         )}
 
         {playableVideos.length > 0 && (
           <div className="mt-10">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.preview}</h2>
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.preview}</h2>
             <div className="space-y-6">
               {playableVideos.map(v => (
                 <div key={v.id}>
                   {v.source && (
-                    <span className="inline-block mb-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 px-3 py-1 rounded-lg">{v.source}</span>
+                    <span className="inline-block mb-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 dark:bg-red-500/15 px-3 py-1 rounded-lg">{v.source}</span>
                   )}
-                  <div className="aspect-video rounded-[2rem] overflow-hidden border-4 border-white shadow-2xl bg-slate-100 relative group">{v.embed}</div>
+                  <div className="aspect-video rounded-[2rem] overflow-hidden border-4 border-white dark:border-[#1c1c1e] shadow-2xl bg-slate-100 dark:bg-[#1c1c1e] relative group">{v.embed}</div>
                 </div>
               ))}
             </div>
@@ -1208,13 +1208,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
         {item.formats.length > 0 && (
         <div className="mt-10">
-          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.downloads}</h2>
+          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.downloads}</h2>
           <div className="space-y-4">
             {item.formats.map(f => {
               const isFileReadAllowed     = (item.allowReading !== false) && (f.allowReading !== false);
               const isFileDownloadAllowed = (item.allowDownload !== false) && (f.allowDownload !== false);
               return (
-                <div key={f.id} className="p-3 bg-white border border-slate-100 rounded-[2.5rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+                <div key={f.id} className="p-3 bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/10 rounded-[2.5rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                   {isFileReadAllowed ? (
                     <button onClick={() => handleRead(f)} className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4">
                       <BookOpen size={16} strokeWidth={3} />{t.readOnline}
@@ -1232,19 +1232,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                         <FileText size={10} strokeWidth={3} /><span className="text-[9px] font-black uppercase tracking-wider">{f.name || 'FILE'}</span>
                       </div>
                       {f.language && (
-                        <div className="bg-slate-100 text-slate-500 px-3 py-1.5 rounded-xl border border-slate-200 flex items-center gap-1.5">
+                        <div className="bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-300 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 flex items-center gap-1.5">
                           <Globe size={10} strokeWidth={3} /><span className="text-[9px] font-black uppercase tracking-wider">{f.language}</span>
                         </div>
                       )}
-                      <span className="text-[9px] font-black text-slate-300 uppercase tracking-wider ml-1">{f.size}</span>
+                      <span className="text-[9px] font-black text-slate-300 dark:text-slate-500 uppercase tracking-wider ml-1">{f.size}</span>
                     </div>
                     {isFileReadAllowed && isFileDownloadAllowed && (
-                      <a href={f.url} download onClick={() => trackActivity('download', item.id)} className="p-2 bg-white text-slate-300 hover:text-red-600 border border-slate-100 rounded-xl transition-all shadow-sm">
+                      <a href={f.url} download onClick={() => trackActivity('download', item.id)} className="p-2 bg-white dark:bg-white/10 text-slate-300 dark:text-slate-400 hover:text-red-600 border border-slate-100 dark:border-white/10 rounded-xl transition-all shadow-sm">
                         <Download size={18} strokeWidth={2.5} />
                       </a>
                     )}
                     {!isFileReadAllowed && !isFileDownloadAllowed && (
-                      <div className="p-2 text-slate-300"><Lock size={16} strokeWidth={2.5} /></div>
+                      <div className="p-2 text-slate-300 dark:text-slate-600"><Lock size={16} strokeWidth={2.5} /></div>
                     )}
                   </div>
                 </div>

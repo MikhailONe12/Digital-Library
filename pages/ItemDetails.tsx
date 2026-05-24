@@ -1040,7 +1040,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const AnnotationSheet = ({ isPdf }: { isPdf?: boolean }) => (
     <div className="fixed inset-x-0 bottom-0 z-[600] animate-in slide-in-from-bottom-3 duration-200"
       style={{ paddingBottom: 'calc(var(--safe-bottom, 0px))' }}>
-      <div className="mx-auto max-w-2xl bg-white rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.18)] border-t border-slate-200 p-5 space-y-4">
+      <div className="mx-auto max-w-2xl bg-white rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.18)] border-t border-slate-200 p-5 space-y-4 max-h-[80vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between">
           <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">
@@ -1069,7 +1069,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
             placeholder={isPdf ? 'Например: Важный момент…' : 'Напишите заметку здесь…'}
             className="w-full bg-slate-50 text-slate-900 text-sm rounded-2xl p-4 resize-none outline-none placeholder:text-slate-400 border-2 border-slate-200 focus:border-red-400 transition-colors"
             rows={3}
-            autoFocus
+            autoFocus={!!isPdf}
           />
         </div>
 

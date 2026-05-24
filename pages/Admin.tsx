@@ -14,6 +14,7 @@ import {
   AreaChart, Area
 } from 'recharts';
 import { pickText } from '../utils';
+import CardCover from '../components/CardCover';
 
 interface AdminProps {
   onBack: () => void;
@@ -741,7 +742,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <span className="text-[10px] font-black text-slate-300 shrink-0">#{idx + 1}</span>
                                 <div className="w-8 h-10 rounded-md overflow-hidden shrink-0">
-                                   <img src={item.coverUrl} className="w-full h-full object-cover" alt="" />
+                                   <CardCover item={item} lang={lang} />
                                 </div>
                                 <div className="min-w-0">
                                     <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-red-600 truncate">{pickText(item.title, lang)}</p>
@@ -769,7 +770,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <span className="text-[10px] font-black text-slate-300 shrink-0">#{idx + 1}</span>
                                 <div className="w-8 h-10 rounded-md overflow-hidden shrink-0">
-                                   <img src={item.coverUrl} className="w-full h-full object-cover" alt="" />
+                                   <CardCover item={item} lang={lang} />
                                 </div>
                                 <div className="min-w-0">
                                     <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-green-600 truncate">{pickText(item.title, lang)}</p>
@@ -1078,7 +1079,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   {db.items.map(i => (
                      <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 flex items-center justify-between shadow-sm">
                         <div className="flex items-center gap-4 overflow-hidden">
-                           <img src={i.coverUrl} className="w-12 h-12 rounded-xl object-cover" />
+                           <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 shrink-0 group">
+                              <CardCover item={i} lang={lang} />
+                           </div>
                            <div className="min-w-0">
                               <h4 className="text-xs font-black text-slate-900 truncate">{pickText(i.title, lang)}</h4>
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{i.type}</span>

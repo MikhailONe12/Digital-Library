@@ -409,11 +409,24 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
   // EPUB theme live update. themes.select() re-injects the iframe stylesheet,
   // which can drop the SVG highlight overlay — re-apply highlights afterwards so
-  // colored selections survive a theme switch.
+  // colored selections survive a theme switch. epub.js's select() also doesn't
+  // reliably repaint already-rendered content, so we additionally set the body
+  // background/color directly on every rendered iframe as a guarantee.
   useEffect(() => {
     const rend = renditionRef.current;
     if (!rend || !activeEpubUrl) return;
     rend.themes?.select(readerTheme);
+    try {
+      const body = (EPUB_THEMES[readerTheme] as any).body || {};
+      const bg  = String(body.background || '').replace('!important', '').trim();
+      const col = String(body.color || '').replace('!important', '').trim();
+      rend.getContents?.().forEach((c: any) => {
+        const el = c?.document?.body;
+        if (!el) return;
+        if (bg)  el.style.setProperty('background', bg, 'important');
+        if (col) el.style.setProperty('color', col, 'important');
+      });
+    } catch { /* noop */ }
     const timer = setTimeout(() => applyEpubAnnotations(rend, annotations, notesDisplay), 50);
     return () => clearTimeout(timer);
   }, [readerTheme]); // eslint-disable-line react-hooks/exhaustive-deps

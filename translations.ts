@@ -82,7 +82,7 @@ export const translations = {
   ru: {
     library: 'Терминал',
     manage: 'Админ',
-    search: 'Поиск активов, стратегий, данных...',
+    search: 'Поиск...',
     all: 'Все',
     new: 'Новые',
     about: 'Описание',

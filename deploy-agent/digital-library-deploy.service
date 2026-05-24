@@ -1,0 +1,20 @@
+[Unit]
+Description=Digital Library deploy agent
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/mnt/library/app/repo
+# Adjust the branch if you deploy a different one.
+Environment=DEPLOY_BRANCH=claude/study-codebase-RO1RM
+Environment=DEPLOY_CONTROL_DIR=/mnt/library/app/deploy-control
+Environment=REPO_DIR=/mnt/library/app/repo
+Environment=DIST_DIR=/mnt/library/app/dist
+ExecStart=/usr/bin/node /mnt/library/app/repo/deploy-agent/agent.mjs
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

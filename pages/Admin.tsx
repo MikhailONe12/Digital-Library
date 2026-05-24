@@ -6,7 +6,7 @@ import {
   ShieldCheck, X, AtSign, Unlock, Lock,
   Percent, Database, Upload, Video,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4,
-  ChevronDown
+  ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle
 } from 'lucide-react';
 import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
@@ -43,6 +43,48 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const [stagedCoverFile, setStagedCoverFile] = useState<File | null>(null);
   const [stagedContentFile, setStagedContentFile] = useState<{ file: File; formatId: string } | null>(null);
   const [serverApiKeyInput, setServerApiKeyInput] = useState(() => getServerApiKey());
+
+  // Deploy control (talks to the host deploy-agent via the API mailbox endpoints)
+  const [deployStatus, setDeployStatus] = useState<any>(null);
+  const [deployBusy, setDeployBusy] = useState(false);
+
+  const fetchDeployStatus = async () => {
+    const key = getServerApiKey();
+    try {
+      const res = await fetch('/api/admin/deploy/status', { headers: key ? { 'x-api-key': key } : {} });
+      if (res.ok) setDeployStatus(await res.json());
+    } catch { /* offline */ }
+  };
+
+  const triggerDeploy = async () => {
+    const key = getServerApiKey();
+    setDeployBusy(true);
+    try {
+      const res = await fetch('/api/admin/deploy', { method: 'POST', headers: key ? { 'x-api-key': key } : {} });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Не удалось запустить деплой'); }
+    } catch { alert('Агент деплоя недоступен'); }
+    finally { setDeployBusy(false); setTimeout(fetchDeployStatus, 1000); }
+  };
+
+  const setDeployMode = async (mode: 'auto' | 'manual') => {
+    const key = getServerApiKey();
+    try {
+      await fetch('/api/admin/deploy/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(key ? { 'x-api-key': key } : {}) },
+        body: JSON.stringify({ mode }),
+      });
+    } catch { /* noop */ }
+    fetchDeployStatus();
+  };
+
+  // Poll deploy status while the Data tab is open
+  useEffect(() => {
+    if (activeTab !== 'data') return;
+    fetchDeployStatus();
+    const id = setInterval(fetchDeployStatus, 4000);
+    return () => clearInterval(id);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
   const [loginLoading, setLoginLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -831,6 +873,90 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
         {activeTab === 'data' && (
           <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+
+            {/* Deploy control */}
+            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="p-3 bg-red-50 text-red-600 rounded-2xl"><GitBranch size={24} /></div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Обновление приложения</h3>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Подтянуть изменения из репозитория</p>
+                </div>
+              </div>
+
+              {(() => {
+                const ds = deployStatus;
+                const offline = !ds || ds.agent === 'offline';
+                const deploying = !!ds?.deploying;
+                const mode = ds?.mode === 'auto' ? 'auto' : 'manual';
+                return (
+                  <div className="space-y-5">
+                    {/* Status line */}
+                    <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
+                      {offline ? (
+                        <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
+                          <AlertCircle size={14} className="text-amber-500" /> Агент деплоя не запущен на сервере (см. deploy-agent/README.md).
+                        </p>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Статус</span>
+                            {deploying ? (
+                              <span className="text-[10px] font-black text-blue-600 flex items-center gap-1.5"><RefreshCw size={12} className="animate-spin" /> Идёт обновление…</span>
+                            ) : ds?.behind ? (
+                              <span className="text-[10px] font-black text-amber-600 flex items-center gap-1.5"><AlertCircle size={12} /> Есть новые изменения</span>
+                            ) : (
+                              <span className="text-[10px] font-black text-green-600 flex items-center gap-1.5"><CheckCircle2 size={12} /> Актуально</span>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                            <span>Версия на сервере</span>
+                            <span className="font-mono">{ds?.localCommit || '—'}{ds?.behind ? ` → ${ds?.remoteCommit}` : ''}</span>
+                          </div>
+                          {ds?.lastFinishedAt && (
+                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                              <span>Последний деплой</span>
+                              <span className="flex items-center gap-1.5">
+                                {ds.lastSuccess === false
+                                  ? <span className="text-red-600 flex items-center gap-1"><AlertCircle size={11} /> ошибка</span>
+                                  : <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={11} /> успех</span>}
+                                <span className="text-slate-400">{new Date(ds.lastFinishedAt).toLocaleString()}</span>
+                              </span>
+                            </div>
+                          )}
+                          {ds?.lastSuccess === false && ds?.lastLogTail && (
+                            <pre className="mt-1 max-h-28 overflow-auto bg-slate-900 text-red-300 text-[9px] leading-snug rounded-xl p-3 whitespace-pre-wrap break-words">{ds.lastLogTail}</pre>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Manual deploy button */}
+                    <button
+                      onClick={triggerDeploy}
+                      disabled={offline || deploying || deployBusy}
+                      className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700 disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <RefreshCw size={16} className={deploying ? 'animate-spin' : ''} />
+                      {deploying ? 'Обновление…' : 'Подтянуть и развернуть'}
+                    </button>
+
+                    {/* Auto / manual toggle */}
+                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                      <div>
+                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest">Автодеплой</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">{mode === 'auto' ? 'Разворачивает изменения сам при появлении в репозитории' : 'Только по кнопке вручную'}</p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                        <input type="checkbox" className="sr-only peer" disabled={offline} checked={mode === 'auto'} onChange={e => setDeployMode(e.target.checked ? 'auto' : 'manual')} />
+                        <div className="w-12 h-7 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-600 peer-disabled:opacity-40" />
+                      </label>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
             <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
               <div className="flex items-center gap-4 mb-6">
                   <div className="p-3 bg-red-50 text-red-600 rounded-2xl">

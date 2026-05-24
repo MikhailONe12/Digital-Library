@@ -275,6 +275,51 @@ app.post('/api/admin/login', (req, res) => {
   res.json({ apiKey });
 });
 
+// ── Deploy control ───────────────────────────────────────────────────────────
+// The web process never runs git/docker itself. It only exchanges files with the
+// host deploy-agent through a shared directory (see deploy-agent/README.md):
+// reads status.json, writes a request-*.json to trigger a deploy, writes mode.json
+// to toggle auto/manual.
+const DEPLOY_CONTROL_DIR = process.env.DEPLOY_CONTROL_DIR || '/deploy-control';
+
+// Current deploy status as reported by the host agent.
+app.get('/api/admin/deploy/status', requireApiKey, (req, res) => {
+  try {
+    const raw = fs.readFileSync(path.join(DEPLOY_CONTROL_DIR, 'status.json'), 'utf8');
+    res.json({ agent: 'online', ...JSON.parse(raw) });
+  } catch {
+    // No status file → agent not installed/running yet.
+    res.json({ agent: 'offline' });
+  }
+});
+
+// Queue a manual deploy: drop a request file for the agent to consume.
+app.post('/api/admin/deploy', requireApiKey, (req, res) => {
+  try {
+    fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
+    const file = path.join(DEPLOY_CONTROL_DIR, `request-${Date.now()}.json`);
+    fs.writeFileSync(file, JSON.stringify({ requestedAt: new Date().toISOString() }));
+    res.json({ queued: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not queue deploy: ' + (e?.message || String(e)) });
+  }
+});
+
+// Toggle automatic/manual deployment.
+app.post('/api/admin/deploy/mode', requireApiKey, (req, res) => {
+  const mode = req.body?.mode;
+  if (mode !== 'auto' && mode !== 'manual') {
+    return res.status(400).json({ error: 'mode must be "auto" or "manual"' });
+  }
+  try {
+    fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
+    fs.writeFileSync(path.join(DEPLOY_CONTROL_DIR, 'mode.json'), JSON.stringify({ mode }));
+    res.json({ mode });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not set mode: ' + (e?.message || String(e)) });
+  }
+});
+
 // Upload cover image
 // POST /api/upload/:itemId/cover  (field: file)
 app.post('/api/upload/:itemId/cover',

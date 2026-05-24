@@ -37,8 +37,11 @@ services:
       BOT_TOKEN: ${BOT_TOKEN}
       BASE_URL: https://library.optionsdata.ru
       CORS_ORIGIN: https://library.optionsdata.ru
+      DEPLOY_CONTROL_DIR: /deploy-control
     volumes:
       - /mnt/library/content:/mnt/library/content
+      # Shared "mailbox" with the host deploy-agent (see deploy-agent/README.md)
+      - /mnt/library/app/deploy-control:/deploy-control
     ports:
       - "127.0.0.1:3001:3001"   # только localhost, наружу не открыт
     depends_on:

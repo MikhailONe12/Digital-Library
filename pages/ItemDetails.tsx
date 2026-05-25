@@ -1284,7 +1284,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[120px]`}>{pickText(item.title, lang)}</p>
             </div>
             <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 py-1 -my-1">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 py-2 -my-2 px-1 -mx-1">
               <button onClick={() => { setShowSearch(s => !s); setShowToc(false); setShowBookmarks(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Поиск">
                 <Search size={16} />
               </button>
@@ -1364,7 +1364,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </div>
             </div>
             <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 py-1 -my-1">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 py-2 -my-2 px-1 -mx-1">
               <button onClick={() => { setShowSearch(s => !s); setShowToc(false); setShowBookmarks(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Поиск">
                 <Search size={16} />
               </button>

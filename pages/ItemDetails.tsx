@@ -482,7 +482,16 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         const data = await resp.arrayBuffer();
         if (cancelled) return;
 
-        const doc = await pdfjsLib.getDocument({ data, wasmUrl: '/wasm/' }).promise;
+        const doc = await pdfjsLib.getDocument({
+          data,
+          wasmUrl: '/wasm/',
+          // CMap support is required for PDFs that use Type1 / CIDFont encodings
+          // (very common in Russian/CIS documents). Without it pdf.js cannot map
+          // glyph IDs to Unicode code-points and renders random Latin characters.
+          cMapUrl: '/cmaps/',
+          cMapPacked: true,
+          useSystemFonts: false,
+        }).promise;
         if (cancelled) { try { doc.destroy(); } catch { /* noop */ } return; }
         pdfDocRef.current = doc;
 

@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { pickText } from '../utils';
 import CardCover from '../components/CardCover';
+import { toast } from '../services/toast';
 
 interface AdminProps {
   onBack: () => void;
@@ -209,11 +210,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     xhr.send(formData);
   };
 
-  const handleSaveItem = () => {
+  const handleSaveItem = async () => {
     if (editingItem) {
       const hasTitle = editingItem.title && (editingItem.title.en || editingItem.title.ru || editingItem.title.es);
       if (!hasTitle) {
-        alert('Please provide a title in at least one language.');
+        toast.error('Укажите название хотя бы на одном языке.');
         return;
       }
 
@@ -236,9 +237,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         allowReading: editingItem.allowReading !== undefined ? editingItem.allowReading : true
       } as MediaItem;
 
-      updateItem(itemToSave);
-      onUpdate();
-      setEditingItem(null);
+      try {
+        await updateItem(itemToSave);
+        toast.success('Сохранено');
+        setEditingItem(null);
+      } catch {
+        /* error toast already shown by db layer; keep editor open */
+      } finally {
+        onUpdate();
+      }
     }
   };
 
@@ -325,35 +332,47 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     handleRemoveFormat(f.id);
   };
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (newUserNickname.trim()) {
-      addUserToWhitelist(newUserNickname.toLowerCase());
-      setNewUserNickname('');
-      onUpdate();
+      try {
+        await addUserToWhitelist(newUserNickname.toLowerCase());
+        setNewUserNickname('');
+        toast.success('Пользователь добавлен в белый список');
+      } catch { /* error toasted by db layer */ }
+      finally { onUpdate(); }
     }
   };
 
-  const handleRemoveUser = (username: string) => {
-    if (confirm(`Remove ${username} from whitelist?`)) {
-      removeUserFromWhitelist(username);
-      onUpdate();
+  const handleRemoveUser = async (username: string) => {
+    if (confirm(`Удалить ${username} из белого списка?`)) {
+      try {
+        await removeUserFromWhitelist(username);
+        toast.success('Пользователь удалён из белого списка');
+      } catch { /* error toasted by db layer */ }
+      finally { onUpdate(); }
     }
   };
 
-  const handleAddBlacklist = () => {
+  const handleAddBlacklist = async () => {
     if (newBlacklistEntry.trim()) {
-      addToBlacklist(newBlacklistEntry);
-      setNewBlacklistEntry('');
-      onUpdate();
+      try {
+        await addToBlacklist(newBlacklistEntry);
+        setNewBlacklistEntry('');
+        toast.success('Добавлено в чёрный список');
+      } catch { /* error toasted by db layer */ }
+      finally { onUpdate(); }
     }
   };
 
-  const handleRemoveBlacklist = (entry: string) => {
-    removeFromBlacklist(entry);
-    onUpdate();
+  const handleRemoveBlacklist = async (entry: string) => {
+    try {
+      await removeFromBlacklist(entry);
+      toast.success('Удалено из чёрного списка');
+    } catch { /* error toasted by db layer */ }
+    finally { onUpdate(); }
   };
 
-  const handleAddType = () => {
+  const handleAddType = async () => {
     const { en, ru, es } = newTypeLabels;
     if (!en.trim() && !ru.trim() && !es.trim()) return;
     const base = (en || ru || es).trim();
@@ -363,50 +382,69 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       .replace(/[^A-Z0-9]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .slice(0, 20) || 'CAT_' + Date.now().toString(36).slice(-5).toUpperCase();
-    addCustomType({
-      id,
-      en: en.trim() || ru.trim() || es.trim(),
-      ru: ru.trim() || en.trim() || es.trim(),
-      es: es.trim() || en.trim() || ru.trim(),
-    });
-    setNewTypeLabels({ en: '', ru: '', es: '' });
-    typedLangsRef.current.clear();
-    onUpdate();
+    try {
+      await addCustomType({
+        id,
+        en: en.trim() || ru.trim() || es.trim(),
+        ru: ru.trim() || en.trim() || es.trim(),
+        es: es.trim() || en.trim() || ru.trim(),
+      });
+      setNewTypeLabels({ en: '', ru: '', es: '' });
+      typedLangsRef.current.clear();
+      toast.success('Раздел добавлен');
+    } catch { /* error toasted by db layer */ }
+    finally { onUpdate(); }
   };
 
-  const handleDeleteType = (id: string) => {
+  const handleDeleteType = async (id: string) => {
     if (confirm('Удалить раздел? Элементы с этим типом сохранят своё значение.')) {
-      deleteCustomType(id);
-      setEditingType(null);
-      onUpdate();
+      try {
+        await deleteCustomType(id);
+        setEditingType(null);
+        toast.success('Раздел удалён');
+      } catch { /* error toasted by db layer */ }
+      finally { onUpdate(); }
     }
   };
 
-  const handleSaveType = () => {
+  const handleSaveType = async () => {
     if (!editingType) return;
-    updateCustomType(editingType.id, { en: editingType.en, ru: editingType.ru, es: editingType.es });
-    setEditingType(null);
-    onUpdate();
-  };
-
-  const handleToggleGlobal = (e: React.ChangeEvent<HTMLInputElement>) => {
-    toggleGlobalAccess(e.target.checked);
-    onUpdate();
-  };
-
-  const handleImportJson = () => {
-    if (importConfirm !== 'ПЕРЕЗАПИСАТЬ') return;
     try {
-      if (!importJson.trim()) return;
-      const parsed = JSON.parse(importJson);
+      await updateCustomType(editingType.id, { en: editingType.en, ru: editingType.ru, es: editingType.es });
+      setEditingType(null);
+      toast.success('Раздел сохранён');
+    } catch { /* error toasted by db layer */ }
+    finally { onUpdate(); }
+  };
+
+  const handleToggleGlobal = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      await toggleGlobalAccess(e.target.checked);
+      toast.success(e.target.checked ? 'Доступ открыт всем' : 'Доступ только по белому списку');
+    } catch { /* error toasted by db layer */ }
+    finally { onUpdate(); }
+  };
+
+  const handleImportJson = async () => {
+    if (importConfirm !== 'ПЕРЕЗАПИСАТЬ') return;
+    if (!importJson.trim()) return;
+    let parsed: any;
+    try {
+      parsed = JSON.parse(importJson);
       if (!parsed.items || !Array.isArray(parsed.items)) throw new Error('Invalid format');
-      saveDb(parsed);
-      onUpdate();
+    } catch {
+      toast.error('Ошибка: некорректный JSON.');
+      return;
+    }
+    try {
+      await saveDb(parsed);
       setImportJson('');
       setImportConfirm('');
-      alert('База данных импортирована.');
+      toast.success('База данных импортирована');
     } catch {
-      alert('Ошибка: некорректный JSON.');
+      /* save error already toasted; state rolled back */
+    } finally {
+      onUpdate();
     }
   };
 
@@ -434,9 +472,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
   const handleResetStats = async () => {
     if (confirm('Сбросить всю статистику? Просмотры, скачивания и данные пользователей обнулятся. Отменить нельзя.')) {
-      await resetStats();
-      await loadAnalytics();
-      onUpdate();
+      try {
+        await resetStats();
+        await loadAnalytics();
+        toast.success('Статистика сброшена');
+      } catch {
+        /* error toasted by db layer */
+      } finally {
+        onUpdate();
+      }
     }
   };
 
@@ -1089,7 +1133,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </div>
                         <div className="flex gap-2">
                            <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Edit2 size={16}/></button>
-                           <button onClick={async () => { if(confirm('Delete?')) { const key = getServerApiKey(); try { await fetch(`/api/upload/${i.id}`, { method: 'DELETE', headers: key ? { 'x-api-key': key } : {} }); } catch {} deleteItem(i.id); onUpdate(); } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Trash2 size={16}/></button>
+                           <button onClick={async () => { if(confirm('Удалить элемент?')) { const key = getServerApiKey(); try { await fetch(`/api/upload/${i.id}`, { method: 'DELETE', headers: key ? { 'x-api-key': key } : {} }); } catch {} try { await deleteItem(i.id); toast.success('Элемент удалён'); } catch { /* error toasted */ } finally { onUpdate(); } } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label="Удалить элемент"><Trash2 size={16}/></button>
                         </div>
                      </div>
                   ))}

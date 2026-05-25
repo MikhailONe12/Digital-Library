@@ -3,11 +3,12 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
-import { pickText } from './utils';
+import { filterAndSortItems } from './services/catalog';
 import Home from './pages/Home';
 import Admin from './pages/Admin';
 import ItemDetails from './pages/ItemDetails';
-import { Layout, Globe, ChevronDown, ShieldAlert } from 'lucide-react';
+import { Layout, Globe, ChevronDown, ShieldAlert, ServerCrash, RotateCcw } from 'lucide-react';
+import Toaster from './components/Toaster';
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'admin' | 'details'>('home');
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   const [lang, setLang] = useState<Locale>(db.defaultLanguage);
   const [isBlocked, setIsBlocked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   // Search & Filters State — persisted across sessions
   const _savedFilters = (() => {
@@ -47,6 +49,41 @@ const App: React.FC = () => {
   const user = tg?.initDataUnsafe?.user;
   const userId = user?.id?.toString() || 'guest_user';
   const username = user?.username || 'guest';
+
+  // Loads the catalog and runs the security/visit-log step. Distinguishes a
+  // hard load failure (→ retry screen) from a genuinely empty catalog.
+  const loadData = async () => {
+    setLoading(true);
+    setLoadError(false);
+    try {
+      await loadDb(userId);
+    } catch {
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+
+    let ip = 'unknown';
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+      clearTimeout(timeoutId);
+      const data = await res.json();
+      ip = data.ip;
+    } catch {
+      console.warn('Could not fetch IP, logging as unknown');
+    }
+
+    if (checkIsBlocked(username, ip)) {
+      setIsBlocked(true);
+    } else {
+      logVisit(username, ip, tg?.platform || 'web');
+    }
+
+    setDb(getDb());
+    setLoading(false);
+  };
 
   // DATA LOAD + SECURITY CHECK + LOGGING
   useEffect(() => {
@@ -93,35 +130,7 @@ const App: React.FC = () => {
       setCurrentPage('admin');
     }
 
-    const init = async () => {
-      // 1. Load catalog, settings & this user's favorites/ratings from the server.
-      await loadDb(userId);
-
-      // 2. Resolve visitor IP (2s timeout, best effort).
-      let ip = 'unknown';
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 2000);
-        const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        const data = await res.json();
-        ip = data.ip;
-      } catch (e) {
-        console.warn('Could not fetch IP, logging as unknown');
-      }
-
-      // 3. Security gate + visit logging.
-      if (checkIsBlocked(username, ip)) {
-        setIsBlocked(true);
-      } else {
-        logVisit(username, ip, tg?.platform || 'web');
-      }
-
-      setDb(getDb());
-      setLoading(false);
-    };
-
-    init();
+    loadData();
 
     // Click outside handler for language menu
     const handleClickOutside = (event: MouseEvent) => {
@@ -141,69 +150,21 @@ const App: React.FC = () => {
     };
   }, [tg]);
 
-  const filteredItems = useMemo(() => {
-    // 1. First, filter by permissions (Access Control)
-    let availableItems = db.items.filter(item => {
-      if (!item.isPrivate) return true;
-      if (isAdmin) return true;
-      if (db.globalAccess) return true;
-      if (user) {
-        const isWhitelisted = db.allowedUsers.includes(user.id.toString()) || 
-                             (user.username && db.allowedUsers.includes(user.username.toLowerCase()));
-        if (isWhitelisted) return true;
-      }
-      return false;
-    });
-
-    // 2. Filter by Content Language
-    if (contentLangFilter.length > 0) {
-      availableItems = availableItems.filter(item =>
-        contentLangFilter.some(l => item.contentLanguages.includes(l))
-      );
-    }
-
-    // 3. Search filter
-    const q = searchQuery.toLowerCase();
-    availableItems = availableItems.filter(item => {
-      const title = pickText(item.title, lang).toLowerCase();
-      const author = item.author.toLowerCase();
-      if (searchField === 'title') return title.includes(q);
-      if (searchField === 'author') return author.includes(q);
-      return title.includes(q) || author.includes(q);
-    });
-
-    // 4. Category filter
-    if (activeCategory === 'FAVORITES') {
-      availableItems = availableItems.filter(item => isFavorited(userId, item.id));
-    } else if (activeCategory === 'NEW') {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      return availableItems
-        .filter(item => new Date(item.addedDate) >= thirtyDaysAgo)
-        .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime())
-        .slice(0, 20);
-    } else if (activeCategory === 'HISTORY') {
-      const order = new Map(viewHistory.map((id, i) => [id, i]));
-      return availableItems
-        .filter(item => order.has(item.id))
-        .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-    } else if (activeCategory !== 'ALL') {
-      availableItems = availableItems.filter(item => item.type === activeCategory);
-    }
-
-    // 5. Sorting (FAVORITES / ALL / type sections)
-    const sorted = [...availableItems];
-    if (sortBy === 'recent') {
-      sorted.sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime());
-    } else if (sortBy === 'rating') {
-      sorted.sort((a, b) => getAverageRating(b.id) - getAverageRating(a.id));
-    } else if (sortBy === 'views') {
-      sorted.sort((a, b) => (b.views || 0) - (a.views || 0));
-    } else if (sortBy === 'alpha') {
-      sorted.sort((a, b) => pickText(a.title, lang).localeCompare(pickText(b.title, lang)));
-    }
-    return sorted;
-  }, [db.items, db.globalAccess, searchQuery, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
+  const filteredItems = useMemo(() => filterAndSortItems(db.items, {
+    searchQuery,
+    searchField,
+    activeCategory,
+    contentLangFilter,
+    sortBy,
+    lang,
+    isAdmin,
+    globalAccess: db.globalAccess,
+    allowedUsers: db.allowedUsers,
+    user,
+    isFavorite: (id) => isFavorited(userId, id),
+    ratingOf: getAverageRating,
+    viewHistory,
+  }), [db.items, db.globalAccess, searchQuery, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
 
   // Persist filter state whenever it changes
   useEffect(() => {
@@ -224,6 +185,24 @@ const App: React.FC = () => {
           <div className="w-11 h-11 border-[3px] border-red-100 dark:border-white/10 border-t-red-600 rounded-full animate-spin" />
           <p className="text-sm font-medium text-slate-400 dark:text-slate-500">Loading Library</p>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-black flex flex-col items-center justify-center p-10 text-center">
+        <div className="p-6 bg-red-50 dark:bg-red-600/10 rounded-full mb-6">
+          <ServerCrash size={48} className="text-red-600" />
+        </div>
+        <h1 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight mb-3">{t.loadErrorTitle}</h1>
+        <p className="text-xs font-bold text-slate-400 max-w-xs leading-relaxed mb-8">{t.loadErrorDesc}</p>
+        <button
+          onClick={loadData}
+          className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"
+        >
+          <RotateCcw size={16} /> {t.retry}
+        </button>
       </div>
     );
   }
@@ -333,6 +312,8 @@ const App: React.FC = () => {
       >
         <p className="text-[8px] font-black text-slate-400/50 uppercase tracking-[0.25em]">{t.version}</p>
       </div>
+
+      <Toaster />
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { AppState, MediaItem, Bookmark, ReadingProgress, Annotation, HighlightColor, CustomType } from '../types';
+import { toast } from './toast';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
 
@@ -72,22 +73,40 @@ const warnIfFailed = (label: string) => (res: Response) => {
   if (!res.ok) console.warn(`${label}: HTTP ${res.status}`);
 };
 
-const putItem = (item: MediaItem) => {
-  fetch(`/api/items/${item.id}`, {
+// Reliable write: performs the request, surfaces a toast and throws on any
+// failure so callers can roll back. No more silently-lost saves.
+const writeRequest = async (label: string, url: string, init: RequestInit): Promise<Response> => {
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch {
+    toast.error(`${label}: нет связи с сервером`);
+    throw new Error(`${label}: network error`);
+  }
+  if (!res.ok) {
+    const reason = res.status === 401
+      ? 'нет доступа — проверьте Server API Key во вкладке «Данные»'
+      : `ошибка сервера (${res.status})`;
+    toast.error(`${label}: ${reason}`);
+    throw new Error(`${label}: HTTP ${res.status}`);
+  }
+  return res;
+};
+
+const putItem = (item: MediaItem): Promise<Response> =>
+  writeRequest('Сохранение элемента', `/api/items/${item.id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(item),
-  }).then(warnIfFailed('PUT item')).catch(e => console.warn('PUT item failed:', e));
-};
+  });
 
-const removeItem = (id: string) => {
-  fetch(`/api/items/${id}`, {
+const removeItem = (id: string): Promise<Response> =>
+  writeRequest('Удаление элемента', `/api/items/${id}`, {
     method: 'DELETE',
     headers: authHeaders(),
-  }).then(warnIfFailed('DELETE item')).catch(e => console.warn('DELETE item failed:', e));
-};
+  });
 
-const putSettings = () => {
+const putSettings = (): Promise<Response> => {
   const settings = {
     allowedUsers: cache.allowedUsers,
     blacklist: cache.blacklist,
@@ -95,11 +114,11 @@ const putSettings = () => {
     defaultLanguage: cache.defaultLanguage,
     globalAccess: cache.globalAccess,
   };
-  fetch('/api/settings', {
+  return writeRequest('Сохранение настроек', '/api/settings', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(settings),
-  }).then(warnIfFailed('PUT settings')).catch(e => console.warn('PUT settings failed:', e));
+  });
 };
 
 // ── Current user's favorites & ratings (server-backed, shared across devices) ─
@@ -138,43 +157,47 @@ const loadUserData = async (userId: string) => {
 
 // ── Load / get ───────────────────────────────────────────────────────────────
 
+// Loads catalog + settings. Throws on a hard failure (no connection or non-OK
+// response) so the caller can show a retry screen instead of a misleading
+// "empty catalog". User-specific data (favorites/ratings) is best-effort.
 export const loadDb = async (userId?: string): Promise<AppState> => {
+  const tg = (window as any).Telegram?.WebApp;
+  const initData = tg?.initData || '';
+  const stateHeaders: Record<string, string> = initData
+    ? { 'x-telegram-init-data': initData }
+    : {};
+
+  let res: Response;
   try {
-    const tg = (window as any).Telegram?.WebApp;
-    const initData = tg?.initData || '';
-    const stateHeaders: Record<string, string> = initData
-      ? { 'x-telegram-init-data': initData }
-      : {};
-    const res = await fetch('/api/state', { headers: stateHeaders });
-    if (res.ok) {
-      const remote = await res.json();
-      cache = {
-        ...emptyState(),
-        items: (remote.items || []).map(normalizeItem),
-        allowedUsers: remote.allowedUsers || [],
-        blacklist: remote.blacklist || [],
-        customTypes: (() => {
-          const raw = remote.customTypes;
-          if (!raw || !raw.length) return emptyState().customTypes;
-          // Migrate old string[] format to CustomType[]
-          if (typeof raw[0] === 'string')
-            return (raw as string[]).map((s: string) => ({ id: s, en: s, ru: s, es: s }));
-          return raw as CustomType[];
-        })(),
-        defaultLanguage: remote.defaultLanguage || 'ru',
-        globalAccess: !!remote.globalAccess,
-      };
-      avgRatings = remote.ratings || {};
-    } else {
-      console.warn('loadDb: HTTP', res.status);
-      cache = emptyState();
-      avgRatings = {};
-    }
+    res = await fetch('/api/state', { headers: stateHeaders });
   } catch (e) {
-    console.warn('loadDb failed, using empty state:', e);
-    cache = emptyState();
-    avgRatings = {};
+    console.warn('loadDb: network error', e);
+    throw new Error('loadDb: network error');
   }
+  if (!res.ok) {
+    console.warn('loadDb: HTTP', res.status);
+    throw new Error(`loadDb: HTTP ${res.status}`);
+  }
+
+  const remote = await res.json();
+  cache = {
+    ...emptyState(),
+    items: (remote.items || []).map(normalizeItem),
+    allowedUsers: remote.allowedUsers || [],
+    blacklist: remote.blacklist || [],
+    customTypes: (() => {
+      const raw = remote.customTypes;
+      if (!raw || !raw.length) return emptyState().customTypes;
+      // Migrate old string[] format to CustomType[]
+      if (typeof raw[0] === 'string')
+        return (raw as string[]).map((s: string) => ({ id: s, en: s, ru: s, es: s }));
+      return raw as CustomType[];
+    })(),
+    defaultLanguage: remote.defaultLanguage || 'ru',
+    globalAccess: !!remote.globalAccess,
+  };
+  avgRatings = remote.ratings || {};
+
   if (userId) await loadUserData(userId);
   return getDb();
 };
@@ -200,29 +223,47 @@ export const loadAnalytics = async (): Promise<AppState> => {
 export const getDb = (): AppState => ({ ...cache });
 
 // Used by the admin JSON import — overwrites catalog + settings.
-export const saveDb = (data: AppState) => {
+export const saveDb = async (data: AppState): Promise<void> => {
+  const prev = cache;
   cache = {
     ...emptyState(),
     ...data,
     items: (data.items || []).map(normalizeItem),
   };
-  cache.items.forEach(putItem);
-  putSettings();
+  try {
+    await Promise.all(cache.items.map(putItem));
+    await putSettings();
+  } catch (e) {
+    cache = prev; // roll back the in-memory state on any failure
+    throw e;
+  }
 };
 
 // ── Items ────────────────────────────────────────────────────────────────────
 
-export const updateItem = (item: MediaItem) => {
+export const updateItem = async (item: MediaItem): Promise<void> => {
+  const prev = cache.items;
   const exists = cache.items.some(i => i.id === item.id);
   cache.items = exists
     ? cache.items.map(i => (i.id === item.id ? item : i))
     : [...cache.items, item];
-  putItem(item);
+  try {
+    await putItem(item);
+  } catch (e) {
+    cache.items = prev; // roll back so the UI reflects reality
+    throw e;
+  }
 };
 
-export const deleteItem = (id: string) => {
+export const deleteItem = async (id: string): Promise<void> => {
+  const prev = cache.items;
   cache.items = cache.items.filter(i => i.id !== id);
-  removeItem(id);
+  try {
+    await removeItem(id);
+  } catch (e) {
+    cache.items = prev;
+    throw e;
+  }
 };
 
 // ── Favorites (server-backed) ────────────────────────────────────────────────
@@ -281,32 +322,44 @@ export const getAverageRating = (itemId: string): number => {
 
 // ── Whitelist ────────────────────────────────────────────────────────────────
 
-export const addUserToWhitelist = (username: string) => {
-  const clean = username.replace('@', '').trim().toLowerCase();
-  if (clean && !cache.allowedUsers.includes(clean)) {
-    cache.allowedUsers = [...cache.allowedUsers, clean];
-    putSettings();
+// Persists current settings; rolls the in-memory state back to `prev` on failure.
+const commitSettings = async (prev: AppState): Promise<void> => {
+  try {
+    await putSettings();
+  } catch (e) {
+    cache = prev;
+    throw e;
   }
 };
 
-export const removeUserFromWhitelist = (username: string) => {
+export const addUserToWhitelist = async (username: string): Promise<void> => {
+  const clean = username.replace('@', '').trim().toLowerCase();
+  if (!clean || cache.allowedUsers.includes(clean)) return;
+  const prev = { ...cache };
+  cache.allowedUsers = [...cache.allowedUsers, clean];
+  await commitSettings(prev);
+};
+
+export const removeUserFromWhitelist = async (username: string): Promise<void> => {
+  const prev = { ...cache };
   cache.allowedUsers = cache.allowedUsers.filter(u => u !== username);
-  putSettings();
+  await commitSettings(prev);
 };
 
 // ── Blacklist ────────────────────────────────────────────────────────────────
 
-export const addToBlacklist = (entry: string) => {
+export const addToBlacklist = async (entry: string): Promise<void> => {
   const clean = entry.replace('@', '').trim().toLowerCase();
-  if (clean && !cache.blacklist.includes(clean)) {
-    cache.blacklist = [...cache.blacklist, clean];
-    putSettings();
-  }
+  if (!clean || cache.blacklist.includes(clean)) return;
+  const prev = { ...cache };
+  cache.blacklist = [...cache.blacklist, clean];
+  await commitSettings(prev);
 };
 
-export const removeFromBlacklist = (entry: string) => {
+export const removeFromBlacklist = async (entry: string): Promise<void> => {
+  const prev = { ...cache };
   cache.blacklist = cache.blacklist.filter(e => e !== entry);
-  putSettings();
+  await commitSettings(prev);
 };
 
 export const checkIsBlocked = (username?: string, ip?: string): boolean => {
@@ -318,28 +371,31 @@ export const checkIsBlocked = (username?: string, ip?: string): boolean => {
 
 // ── Custom types ─────────────────────────────────────────────────────────────
 
-export const addCustomType = (type: CustomType) => {
-  if (!cache.customTypes.find(t => t.id === type.id)) {
-    cache.customTypes = [...cache.customTypes, type];
-    putSettings();
-  }
+export const addCustomType = async (type: CustomType): Promise<void> => {
+  if (cache.customTypes.find(t => t.id === type.id)) return;
+  const prev = { ...cache };
+  cache.customTypes = [...cache.customTypes, type];
+  await commitSettings(prev);
 };
 
-export const deleteCustomType = (id: string) => {
+export const deleteCustomType = async (id: string): Promise<void> => {
+  const prev = { ...cache };
   cache.customTypes = cache.customTypes.filter(t => t.id !== id);
-  putSettings();
+  await commitSettings(prev);
 };
 
-export const updateCustomType = (id: string, labels: { en: string; ru: string; es: string }) => {
+export const updateCustomType = async (id: string, labels: { en: string; ru: string; es: string }): Promise<void> => {
+  const prev = { ...cache };
   cache.customTypes = cache.customTypes.map(t => t.id === id ? { ...t, ...labels } : t);
-  putSettings();
+  await commitSettings(prev);
 };
 
 // ── Misc settings ────────────────────────────────────────────────────────────
 
-export const toggleGlobalAccess = (enabled: boolean) => {
+export const toggleGlobalAccess = async (enabled: boolean): Promise<void> => {
+  const prev = { ...cache };
   cache.globalAccess = enabled;
-  putSettings();
+  await commitSettings(prev);
 };
 
 // ── Visit logs (server-backed) ───────────────────────────────────────────────
@@ -359,13 +415,14 @@ export const logVisit = (username: string, ip: string, platform: string) => {
 
 // ── Stats (server-backed) ────────────────────────────────────────────────────
 
-export const resetStats = (): Promise<unknown> => {
+export const resetStats = async (): Promise<void> => {
   cache.stats = [];
   cache.userAnalytics = [];
   cache.items = cache.items.map(item => ({ ...item, views: 0, downloads: 0 }));
-  return fetch('/api/items/reset-stats', { method: 'POST', headers: authHeaders() })
-    .then(warnIfFailed('reset-stats'))
-    .catch(e => console.warn('reset-stats failed:', e));
+  await writeRequest('Сброс статистики', '/api/items/reset-stats', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
 };
 
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {

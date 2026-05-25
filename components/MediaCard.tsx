@@ -24,7 +24,11 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
   return (
     <div
         onClick={onClick}
-        className="group relative bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all duration-300 hover:shadow-card-hover cursor-pointer"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+        role="button"
+        tabIndex={0}
+        aria-label={pickText(item.title, lang)}
+        className="group relative bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all duration-300 hover:shadow-card-hover cursor-pointer focus:outline-none focus-visible:ring-4 focus-visible:ring-red-500/40 focus-visible:border-red-500"
     >
       <div className="aspect-[3/4] relative overflow-hidden">
         <CardCover item={item} lang={lang} />

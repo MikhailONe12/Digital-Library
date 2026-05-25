@@ -1,14 +1,23 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense, lazy } from 'react';
 import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { filterAndSortItems } from './services/catalog';
 import Home from './pages/Home';
-import Admin from './pages/Admin';
-import ItemDetails from './pages/ItemDetails';
-import { Layout, Globe, ChevronDown, ShieldAlert, ServerCrash, RotateCcw } from 'lucide-react';
+import { Globe, ChevronDown, ShieldAlert, ServerCrash, RotateCcw } from 'lucide-react';
 import Toaster from './components/Toaster';
+
+// Heavy, rarely-first screens are code-split so the catalog loads fast.
+// Admin pulls in recharts; ItemDetails pulls in the PDF/EPUB readers.
+const Admin = lazy(() => import('./pages/Admin'));
+const ItemDetails = lazy(() => import('./pages/ItemDetails'));
+
+const FullscreenSpinner: React.FC = () => (
+  <div className="fixed inset-0 z-[400] bg-white dark:bg-black flex items-center justify-center">
+    <div className="w-11 h-11 border-[3px] border-red-100 dark:border-white/10 border-t-red-600 rounded-full animate-spin" />
+  </div>
+);
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'admin' | 'details'>('home');
@@ -150,8 +159,11 @@ const App: React.FC = () => {
     };
   }, [tg]);
 
+  // Defer the search term so typing stays responsive on large catalogs.
+  const deferredSearch = useDeferredValue(searchQuery);
+
   const filteredItems = useMemo(() => filterAndSortItems(db.items, {
-    searchQuery,
+    searchQuery: deferredSearch,
     searchField,
     activeCategory,
     contentLangFilter,
@@ -164,7 +176,7 @@ const App: React.FC = () => {
     isFavorite: (id) => isFavorited(userId, id),
     ratingOf: getAverageRating,
     viewHistory,
-  }), [db.items, db.globalAccess, searchQuery, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
+  }), [db.items, db.globalAccess, deferredSearch, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
 
   // Persist filter state whenever it changes
   useEffect(() => {
@@ -172,6 +184,9 @@ const App: React.FC = () => {
       localStorage.setItem('library_filters', JSON.stringify({ searchField, sortBy, contentLangFilter, activeCategory }));
     } catch { /* quota */ }
   }, [searchField, sortBy, contentLangFilter, activeCategory]);
+
+  // Reflect the UI locale on <html lang> for assistive tech and the browser.
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
   const selectLang = (l: Locale) => {
     setLang(l);
@@ -237,18 +252,23 @@ const App: React.FC = () => {
         <div className="relative pointer-events-auto">
           <button
             onClick={() => setIsLangMenuOpen(!isLangMenuOpen)}
+            aria-label={t.lang}
+            aria-haspopup="menu"
+            aria-expanded={isLangMenuOpen}
             className="flex items-center gap-1.5 glass-card px-3.5 py-2 rounded-xl text-xs font-medium uppercase text-red-600 transition-all active:scale-95"
           >
-            <Globe size={14} />
+            <Globe size={14} aria-hidden="true" />
             {lang}
-            <ChevronDown size={12} className={`transition-transform duration-300 ${isLangMenuOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown size={12} aria-hidden="true" className={`transition-transform duration-300 ${isLangMenuOpen ? 'rotate-180' : ''}`} />
           </button>
 
           {isLangMenuOpen && (
-            <div className="absolute right-0 mt-2 w-24 glass-card rounded-xl shadow-card-hover overflow-hidden z-[120] animate-in fade-in zoom-in-95 duration-200">
+            <div role="menu" className="absolute right-0 mt-2 w-24 glass-card rounded-xl shadow-card-hover overflow-hidden z-[120] animate-in fade-in zoom-in-95 duration-200">
                {(['en', 'ru', 'es'] as Locale[]).map((l) => (
                   <button
                     key={l}
+                    role="menuitemradio"
+                    aria-checked={lang === l}
                     onClick={() => selectLang(l)}
                     className={`w-full text-left px-4 py-2.5 text-xs font-medium uppercase transition-colors hover:bg-red-500/10 hover:text-red-600 ${lang === l ? 'text-red-600 bg-red-500/10' : 'text-slate-500 dark:text-slate-300'}`}
                   >
@@ -283,26 +303,30 @@ const App: React.FC = () => {
       )}
 
       {currentPage === 'details' && selectedItem && (
-        <ItemDetails 
-          item={selectedItem} 
-          onBack={() => {setCurrentPage('home'); setSelectedItem(null);}} 
-          onRefresh={() => setDb(getDb())}
-          lang={lang}
-          t={t}
-        />
+        <Suspense fallback={<FullscreenSpinner />}>
+          <ItemDetails
+            item={selectedItem}
+            onBack={() => {setCurrentPage('home'); setSelectedItem(null);}}
+            onRefresh={() => setDb(getDb())}
+            lang={lang}
+            t={t}
+          />
+        </Suspense>
       )}
 
       {currentPage === 'admin' && (
-        <Admin
-          onBack={() => setCurrentPage('home')}
-          db={db}
-          onUpdate={() => setDb(getDb())}
-          onLogout={() => {setIsAdmin(false); setCurrentPage('home');}}
-          setIsAdmin={setIsAdmin}
-          isAdmin={isAdmin}
-          lang={lang}
-          t={t}
-        />
+        <Suspense fallback={<FullscreenSpinner />}>
+          <Admin
+            onBack={() => setCurrentPage('home')}
+            db={db}
+            onUpdate={() => setDb(getDb())}
+            onLogout={() => {setIsAdmin(false); setCurrentPage('home');}}
+            setIsAdmin={setIsAdmin}
+            isAdmin={isAdmin}
+            lang={lang}
+            t={t}
+          />
+        </Suspense>
       )}
 
       {/* Version footer — readers are fixed z-[500] and cover this automatically */}

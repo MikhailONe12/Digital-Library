@@ -72,16 +72,19 @@ const Home: React.FC<HomeProps> = ({
         </p>
       </header>
 
-      <div className="relative mb-6 z-20">
+      <div className="relative mb-6 z-20" role="search">
         <div className="relative group">
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-600 transition-colors" size={19} />
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-600 transition-colors" size={19} aria-hidden="true" />
           <input
             type="text" placeholder={t.search}
+            aria-label={t.search}
             className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-4 pl-14 pr-14 text-[15px] font-normal text-slate-900 dark:text-white shadow-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all placeholder:text-slate-400"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
           />
           <button
             onClick={() => setIsFilterOpen(!isFilterOpen)}
+            aria-label={t.filters}
+            aria-expanded={isFilterOpen}
             className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-2.5 rounded-xl transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' || sortBy !== 'recent' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-red-600 hover:bg-slate-200/60 dark:hover:bg-white/10'}`}
           >
             <SlidersHorizontal size={18} strokeWidth={2.25} />
@@ -177,7 +180,7 @@ const Home: React.FC<HomeProps> = ({
         )}
       </div>
 
-      <div className="flex gap-2.5 overflow-x-auto pb-8 mt-4 no-scrollbar scroll-smooth">
+      <div className="flex gap-2.5 overflow-x-auto pb-8 mt-4 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
         {/* Favorites Button */}
         <button
           onClick={() => setActiveCategory('FAVORITES')}
@@ -187,6 +190,7 @@ const Home: React.FC<HomeProps> = ({
             : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
           aria-label="Favorites"
+          aria-pressed={activeCategory === 'FAVORITES'}
         >
           <Heart size={19} fill={activeCategory === 'FAVORITES' ? 'currentColor' : 'none'} strokeWidth={2.25} />
         </button>
@@ -200,6 +204,7 @@ const Home: React.FC<HomeProps> = ({
             : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
           aria-label={t.history}
+          aria-pressed={activeCategory === 'HISTORY'}
           title={t.history}
         >
           <Clock size={19} strokeWidth={2.25} />
@@ -213,6 +218,7 @@ const Home: React.FC<HomeProps> = ({
             ? 'bg-red-600 text-white'
             : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
+          aria-pressed={activeCategory === 'NEW'}
         >
           <Sparkles size={16} fill={activeCategory === 'NEW' ? 'currentColor' : 'none'} strokeWidth={2.25} />
           {t.new}
@@ -225,6 +231,7 @@ const Home: React.FC<HomeProps> = ({
             ? 'bg-red-600 text-white'
             : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
+          aria-pressed={activeCategory === 'ALL'}
         >
           {t.all}
         </button>
@@ -232,6 +239,7 @@ const Home: React.FC<HomeProps> = ({
           <button
             key={cat.id}
             onClick={() => setActiveCategory(cat.id)}
+            aria-pressed={activeCategory === cat.id}
             className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
               activeCategory === cat.id
               ? 'bg-red-600 text-white'

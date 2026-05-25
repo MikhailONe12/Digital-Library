@@ -1,6 +1,3 @@
-// @ts-ignore
-import ePub from 'epubjs';
-
 const cache = new Map<string, string>();
 const inflight = new Map<string, Promise<string | null>>();
 
@@ -20,6 +17,8 @@ export const getEpubThumbnail = (url: string): Promise<string | null> => {
       if (!resp.ok) return null;
       const data = await resp.arrayBuffer();
 
+      // @ts-ignore — load epubjs on demand so it stays out of the initial bundle
+      const ePub = (await import('epubjs')).default;
       const book = ePub(data);
       const coverUrl: string | null = await (book.coverUrl() as Promise<string | null>);
       if (!coverUrl) { book.destroy(); return null; }

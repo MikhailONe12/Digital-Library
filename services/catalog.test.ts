@@ -83,6 +83,32 @@ describe('search', () => {
   });
 });
 
+describe('smart search', () => {
+  it('matches the description with the "all" field', () => {
+    const a = item({ id: 'a', title: { en: 'Alpha', ru: '', es: '' }, author: 'X', description: { en: 'about quantum physics', ru: '', es: '' } });
+    const b = item({ id: 'b', title: { en: 'Beta', ru: '', es: '' }, author: 'Y', description: { en: 'cooking', ru: '', es: '' } });
+    expect(filterAndSortItems([a, b], baseQuery({ searchQuery: 'quantum' })).map(i => i.id)).toEqual(['a']);
+  });
+
+  it('does not match description when restricted to title', () => {
+    const a = item({ id: 'a', title: { en: 'Alpha', ru: '', es: '' }, description: { en: 'quantum', ru: '', es: '' } });
+    expect(filterAndSortItems([a], baseQuery({ searchQuery: 'quantum', searchField: 'title' }))).toHaveLength(0);
+  });
+
+  it('is diacritics-insensitive', () => {
+    const a = item({ id: 'a', title: { en: 'Tolstói', ru: '', es: '' } });
+    expect(filterAndSortItems([a], baseQuery({ searchQuery: 'tolstoi' })).map(i => i.id)).toEqual(['a']);
+  });
+
+  it('ranks a title match above a description-only match', () => {
+    const titleHit = item({ id: 'title', title: { en: 'Rust Programming', ru: '', es: '' }, description: { en: '', ru: '', es: '' } });
+    const descHit = item({ id: 'desc', title: { en: 'Metals', ru: '', es: '' }, description: { en: 'about rust and corrosion', ru: '', es: '' } });
+    // Even with a non-relevance sortBy, search results order by relevance.
+    const res = filterAndSortItems([descHit, titleHit], baseQuery({ searchQuery: 'rust', sortBy: 'alpha' }));
+    expect(res.map(i => i.id)).toEqual(['title', 'desc']);
+  });
+});
+
 describe('categories', () => {
   it('filters by custom type', () => {
     const b = item({ id: 'b', type: 'BOOK' });

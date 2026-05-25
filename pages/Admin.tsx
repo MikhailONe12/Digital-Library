@@ -29,6 +29,7 @@ interface AdminProps {
 }
 
 const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, setIsAdmin, lang, t }) => {
+  const ta = t.admin;
   const [apiKeyInput, setApiKeyInput] = useState('');
   // Removed 'users' from activeTab type as it is merged into security
   const [activeTab, setActiveTab] = useState<'stats' | 'items' | 'types' | 'data' | 'security'>('stats');
@@ -63,8 +64,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     setDeployBusy(true);
     try {
       const res = await fetch('/api/admin/deploy', { method: 'POST', headers: key ? { 'x-api-key': key } : {} });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Не удалось запустить деплой'); }
-    } catch { alert('Агент деплоя недоступен'); }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || ta.deployStartFailed); }
+    } catch { alert(ta.deployAgentUnavailable); }
     finally { setDeployBusy(false); setTimeout(fetchDeployStatus, 1000); }
   };
 
@@ -167,10 +168,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         const res = JSON.parse(xhr.responseText);
         setEditingItem(prev => prev ? { ...prev, coverUrl: res.url } : prev);
       } else {
-        alert('Ошибка загрузки обложки: ' + xhr.status);
+        alert(ta.coverUploadError + xhr.status);
       }
     };
-    xhr.onerror = () => { setUploadState(null); alert('Ошибка сети при загрузке'); };
+    xhr.onerror = () => { setUploadState(null); alert(ta.networkUploadError); };
     xhr.open('POST', `/api/upload/${itemId}/cover`);
     const key = getServerApiKey();
     if (key) xhr.setRequestHeader('x-api-key', key);
@@ -200,10 +201,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           return { ...prev, formats: (prev.formats || []).map(f => f.id === formatId ? { ...f, url: res.url, size: res.size } : f) };
         });
       } else {
-        alert('Ошибка загрузки файла: ' + xhr.status);
+        alert(ta.fileUploadError + xhr.status);
       }
     };
-    xhr.onerror = () => { setUploadState(null); alert('Ошибка сети при загрузке'); };
+    xhr.onerror = () => { setUploadState(null); alert(ta.networkUploadError); };
     xhr.open('POST', `/api/upload/${itemId}/file`);
     const key = getServerApiKey();
     if (key) xhr.setRequestHeader('x-api-key', key);
@@ -214,7 +215,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     if (editingItem) {
       const hasTitle = editingItem.title && (editingItem.title.en || editingItem.title.ru || editingItem.title.es);
       if (!hasTitle) {
-        toast.error('Укажите название хотя бы на одном языке.');
+        toast.error(ta.titleRequired);
         return;
       }
 
@@ -239,7 +240,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
       try {
         await updateItem(itemToSave);
-        toast.success('Сохранено');
+        toast.success(ta.saved);
         setEditingItem(null);
       } catch {
         /* error toast already shown by db layer; keep editor open */
@@ -311,7 +312,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
   const handleDeleteFormat = async (f: FileFormat) => {
     if (!editingItem?.id) return;
-    if (!confirm(`Удалить файл "${f.name}" с сервера? Это действие нельзя отменить.`)) return;
+    if (!confirm(ta.confirmDeleteFile)) return;
     const filename = f.url ? f.url.split('/').pop() : null;
     if (filename) {
       const key = getServerApiKey();
@@ -321,11 +322,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           headers: key ? { 'x-api-key': key } : {},
         });
         if (!res.ok) {
-          alert('Ошибка при удалении файла с сервера: ' + res.status);
+          alert(ta.fileDeleteError + res.status);
           return;
         }
       } catch {
-        alert('Ошибка сети при удалении файла');
+        alert(ta.fileNetworkDeleteError);
         return;
       }
     }
@@ -337,17 +338,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       try {
         await addUserToWhitelist(newUserNickname.toLowerCase());
         setNewUserNickname('');
-        toast.success('Пользователь добавлен в белый список');
+        toast.success(ta.userAddedWhitelist);
       } catch { /* error toasted by db layer */ }
       finally { onUpdate(); }
     }
   };
 
   const handleRemoveUser = async (username: string) => {
-    if (confirm(`Удалить ${username} из белого списка?`)) {
+    if (confirm(ta.confirmRemoveUser)) {
       try {
         await removeUserFromWhitelist(username);
-        toast.success('Пользователь удалён из белого списка');
+        toast.success(ta.userRemovedWhitelist);
       } catch { /* error toasted by db layer */ }
       finally { onUpdate(); }
     }
@@ -358,7 +359,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       try {
         await addToBlacklist(newBlacklistEntry);
         setNewBlacklistEntry('');
-        toast.success('Добавлено в чёрный список');
+        toast.success(ta.addedBlacklist);
       } catch { /* error toasted by db layer */ }
       finally { onUpdate(); }
     }
@@ -367,7 +368,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const handleRemoveBlacklist = async (entry: string) => {
     try {
       await removeFromBlacklist(entry);
-      toast.success('Удалено из чёрного списка');
+      toast.success(ta.removedBlacklist);
     } catch { /* error toasted by db layer */ }
     finally { onUpdate(); }
   };
@@ -391,17 +392,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       });
       setNewTypeLabels({ en: '', ru: '', es: '' });
       typedLangsRef.current.clear();
-      toast.success('Раздел добавлен');
+      toast.success(ta.sectionAdded);
     } catch { /* error toasted by db layer */ }
     finally { onUpdate(); }
   };
 
   const handleDeleteType = async (id: string) => {
-    if (confirm('Удалить раздел? Элементы с этим типом сохранят своё значение.')) {
+    if (confirm(ta.confirmDeleteSection)) {
       try {
         await deleteCustomType(id);
         setEditingType(null);
-        toast.success('Раздел удалён');
+        toast.success(ta.sectionDeleted);
       } catch { /* error toasted by db layer */ }
       finally { onUpdate(); }
     }
@@ -412,7 +413,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     try {
       await updateCustomType(editingType.id, { en: editingType.en, ru: editingType.ru, es: editingType.es });
       setEditingType(null);
-      toast.success('Раздел сохранён');
+      toast.success(ta.sectionSaved);
     } catch { /* error toasted by db layer */ }
     finally { onUpdate(); }
   };
@@ -420,27 +421,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const handleToggleGlobal = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       await toggleGlobalAccess(e.target.checked);
-      toast.success(e.target.checked ? 'Доступ открыт всем' : 'Доступ только по белому списку');
+      toast.success(e.target.checked ? ta.accessOpenAll : ta.accessWhitelistOnly);
     } catch { /* error toasted by db layer */ }
     finally { onUpdate(); }
   };
 
   const handleImportJson = async () => {
-    if (importConfirm !== 'ПЕРЕЗАПИСАТЬ') return;
+    if (importConfirm !== ta.rewriteWord) return;
     if (!importJson.trim()) return;
     let parsed: any;
     try {
       parsed = JSON.parse(importJson);
       if (!parsed.items || !Array.isArray(parsed.items)) throw new Error('Invalid format');
     } catch {
-      toast.error('Ошибка: некорректный JSON.');
+      toast.error(ta.invalidJson);
       return;
     }
     try {
       await saveDb(parsed);
       setImportJson('');
       setImportConfirm('');
-      toast.success('База данных импортирована');
+      toast.success(ta.dbImported);
     } catch {
       /* save error already toasted; state rolled back */
     } finally {
@@ -449,7 +450,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   };
 
   const handleExportJson = () => {
-    if (exportConfirm !== 'ЭКСПОРТ') return;
+    if (exportConfirm !== ta.exportWord) return;
     const payload = {
       items: db.items,
       allowedUsers: db.allowedUsers,
@@ -471,11 +472,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   };
 
   const handleResetStats = async () => {
-    if (confirm('Сбросить всю статистику? Просмотры, скачивания и данные пользователей обнулятся. Отменить нельзя.')) {
+    if (confirm(ta.confirmResetStats)) {
       try {
         await resetStats();
         await loadAnalytics();
-        toast.success('Статистика сброшена');
+        toast.success(ta.statsReset);
       } catch {
         /* error toasted by db layer */
       } finally {
@@ -516,7 +517,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               <ShieldCheck size={32} className="text-white" />
           </div>
           <h2 className="text-xl md:text-2xl font-black text-center mb-2 mt-8 tracking-tighter uppercase text-slate-900">{t.adminAccess}</h2>
-          <p className="text-slate-400 text-center mb-8 text-[10px] font-black uppercase tracking-[0.2em]">Authorized Personnel Only</p>
+          <p className="text-slate-400 text-center mb-8 text-[10px] font-black uppercase tracking-[0.2em]">{ta.authorizedOnly}</p>
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div className="space-y-1">
                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-2">{t.apiKey}</label>
@@ -614,10 +615,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                  </h3>
                  <div className="flex gap-2 mb-6">
                     <input 
-                      type="text" placeholder="Telegram Username" className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-black uppercase focus:border-red-600 outline-none"
+                      type="text" placeholder={ta.telegramUsername} className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-black uppercase focus:border-red-600 outline-none"
                       value={newUserNickname} onChange={e => setNewUserNickname(e.target.value)}
                     />
-                    <button onClick={handleAddUser} className="bg-red-600 text-white px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-700 transition-colors">Add</button>
+                    <button onClick={handleAddUser} className="bg-red-600 text-white px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-700 transition-colors">{ta.add}</button>
                  </div>
                  
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -630,7 +631,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           <button onClick={() => handleRemoveUser(u)} className="p-2 bg-white rounded-xl text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
                        </div>
                     )) : (
-                        <p className="text-[10px] uppercase font-black text-slate-400 col-span-2 text-center py-4">Whitelist is empty</p>
+                        <p className="text-[10px] uppercase font-black text-slate-400 col-span-2 text-center py-4">{ta.whitelistEmpty}</p>
                     )}
                  </div>
             </div>
@@ -676,7 +677,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           </div>
                       ))}
                       {(!db.blacklist || db.blacklist.length === 0) && (
-                          <p className="col-span-2 text-center text-[10px] text-slate-400 font-bold uppercase py-6">Blacklist is empty</p>
+                          <p className="col-span-2 text-center text-[10px] text-slate-400 font-bold uppercase py-6">{ta.blacklistEmpty}</p>
                       )}
                   </div>
             </div>
@@ -690,8 +691,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     <table className="w-full text-left border-collapse min-w-[500px]">
                         <thead className="sticky top-0 z-10 bg-white">
                             <tr className="border-b border-slate-100">
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">Time</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">User</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{ta.time}</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{ta.user}</th>
                                 <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{t.ipAddress}</th>
                                 <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest text-right bg-white">{t.device}</th>
                             </tr>
@@ -706,7 +707,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                 </tr>
                             ))}
                             {(!db.visitLogs || db.visitLogs.length === 0) && (
-                                <tr><td colSpan={4} className="p-8 text-center text-slate-400">No logs yet</td></tr>
+                                <tr><td colSpan={4} className="p-8 text-center text-slate-400">{ta.noLogs}</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -795,11 +796,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             </div>
                             <div className="text-right shrink-0">
                                 <p className="text-sm font-black text-slate-900">{item.views}</p>
-                                <p className="text-[8px] font-black text-slate-400 uppercase">Hits</p>
+                                <p className="text-[8px] font-black text-slate-400 uppercase">{ta.hits}</p>
                             </div>
                         </div>
                         ))}
-                         {analytics.topViews.length === 0 && <p className="text-center text-xs text-slate-300 font-bold uppercase py-4">No data</p>}
+                         {analytics.topViews.length === 0 && <p className="text-center text-xs text-slate-300 font-bold uppercase py-4">{ta.noData}</p>}
                     </div>
                 </div>
 
@@ -823,11 +824,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             </div>
                             <div className="text-right shrink-0">
                                 <p className="text-sm font-black text-slate-900">{item.downloads}</p>
-                                <p className="text-[8px] font-black text-slate-400 uppercase">Files</p>
+                                <p className="text-[8px] font-black text-slate-400 uppercase">{ta.files}</p>
                             </div>
                         </div>
                         ))}
-                        {analytics.topDownloads.length === 0 && <p className="text-center text-xs text-slate-300 font-bold uppercase py-4">No data</p>}
+                        {analytics.topDownloads.length === 0 && <p className="text-center text-xs text-slate-300 font-bold uppercase py-4">{ta.noData}</p>}
                     </div>
                 </div>
             </div>
@@ -841,10 +842,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     <table className="w-full text-left border-collapse min-w-[300px]">
                         <thead>
                             <tr className="border-b border-slate-100">
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Ранг</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Пользователь</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">Интересы</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">Активность</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">{ta.rank}</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">{ta.user}</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">{ta.interests}</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">{ta.activity}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -883,7 +884,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                 </tr>
                                 );
                             }) : (
-                                <tr><td colSpan={4} className="p-8 text-center text-xs text-slate-400 font-bold uppercase tracking-widest">Нет данных о пользователях</td></tr>
+                                <tr><td colSpan={4} className="p-8 text-center text-xs text-slate-400 font-bold uppercase tracking-widest">{ta.noUserData}</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -924,8 +925,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               <div className="flex items-center gap-4 mb-6">
                 <div className="p-3 bg-red-50 text-red-600 rounded-2xl"><GitBranch size={24} /></div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Обновление приложения</h3>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Подтянуть изменения из репозитория</p>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{ta.deployTitle}</h3>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{ta.deploySubtitle}</p>
                 </div>
               </div>
 
@@ -940,31 +941,31 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
                       {offline ? (
                         <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
-                          <AlertCircle size={14} className="text-amber-500" /> Агент деплоя не запущен на сервере (см. deploy-agent/README.md).
+                          <AlertCircle size={14} className="text-amber-500" /> {ta.agentOffline}
                         </p>
                       ) : (
                         <>
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Статус</span>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.statusLabel}</span>
                             {deploying ? (
-                              <span className="text-[10px] font-black text-blue-600 flex items-center gap-1.5"><RefreshCw size={12} className="animate-spin" /> Идёт обновление…</span>
+                              <span className="text-[10px] font-black text-blue-600 flex items-center gap-1.5"><RefreshCw size={12} className="animate-spin" /> {ta.deployingStatus}</span>
                             ) : ds?.behind ? (
-                              <span className="text-[10px] font-black text-amber-600 flex items-center gap-1.5"><AlertCircle size={12} /> Есть новые изменения</span>
+                              <span className="text-[10px] font-black text-amber-600 flex items-center gap-1.5"><AlertCircle size={12} /> {ta.hasUpdates}</span>
                             ) : (
-                              <span className="text-[10px] font-black text-green-600 flex items-center gap-1.5"><CheckCircle2 size={12} /> Актуально</span>
+                              <span className="text-[10px] font-black text-green-600 flex items-center gap-1.5"><CheckCircle2 size={12} /> {ta.upToDate}</span>
                             )}
                           </div>
                           <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
-                            <span>Версия на сервере</span>
+                            <span>{ta.serverVersion}</span>
                             <span className="font-mono">{ds?.localCommit || '—'}{ds?.behind ? ` → ${ds?.remoteCommit}` : ''}</span>
                           </div>
                           {ds?.lastFinishedAt && (
                             <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
-                              <span>Последний деплой</span>
+                              <span>{ta.lastDeploy}</span>
                               <span className="flex items-center gap-1.5">
                                 {ds.lastSuccess === false
-                                  ? <span className="text-red-600 flex items-center gap-1"><AlertCircle size={11} /> ошибка</span>
-                                  : <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={11} /> успех</span>}
+                                  ? <span className="text-red-600 flex items-center gap-1"><AlertCircle size={11} /> {ta.deployErr}</span>
+                                  : <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={11} /> {ta.deployOk}</span>}
                                 <span className="text-slate-400">{new Date(ds.lastFinishedAt).toLocaleString()}</span>
                               </span>
                             </div>
@@ -983,14 +984,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700 disabled:opacity-40 flex items-center justify-center gap-2"
                     >
                       <RefreshCw size={16} className={deploying ? 'animate-spin' : ''} />
-                      {deploying ? 'Обновление…' : 'Подтянуть и развернуть'}
+                      {deploying ? ta.deployButtonBusy : ta.deployButton}
                     </button>
 
                     {/* Auto / manual toggle */}
                     <div className="flex items-center justify-between p-4 bg-slate-50 rounded-3xl border border-slate-100">
                       <div>
-                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest">Автодеплой</p>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">{mode === 'auto' ? 'Разворачивает изменения сам при появлении в репозитории' : 'Только по кнопке вручную'}</p>
+                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest">{ta.autoDeploy}</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">{mode === 'auto' ? ta.autoOn : ta.autoOff}</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer shrink-0">
                         <input type="checkbox" className="sr-only peer" disabled={offline} checked={mode === 'auto'} onChange={e => setDeployMode(e.target.checked ? 'auto' : 'manual')} />
@@ -1008,8 +1009,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <Database size={24} />
                   </div>
                   <div>
-                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">Database</h3>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Backup & Restore</p>
+                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{ta.database}</h3>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{ta.backupRestore}</p>
                   </div>
               </div>
               <div className="space-y-6">
@@ -1017,57 +1018,57 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">
                           <Upload size={14} /> Server API Key
                       </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mb-3">Нужен для загрузки файлов на сервер. Тот же что в .env (API_KEY).</p>
+                      <p className="text-[9px] text-slate-400 font-bold mb-3">{ta.apiKeyDesc}</p>
                       <div className="flex gap-2">
                         <input
                           type="password"
                           className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none"
-                          placeholder="API_KEY из .env"
+                          placeholder={ta.apiKeyPlaceholder}
                           value={serverApiKeyInput}
                           onChange={e => setServerApiKeyInput(e.target.value)}
                         />
                         <button
-                          onClick={() => { setServerApiKey(serverApiKeyInput); alert('API Key сохранён'); }}
+                          onClick={() => { setServerApiKey(serverApiKeyInput); alert(ta.apiKeySaved); }}
                           className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0"
                         >
-                          Сохранить
+                          {ta.save}
                         </button>
                       </div>
                   </div>
                   <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
                       <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                          <BarChart4 size={14} /> Сбросить статистику
+                          <BarChart4 size={14} /> {ta.resetStatsTitle}
                       </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mb-4">Обнуляет просмотры, скачивания и данные пользователей. Сам контент не удаляется.</p>
+                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetStatsDesc}</p>
                       <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
-                          Сбросить всю статистику
+                          {ta.resetStatsButton}
                       </button>
                   </div>
 
                   {/* Export */}
                   <div className="p-5 md:p-6 bg-amber-50 rounded-3xl border border-amber-200">
                       <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-2">
-                          <Database size={14} /> ⚠ Экспорт базы данных
+                          <Database size={14} /> {ta.exportTitle}
                       </h4>
                       <p className="text-[9px] text-amber-600 font-bold mb-4">
-                          Скачивает полный снимок базы: контент, белый список, чёрный список, разделы. Используйте для резервного копирования перед крупными изменениями. Файл содержит чувствительные данные — храните его в безопасном месте.
+                          {ta.exportDesc}
                       </p>
                       <label className="text-[8px] font-black uppercase text-amber-700 tracking-widest ml-1">
-                          Введите «ЭКСПОРТ» для подтверждения
+                          {ta.exportConfirmLabel}
                       </label>
                       <div className="flex gap-2 mt-1">
                           <input
                               className="flex-1 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none"
-                              placeholder="ЭКСПОРТ"
+                              placeholder={ta.exportWord}
                               value={exportConfirm}
                               onChange={e => setExportConfirm(e.target.value)}
                           />
                           <button
                               onClick={handleExportJson}
-                              disabled={exportConfirm !== 'ЭКСПОРТ'}
+                              disabled={exportConfirm !== ta.exportWord}
                               className="px-5 bg-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95"
                           >
-                              Скачать
+                              {ta.exportButton}
                           </button>
                       </div>
                   </div>
@@ -1075,33 +1076,33 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   {/* Import */}
                   <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-200">
                       <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1 flex items-center gap-2">
-                          <Upload size={14} /> ⚠ Импорт базы данных
+                          <Upload size={14} /> {ta.importTitle}
                       </h4>
                       <p className="text-[9px] text-red-600 font-bold mb-4">
-                          Полностью перезаписывает текущую базу данных вставленным JSON-снимком. Все текущие данные будут уничтожены без возможности восстановления. Используйте только для восстановления из резервной копии, сделанной через Экспорт выше.
+                          {ta.importDesc}
                       </p>
                       <textarea
                           className="w-full h-28 bg-white border border-red-200 rounded-2xl p-4 text-[10px] font-mono mb-3 focus:border-red-600 outline-none"
-                          placeholder='Вставьте JSON резервной копии...'
+                          placeholder={ta.importPlaceholder}
                           value={importJson}
                           onChange={e => setImportJson(e.target.value)}
                       />
                       <label className="text-[8px] font-black uppercase text-red-700 tracking-widest ml-1">
-                          Введите «ПЕРЕЗАПИСАТЬ» для подтверждения
+                          {ta.importConfirmLabel}
                       </label>
                       <div className="flex gap-2 mt-1">
                           <input
                               className="flex-1 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                              placeholder="ПЕРЕЗАПИСАТЬ"
+                              placeholder={ta.rewriteWord}
                               value={importConfirm}
                               onChange={e => setImportConfirm(e.target.value)}
                           />
                           <button
                               onClick={handleImportJson}
-                              disabled={importConfirm !== 'ПЕРЕЗАПИСАТЬ' || !importJson.trim()}
+                              disabled={importConfirm !== ta.rewriteWord || !importJson.trim()}
                               className="px-5 bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95"
                           >
-                              Импорт
+                              {ta.importButton}
                           </button>
                       </div>
                   </div>
@@ -1133,7 +1134,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </div>
                         <div className="flex gap-2">
                            <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Edit2 size={16}/></button>
-                           <button onClick={async () => { if(confirm('Удалить элемент?')) { const key = getServerApiKey(); try { await fetch(`/api/upload/${i.id}`, { method: 'DELETE', headers: key ? { 'x-api-key': key } : {} }); } catch {} try { await deleteItem(i.id); toast.success('Элемент удалён'); } catch { /* error toasted */ } finally { onUpdate(); } } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label="Удалить элемент"><Trash2 size={16}/></button>
+                           <button onClick={async () => { if(confirm(ta.confirmDeleteItem)) { const key = getServerApiKey(); try { await fetch(`/api/upload/${i.id}`, { method: 'DELETE', headers: key ? { 'x-api-key': key } : {} }); } catch {} try { await deleteItem(i.id); toast.success(ta.itemDeleted); } catch { /* error toasted */ } finally { onUpdate(); } } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button>
                         </div>
                      </div>
                   ))}
@@ -1181,7 +1182,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               {db.customTypes.map(type => (
                 editingType?.id === type.id ? (
                   <div key={type.id} className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
-                    <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">Редактировать раздел</p>
+                    <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{ta.editSection}</p>
                     <div className="grid grid-cols-3 gap-2">
                       {(['ru', 'en', 'es'] as const).map(l => (
                         <div key={l}>
@@ -1196,8 +1197,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       ))}
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={handleSaveType} className="flex-1 bg-red-600 text-white py-2 rounded-xl font-black uppercase text-[10px] tracking-widest">Сохранить</button>
-                      <button onClick={() => setEditingType(null)} className="px-5 py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">Отмена</button>
+                      <button onClick={handleSaveType} className="flex-1 bg-red-600 text-white py-2 rounded-xl font-black uppercase text-[10px] tracking-widest">{ta.save}</button>
+                      <button onClick={() => setEditingType(null)} className="px-5 py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">{ta.cancel}</button>
                     </div>
                   </div>
                 ) : (
@@ -1229,11 +1230,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
               {/* Titles */}
               <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Заголовки</p>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.headings}</p>
                 <div className="space-y-3">
                   {(['ru', 'en', 'es'] as const).map(l => (
                     <div key={l}>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} Заголовок</label>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} {ta.heading}</label>
                       <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.title?.[l] || ''}
                         onChange={e => setEditingItem({...editingItem, title: {...editingItem.title!, [l]: e.target.value}})} />
@@ -1244,11 +1245,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
               {/* Descriptions */}
               <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Описание</p>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.descriptionsLabel}</p>
                 <div className="space-y-3">
                   {(['ru', 'en', 'es'] as const).map(l => (
                     <div key={l}>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} Описание</label>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} {ta.descriptionWord}</label>
                       <textarea rows={3} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-medium focus:border-red-600 outline-none resize-none"
                         value={editingItem.description?.[l] || ''}
                         onChange={e => setEditingItem({...editingItem, description: {...(editingItem.description || {en:'',ru:'',es:''}), [l]: e.target.value}})} />
@@ -1259,30 +1260,30 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
               {/* Info */}
               <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Основное</p>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.basics}</p>
                 <div className="space-y-3">
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Тип</label>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.typeLabel}</label>
                       <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.type || ''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}>
                         {db.customTypes.map(tp => <option key={tp.id} value={tp.id}>{tp[lang] || tp.ru || tp.en}</option>)}
                       </select>
                     </div>
                     <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Автор</label>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.authorLabel}</label>
                       <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.author || ''} onChange={e => setEditingItem({...editingItem, author: e.target.value})} />
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Дата публикации</label>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.pubDate}</label>
                       <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.publishedDate || ''} onChange={e => setEditingItem({...editingItem, publishedDate: e.target.value})} />
                     </div>
                     <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Редакционный рейтинг (0–5)</label>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.editorialRating}</label>
                       <input type="number" min="0" max="5" step="0.1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.rating ?? 0} onChange={e => setEditingItem({...editingItem, rating: parseFloat(e.target.value) || 0})} />
                     </div>
@@ -1292,17 +1293,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
               {/* Media */}
               <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Медиа</p>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.media}</p>
                 <div className="space-y-3">
                   <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">Обложка</label>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.cover}</label>
                     <div className="flex gap-2">
                       <input type="text" placeholder="https://..." className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                         value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
                       <button type="button"
                         onClick={() => coverInputRef.current?.click()}
                         disabled={uploadState?.field === 'cover' || !!stagedCoverFile}
-                        title="Выбрать файл"
+                        title={ta.chooseFile}
                         className="px-3 bg-slate-100 rounded-2xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
                         <Upload size={16} />
                       </button>
@@ -1310,7 +1311,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     {stagedCoverFile && !uploadState && (
                       <div className="mt-2 flex items-center gap-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
                         <span className="text-[9px] font-bold text-blue-700 flex-1 truncate">{stagedCoverFile.name} ({formatFileSize(stagedCoverFile.size)})</span>
-                        <button type="button" onClick={() => editingItem?.id && uploadCover(editingItem.id)} className="px-3 py-1 bg-blue-600 text-white text-[9px] font-black rounded-lg shrink-0">Загрузить</button>
+                        <button type="button" onClick={() => editingItem?.id && uploadCover(editingItem.id)} className="px-3 py-1 bg-blue-600 text-white text-[9px] font-black rounded-lg shrink-0">{ta.uploadBtn}</button>
                         <button type="button" onClick={() => { setStagedCoverFile(null); if (coverInputRef.current) coverInputRef.current.value = ''; }} className="p-1 text-blue-400 hover:text-red-500 shrink-0"><X size={12} /></button>
                       </div>
                     )}
@@ -1324,8 +1325,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2 flex items-center gap-1.5"><Video size={11} /> Видео контент</label>
-                      <button type="button" onClick={handleAddVideo} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">+ Добавить видео</button>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2 flex items-center gap-1.5"><Video size={11} /> {ta.videoContent}</label>
+                      <button type="button" onClick={handleAddVideo} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">{ta.addVideo}</button>
                     </div>
                     <div className="space-y-2">
                       {(editingItem.videos || []).map(v => {
@@ -1341,7 +1342,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                   onChange={e => handleUpdateVideo(v.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
                                   className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
                                   {presets.map(p => <option key={p} value={p}>{p}</option>)}
-                                  <option value="__custom__">Свой источник…</option>
+                                  <option value="__custom__">{ta.customSource}</option>
                                 </select>
                                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
                               </div>
@@ -1360,7 +1361,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                 <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
                               </div>
                               {isCustom && (
-                                <input type="text" placeholder="Название источника" className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                                <input type="text" placeholder={ta.sourceName} className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
                                   value={v.source} onChange={e => handleUpdateVideo(v.id, 'source', e.target.value)} />
                               )}
                             </div>
@@ -1370,7 +1371,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         );
                       })}
                       {(!editingItem.videos || editingItem.videos.length === 0) && (
-                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center py-3">Видео не добавлено</p>
+                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center py-3">{ta.noVideo}</p>
                       )}
                     </div>
                   </div>
@@ -1379,7 +1380,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
               {/* Content Languages */}
               <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Языки контента</p>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.contentLangs}</p>
                 <div className="grid grid-cols-3 gap-2">
                   {(['ru', 'en', 'es', 'it', 'fr', 'de'] as const).map(l => {
                     const active = (editingItem.contentLanguages || []).includes(l);
@@ -1395,12 +1396,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
               {/* Access */}
               <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">Доступ и права</p>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.accessRights}</p>
                 <div className="space-y-2">
                   {([
-                    { key: 'isPrivate' as const,      label: 'Только по whitelist (Tier 1)' },
-                    { key: 'allowDownload' as const,  label: 'Разрешить скачивание' },
-                    { key: 'allowReading' as const,   label: 'Разрешить чтение онлайн' },
+                    { key: 'isPrivate' as const,      label: ta.whitelistOnly },
+                    { key: 'allowDownload' as const,  label: ta.allowDownloadLabel },
+                    { key: 'allowReading' as const,   label: ta.allowReadingLabel },
                   ]).map(({ key, label }) => (
                     <label key={key} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-red-100 transition-all">
                       <span className="text-xs font-bold text-slate-700">{label}</span>
@@ -1418,8 +1419,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               {/* File Resources */}
               <div className="border-t border-slate-100 pt-6">
                 <div className="flex justify-between items-center mb-4">
-                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">Файлы</p>
-                  <button onClick={handleAddFormat} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">+ Добавить файл</button>
+                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{ta.files}</p>
+                  <button onClick={handleAddFormat} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">{ta.addFile}</button>
                 </div>
                 <div className="space-y-3">
                   {editingItem.formats && editingItem.formats.map((f) => (
@@ -1428,18 +1429,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         type="button"
                         onClick={() => { if (!f.url) handleRemoveFormat(f.id); }}
                         disabled={!!f.url}
-                        title={f.url ? 'Файл загружен — уберите его кнопкой «Удалить файл с сервера»' : 'Убрать блок'}
+                        title={f.url ? ta.fileUploadedHint : ta.removeBlock}
                         className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500'}`}>
                         <X size={14} />
                       </button>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Название</label>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.nameLabel}</label>
                           <input placeholder="PDF / EPUB / …" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
                             value={f.name} onChange={e => handleUpdateFormat(f.id, 'name', e.target.value)} />
                         </div>
                         <div>
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Язык</label>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.langLabel}</label>
                           <select className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
                             value={f.language || 'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}>
                             <option value="ru">RU</option>
@@ -1451,14 +1452,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           </select>
                         </div>
                         <div className="col-span-2">
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">URL файла</label>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.fileUrl}</label>
                           <div className="flex gap-1">
                             <input placeholder="https://..." className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
                               value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
                             <button type="button"
                               onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }}
                               disabled={uploadState !== null || !!stagedContentFile}
-                              title="Выбрать файл"
+                              title={ta.chooseFile}
                               className="px-2 bg-slate-100 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
                               <Upload size={12} />
                             </button>
@@ -1466,14 +1467,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           {stagedContentFile?.formatId === f.id && !uploadState && (
                             <div className="mt-1 flex items-center gap-1.5 p-1.5 bg-blue-50 rounded-lg border border-blue-100">
                               <span className="text-[8px] font-bold text-blue-700 flex-1 truncate">{stagedContentFile.file.name} ({formatFileSize(stagedContentFile.file.size)})</span>
-                              <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language || 'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">Загрузить</button>
+                              <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language || 'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">{ta.uploadBtn}</button>
                               <button type="button" onClick={() => { setStagedContentFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="text-blue-400 hover:text-red-500 shrink-0"><X size={10} /></button>
                             </div>
                           )}
                           {uploadState?.field === f.id && (
                             <div className="mt-1.5">
                               <div className="flex items-center justify-between mb-1">
-                                <span className="text-[8px] font-black uppercase text-red-600 tracking-widest">{uploadState.progress < 100 ? 'Загрузка…' : 'Обработка…'}</span>
+                                <span className="text-[8px] font-black uppercase text-red-600 tracking-widest">{uploadState.progress < 100 ? ta.uploading : ta.processing}</span>
                                 <span className="text-[8px] font-black text-slate-500 tabular-nums">{uploadState.progress}%</span>
                               </div>
                               <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
@@ -1483,7 +1484,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           )}
                         </div>
                         <div>
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">Размер</label>
+                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.sizeLabel}</label>
                           <input placeholder="2.4 MB" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
                             value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} />
                         </div>
@@ -1493,12 +1494,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         onClick={() => handleDeleteFormat(f)}
                         className="mt-2 w-full py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-colors flex items-center justify-center gap-1.5"
                       >
-                        <Trash2 size={11} /> Удалить файл с сервера
+                        <Trash2 size={11} /> {ta.deleteFileServer}
                       </button>
                     </div>
                   ))}
                   {(!editingItem.formats || editingItem.formats.length === 0) && (
-                    <p className="text-center text-[9px] text-slate-300 font-bold uppercase py-3">Файлы не добавлены</p>
+                    <p className="text-center text-[9px] text-slate-300 font-bold uppercase py-3">{ta.noFiles}</p>
                   )}
                   <input
                     ref={fileInputRef}
@@ -1516,7 +1517,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100">
-               <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">Save Asset</button>
+               <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">{ta.saveAsset}</button>
             </div>
           </div>
         </div>

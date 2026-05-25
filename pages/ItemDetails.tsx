@@ -1273,7 +1273,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
           <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0 ${chromeVisible ? '' : 'hidden'}`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {toc.length > 0 && (
                 <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); setShowAnnotations(false); setShowSearch(false); }}
                   className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Содержание">
@@ -1283,28 +1283,30 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               <div className="p-2 bg-red-600 rounded-lg text-white"><BookOpen size={16} /></div>
               <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[120px]`}>{pickText(item.title, lang)}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => { setShowSearch(s => !s); setShowToc(false); setShowBookmarks(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Поиск">
+            <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 py-1 -my-1">
+              <button onClick={() => { setShowSearch(s => !s); setShowToc(false); setShowBookmarks(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Поиск">
                 <Search size={16} />
               </button>
-              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
+              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
-              <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title={notesTitle}>
+              <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title={notesTitle}>
                 <NotesIcon size={16} />
               </button>
-              <button onClick={handleAddEpubBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
+              <button onClick={handleAddEpubBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); setShowAnnotations(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
+              <button onClick={() => { setShowBookmarks(s => !s); setShowToc(false); setShowAnnotations(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative shrink-0`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.filter(b => !/^\d+$/.test(b.position)).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.filter(b => !/^\d+$/.test(b.position)).length}</span>}
               </button>
-              <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
+              <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative shrink-0`} title="Аннотации">
                 <Highlighter size={16} />
                 {annotations.filter(a => a.cfi_range).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.filter(a => a.cfi_range).length}</span>}
               </button>
-              <button onClick={() => setActiveEpubUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
+              </div>
+              <button onClick={() => setActiveEpubUrl(null)} aria-label="Закрыть читалку" className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`}><X size={20} /></button>
             </div>
           </header>
 
@@ -1348,7 +1350,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
           <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0 ${chromeVisible ? '' : 'hidden'}`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               {pdfToc.length > 0 && (
                 <button onClick={() => { setShowToc(s => !s); setShowBookmarks(false); setShowAnnotations(false); setShowSearch(false); }}
                   className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Содержание">
@@ -1361,33 +1363,35 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[110px]`}>{pickText(item.title, lang)}</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button onClick={() => { setShowSearch(s => !s); setShowToc(false); setShowBookmarks(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Поиск">
+            <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 py-1 -my-1">
+              <button onClick={() => { setShowSearch(s => !s); setShowToc(false); setShowBookmarks(false); setShowAnnotations(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Поиск">
                 <Search size={16} />
               </button>
-              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
+              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Тема">
                 <ThemeIcon size={16} />
               </button>
-              <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title={notesTitle}>
+              <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title={notesTitle}>
                 <NotesIcon size={16} />
               </button>
-              <button onClick={handleAddPdfBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить закладку">
+              <button onClick={handleAddPdfBookmark} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Добавить закладку">
                 <BookmarkPlus size={16} />
               </button>
-              <button onClick={() => { setShowBookmarks(s => !s); setShowAnnotations(false); setShowToc(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Закладки">
+              <button onClick={() => { setShowBookmarks(s => !s); setShowAnnotations(false); setShowToc(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative shrink-0`} title="Закладки">
                 <BookMarked size={16} />
                 {bookmarks.filter(b => /^\d+$/.test(b.position)).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{bookmarks.filter(b => /^\d+$/.test(b.position)).length}</span>}
               </button>
-              <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative`} title="Аннотации">
+              <button onClick={() => { setShowAnnotations(s => !s); setShowBookmarks(false); setShowToc(false); setShowSearch(false); }} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all relative shrink-0`} title="Аннотации">
                 <Highlighter size={16} />
                 {annotations.filter(a => a.page != null).length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center font-black">{annotations.filter(a => a.page != null).length}</span>}
               </button>
               <button
                 onClick={() => { setAnnotationDraft({ page: pdfPage, text: '' }); setDraftNote(''); setDraftColor('yellow'); }}
-                className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Добавить заметку">
+                className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Добавить заметку">
                 <PenLine size={16} />
               </button>
-              <button onClick={() => setActiveReaderUrl(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
+              </div>
+              <button onClick={() => setActiveReaderUrl(null)} aria-label="Закрыть читалку" className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`}><X size={20} /></button>
             </div>
           </header>
 

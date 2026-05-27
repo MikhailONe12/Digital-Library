@@ -17,7 +17,7 @@ export const getPdfThumbnail = (url: string): Promise<string | null> => {
       const resp = await fetch(url);
       if (!resp.ok) return null;
       const data = await resp.arrayBuffer();
-      const doc = await pdfjsLib.getDocument({ data, wasmUrl: '/wasm/', cMapUrl: '/cmaps/', cMapPacked: true }).promise;
+      const doc = await pdfjsLib.getDocument({ data, wasmUrl: '/wasm/', cMapUrl: '/cmaps/', cMapPacked: true, standardFontDataUrl: '/standard_fonts/', disableFontFace: true }).promise;
       const page = await doc.getPage(1);
       const base = page.getViewport({ scale: 1 });
       const scale = 300 / base.width;

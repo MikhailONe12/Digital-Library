@@ -485,12 +485,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         const doc = await pdfjsLib.getDocument({
           data,
           wasmUrl: '/wasm/',
-          // CMap support is required for PDFs that use Type1 / CIDFont encodings
-          // (very common in Russian/CIS documents). Without it pdf.js cannot map
-          // glyph IDs to Unicode code-points and renders random Latin characters.
+          // CMap + standard-font data are required for correct text on many
+          // documents (esp. Russian/CIS PDFs using Type1/CIDFont encodings or
+          // non-embedded base-14 fonts).
           cMapUrl: '/cmaps/',
           cMapPacked: true,
-          useSystemFonts: false,
+          standardFontDataUrl: '/standard_fonts/',
+          // disableFontFace forces pdf.js to rasterize glyph OUTLINES directly
+          // from the embedded font instead of rebuilding a browser @font-face.
+          // The @font-face path mis-maps glyphs for fonts with non-standard
+          // encodings (common in Russian PDFs) → garbled text. Drawing outlines
+          // straight onto the canvas reproduces the document exactly.
+          disableFontFace: true,
         }).promise;
         if (cancelled) { try { doc.destroy(); } catch { /* noop */ } return; }
         pdfDocRef.current = doc;

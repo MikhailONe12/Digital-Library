@@ -1,11 +1,20 @@
-const cache = new Map<string, string>();
+import { thumbCacheGet, thumbCacheSet } from './thumbCache';
+
+// Extracts the cover image from an EPUB and returns it as a data URL.
+// Two-layer cache: in-memory Map backed by IndexedDB (survives reload).
+
+const memCache = new Map<string, string>();
 const inflight = new Map<string, Promise<string | null>>();
 
 export const getEpubThumbnail = (url: string): Promise<string | null> => {
-  if (cache.has(url)) return Promise.resolve(cache.get(url)!);
+  if (memCache.has(url)) return Promise.resolve(memCache.get(url)!);
   if (inflight.has(url)) return inflight.get(url)!;
 
   const p = (async (): Promise<string | null> => {
+    // Check IDB before fetching the whole file
+    const cached = await thumbCacheGet(url);
+    if (cached) { memCache.set(url, cached); return cached; }
+
     try {
       let fetchUrl = url;
       try {
@@ -34,7 +43,8 @@ export const getEpubThumbnail = (url: string): Promise<string | null> => {
       });
 
       book.destroy();
-      cache.set(url, dataUrl);
+      memCache.set(url, dataUrl);
+      thumbCacheSet(url, dataUrl); // persist async, don't await
       return dataUrl;
     } catch {
       return null;

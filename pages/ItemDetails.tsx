@@ -20,6 +20,8 @@ import {
 } from '../services/db';
 import { pickText, handleCoverError, getVideoPoster } from '../utils';
 import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
+import { getPdfThumbnail } from '../services/pdfThumb';
+import { getEpubThumbnail } from '../services/epubThumb';
 
 type ReaderTheme = 'default' | 'night' | 'sepia';
 
@@ -849,23 +851,46 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     .map(v => ({ ...v, embed: getVideoEmbed(v.url) }))
     .filter(v => v.embed);
 
-  // No cover uploaded? Derive one from the first video (YouTube frame, or a
-  // grabbed frame for direct video files — the latter resolves asynchronously).
-  const [videoFrame, setVideoFrame] = useState<string>('');
+  // No cover uploaded? Derive one from the content — in priority order:
+  //   1. YouTube poster (sync, free)
+  //   2. PDF/EPUB first page (async, cached in IDB after first render)
+  //   3. Direct video frame grab (async, cached in IDB after first render)
+  const [autoThumb, setAutoThumb] = useState<string>('');
   const firstVideoUrl = videoList[0]?.url;
-  const youtubePoster = (item.coverUrl && item.coverUrl.trim()) ? null : getVideoPoster(firstVideoUrl);
+  const hasCover = !!(item.coverUrl && item.coverUrl.trim());
+  const youtubePoster = hasCover ? null : getVideoPoster(firstVideoUrl);
 
   useEffect(() => {
-    setVideoFrame('');
-    if ((item.coverUrl && item.coverUrl.trim()) || youtubePoster || !isDirectVideo(firstVideoUrl)) return;
+    setAutoThumb('');
+    if (hasCover || youtubePoster) return;
     let cancelled = false;
-    getVideoThumbnail(firstVideoUrl!).then(d => { if (!cancelled && d) setVideoFrame(d); });
-    return () => { cancelled = true; };
-  }, [firstVideoUrl, item.coverUrl, youtubePoster]);
 
-  const coverSrc = (item.coverUrl && item.coverUrl.trim())
-    ? item.coverUrl
-    : (youtubePoster || videoFrame || item.coverUrl || '');
+    const formats = item.formats || [];
+    const epubFmt = !item.isPrivate ? formats.find(f => /\.epub$/i.test(f.url || '')) : undefined;
+    const pdfFmt  = !item.isPrivate ? formats.find(f => /\.(pdf|djvu?)$/i.test(f.url || '')) : undefined;
+
+    if (epubFmt) {
+      getEpubThumbnail(epubFmt.url).then(d => {
+        if (cancelled) return;
+        if (d) { setAutoThumb(d); return; }
+        if (pdfFmt) {
+          getPdfThumbnail(pdfFmt.url.replace(/\.djvu?$/i, '.pdf'))
+            .then(d2 => { if (!cancelled && d2) setAutoThumb(d2); });
+        }
+      });
+    } else if (pdfFmt) {
+      getPdfThumbnail(pdfFmt.url.replace(/\.djvu?$/i, '.pdf'))
+        .then(d => { if (!cancelled && d) setAutoThumb(d); });
+    } else if (isDirectVideo(firstVideoUrl)) {
+      getVideoThumbnail(firstVideoUrl!).then(d => { if (!cancelled && d) setAutoThumb(d); });
+    }
+
+    return () => { cancelled = true; };
+  }, [item.id, item.coverUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const coverSrc = hasCover
+    ? item.coverUrl!
+    : (youtubePoster || autoThumb || '');
 
   const handleRead = (format: FileFormat) => {
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;

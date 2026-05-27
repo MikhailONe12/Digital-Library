@@ -157,6 +157,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // True while the annotation sheet is open — used to suspend ←/→ page
   // navigation so arrow keys move the text cursor inside the note textarea.
   const annotationOpenRef = useRef(false);
+  // Last pointer device used — wheel/click handlers use this to skip toggling
+  // reader chrome on desktop (mouse) while keeping the behaviour on mobile (touch).
+  const lastPointerTypeRef = useRef<string>('touch');
+  // Throttle wheel-driven page flips to one per 500 ms so a single swipe
+  // gesture doesn't skip multiple pages at once.
+  const wheelThrottleRef  = useRef<number>(0);
 
   const tg     = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
@@ -296,12 +302,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           width: '100%', height: '100%', spread: 'none',
         });
 
-        // Tap the page toggles the reader chrome. The decision is deferred so an
-        // in-progress text selection isn't disrupted: if, shortly after the tap,
-        // a selection exists (or an input sheet is open), it's not a bare tap and
-        // we leave the chrome alone. This keeps selection → annotation working.
+        // Tap the page toggles the reader chrome — touch only. On desktop
+        // (mouse) we leave the chrome always visible. Decision deferred 130 ms
+        // so an in-progress text selection isn't disrupted.
         const tapToggleChrome = (win: any) => {
           setTimeout(() => {
+            if (lastPointerTypeRef.current === 'mouse') return;
             if (annotationOpenRef.current) return;
             const s = win?.getSelection?.();
             if (s && s.toString().trim()) return;
@@ -309,7 +315,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           }, 130);
         };
         rendition.hooks.content.register((contents: any) => {
+          contents.document.addEventListener('pointerdown', (e: any) => {
+            lastPointerTypeRef.current = e.pointerType || 'touch';
+          });
           contents.document.addEventListener('click', () => tapToggleChrome(contents.window));
+          // Mouse-wheel page navigation inside the EPUB iframe content
+          contents.document.addEventListener('wheel', (e: WheelEvent) => {
+            const now = Date.now();
+            if (now - wheelThrottleRef.current < 500) return;
+            if (Math.abs(e.deltaY) < 20) return;
+            wheelThrottleRef.current = now;
+            if (e.deltaY > 0) renditionRef.current?.next();
+            else              renditionRef.current?.prev();
+          }, { passive: true });
         });
 
         // Register all themes upfront
@@ -1440,9 +1458,23 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           <div className="flex-1 relative overflow-hidden">
             <div
               className={`w-full h-full overflow-auto ${PDF_BG[readerTheme]}`}
+              onPointerDown={(e) => { lastPointerTypeRef.current = e.pointerType; }}
               onTouchStart={handleTouchStart}
               onTouchEnd={handlePdfTouchEnd}
-              onClick={() => { if (showToc || showBookmarks || showAnnotations || showSearch || annotationDraft || bookmarkDraft) return; setChromeVisible(v => !v); }}
+              onClick={() => {
+                if (lastPointerTypeRef.current === 'mouse') return;
+                if (showToc || showBookmarks || showAnnotations || showSearch || annotationDraft || bookmarkDraft) return;
+                setChromeVisible(v => !v);
+              }}
+              onWheel={(e) => {
+                if (pdfScale !== 1) return; // let native overflow scroll when zoomed
+                const now = Date.now();
+                if (now - wheelThrottleRef.current < 500) return;
+                if (Math.abs(e.deltaY) < 20) return;
+                wheelThrottleRef.current = now;
+                if (e.deltaY > 0) setPdfPage(p => Math.min(pdfTotalPages, p + 1));
+                else              setPdfPage(p => Math.max(1, p - 1));
+              }}
             >
               <div ref={pdfContainerRef} className="mx-auto w-fit" />
             </div>

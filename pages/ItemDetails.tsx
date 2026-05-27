@@ -184,6 +184,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     return url;
   };
 
+  // Rewrites /content/:itemId/:file → /api/download/:itemId/:file. That endpoint
+  // serves the file with a human-readable Content-Disposition name (Title -
+  // Author (lang)) and access-checks private items.
+  const toDownloadUrl = (url: string): string => {
+    try {
+      const u = new URL(url, window.location.href);
+      const m = u.pathname.match(/^\/content\/([^/]+)\/(.+)$/);
+      if (m) return `/api/download/${m[1]}/${m[2]}`;
+    } catch { /* already relative or malformed */ }
+    return url;
+  };
+
   // (Re)applies EPUB highlights/underlines for the given display mode. Removes
   // any existing marks first so it's safe to call repeatedly (load, theme
   // switch, mode toggle). 'hidden' clears them, 'mini' draws a thin underline,
@@ -1294,7 +1306,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                     </button>
                   ) : (
                     isFileDownloadAllowed && (
-                      <a href={f.url} download onClick={() => trackActivity('download', item.id)} className="block w-full bg-slate-900 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4">
+                      <a href={toDownloadUrl(f.url)} download onClick={() => trackActivity('download', item.id)} className="block w-full bg-slate-900 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4">
                         <Download size={16} strokeWidth={3} />Download
                       </a>
                     )
@@ -1312,7 +1324,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                       <span className="text-[9px] font-black text-slate-300 dark:text-slate-500 uppercase tracking-wider ml-1">{f.size}</span>
                     </div>
                     {isFileReadAllowed && isFileDownloadAllowed && (
-                      <a href={f.url} download onClick={() => trackActivity('download', item.id)} className="p-2 bg-white dark:bg-white/10 text-slate-300 dark:text-slate-400 hover:text-red-600 border border-slate-100 dark:border-white/10 rounded-xl transition-all shadow-sm">
+                      <a href={toDownloadUrl(f.url)} download onClick={() => trackActivity('download', item.id)} className="p-2 bg-white dark:bg-white/10 text-slate-300 dark:text-slate-400 hover:text-red-600 border border-slate-100 dark:border-white/10 rounded-xl transition-all shadow-sm">
                         <Download size={18} strokeWidth={2.5} />
                       </a>
                     )}

@@ -6,7 +6,7 @@ import fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import { createHmac } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 import pkg from 'pg';
 
 const execFileAsync = promisify(execFile);
@@ -223,7 +223,10 @@ const fileStorage = multer.diskStorage({
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const lang = (req.body.lang || 'ru').replace(/[^a-z]/g, '').slice(0, 5);
-    cb(null, lang + ext);
+    // Unique on-disk name so multiple same-language files in one item never
+    // collide/overwrite. The human-readable name is applied at download time
+    // via Content-Disposition (see GET /api/download), not here.
+    cb(null, `${lang}-${randomBytes(3).toString('hex')}${ext}`);
   },
 });
 
@@ -523,44 +526,122 @@ app.get('/api/check-access', async (req, res) => {
   } catch { res.status(200).end(); } // fail open
 });
 
-// Protected file endpoint for private items.
-// Validates user against whitelist using Telegram initData, then serves the
-// file via Nginx X-Accel-Redirect (no data passes through Node).
-app.get('/api/file/:itemId/:filename', validateItemId, async (req, res) => {
-  const { filename } = req.params;
-  if (!/^[a-zA-Z0-9._-]+$/.test(filename))
-    return res.status(400).json({ error: 'Invalid filename' });
-
+// Returns true if the request may access this item's files. Public items are
+// always allowed; private items require the caller to be not-blacklisted and
+// (globalAccess OR whitelisted). Mirrors the front-end access gate.
+const canAccessItemFiles = async (item, req) => {
+  if (!item?.isPrivate) return true;
   const botToken = process.env.BOT_TOKEN;
   const initDataRaw = req.headers['x-telegram-init-data'];
   const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
   let telegramUser = null;
   if (botToken && initDataRaw) telegramUser = validateTelegramInitData(initDataRaw, botToken);
 
+  const settings = await getSettingsCached();
+  const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
+  const blocked =
+    (telegramUser && (bl.includes(telegramUser.id) || bl.includes(telegramUser.username))) ||
+    (ip && bl.includes(ip));
+  if (blocked) return false;
+
+  if (!settings.globalAccess) {
+    const allowed = settings.allowedUsers || [];
+    const ok = telegramUser && (
+      allowed.includes(telegramUser.id) ||
+      (telegramUser.username && allowed.includes(telegramUser.username))
+    );
+    if (!ok) return false;
+  }
+  return true;
+};
+
+// Builds the human-readable download filename: "Title - Author (lang[, N]).ext".
+// N is added only when several files share the same language AND extension.
+const buildDownloadName = (item, fileRow, allRows) => {
+  const filename = fileRow.filename;
+  const ext  = path.extname(filename);                 // includes leading dot
+  const lang = (fileRow.language || filename.split('-')[0] || '').toLowerCase();
+  const type = fileRow.file_type || ext.slice(1).toLowerCase();
+
+  const t = item?.title;
+  const title = ((typeof t === 'string' ? t : (t?.[lang] || t?.en || t?.ru || t?.es)) || 'file').trim();
+  const author = (item?.author || '').trim();
+
+  // 1-based index within the same (language, type) group, only if there's >1
+  const peers = (allRows || []).filter(r =>
+    (r.language || '').toLowerCase() === lang &&
+    (r.file_type || path.extname(r.filename).slice(1)).toLowerCase() === type,
+  );
+  let suffix = lang;
+  if (peers.length > 1) {
+    const idx = peers.findIndex(r => r.filename === filename);
+    suffix = `${lang}, ${idx >= 0 ? idx + 1 : peers.length}`;
+  }
+
+  const raw = `${title}${author ? ' - ' + author : ''} (${suffix})${ext}`;
+  // Strip characters illegal in filenames on common OSes; keep Unicode/Cyrillic.
+  return raw.replace(/[\/\\:*?"<>|\x00-\x1f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 200);
+};
+
+// Protected file endpoint for private items (used by the in-app readers).
+// Validates access, then serves the file via Nginx X-Accel-Redirect.
+app.get('/api/file/:itemId/:filename', validateItemId, async (req, res) => {
+  const { filename } = req.params;
+  if (!/^[a-zA-Z0-9._-]+$/.test(filename))
+    return res.status(400).json({ error: 'Invalid filename' });
+
+  try {
+    const itemRes = await pool.query('SELECT data FROM items WHERE id = $1', [req.params.itemId]);
+    const item = itemRes.rows[0]?.data;
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+    if (!(await canAccessItemFiles(item, req))) return res.status(403).json({ error: 'Access denied' });
+
+    // Delegate actual file transfer to Nginx (efficient, zero-copy)
+    res.setHeader('X-Accel-Redirect', `/internal-content/${req.params.itemId}/${filename}`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.status(200).end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Download endpoint (used by the Download buttons). Serves the file via Nginx
+// X-Accel-Redirect with a Content-Disposition that gives a human-readable name
+// derived from the item's title/author/language.
+//
+// A plain <a download> navigation can't send the x-telegram-init-data header,
+// so this endpoint intentionally uses the SAME gate as the previous download
+// path (/content/ behind nginx auth_request): an IP blacklist check only. This
+// keeps download security identical to before — the change here is purely the
+// filename. (Whitelist enforcement still applies to in-app reading via /api/file.)
+app.get('/api/download/:itemId/:filename', validateItemId, async (req, res) => {
+  const { filename } = req.params;
+  if (!/^[a-zA-Z0-9._-]+$/.test(filename))
+    return res.status(400).json({ error: 'Invalid filename' });
+
   try {
     const itemRes = await pool.query('SELECT data FROM items WHERE id = $1', [req.params.itemId]);
     const item = itemRes.rows[0]?.data;
     if (!item) return res.status(404).json({ error: 'Item not found' });
 
-    if (item.isPrivate) {
-      const settings = await getSettingsCached();
-      const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
-      const blocked =
-        (telegramUser && (bl.includes(telegramUser.id) || bl.includes(telegramUser.username))) ||
-        (ip && bl.includes(ip));
-      if (blocked) return res.status(403).json({ error: 'Access denied' });
+    const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+    const settings = await getSettingsCached();
+    const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
+    if (ip && bl.includes(ip)) return res.status(403).json({ error: 'Access denied' });
 
-      if (!settings.globalAccess) {
-        const allowed = settings.allowedUsers || [];
-        const ok = telegramUser && (
-          allowed.includes(telegramUser.id) ||
-          (telegramUser.username && allowed.includes(telegramUser.username))
-        );
-        if (!ok) return res.status(403).json({ error: 'Access denied' });
-      }
-    }
+    const filesRes = await pool.query(
+      'SELECT filename, file_type, language, uploaded_at FROM uploaded_files WHERE item_id = $1 ORDER BY uploaded_at ASC',
+      [req.params.itemId],
+    );
+    const rows = filesRes.rows;
+    const me = rows.find(r => r.filename === filename) || { filename };
+    const niceName = buildDownloadName(item, me, rows);
 
-    // Delegate actual file transfer to Nginx (efficient, zero-copy)
+    const asciiName = niceName.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, '');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(niceName)}`,
+    );
     res.setHeader('X-Accel-Redirect', `/internal-content/${req.params.itemId}/${filename}`);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     res.status(200).end();

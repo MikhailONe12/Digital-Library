@@ -1,4 +1,4 @@
-import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import workerSrc from './pdfWorker?worker&url';
 
 // Renders page 1 of a PDF to a small JPEG data URL, used as a cover fallback.
 // Results are cached in-memory per URL; only one render runs per URL at a time.

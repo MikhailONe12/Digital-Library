@@ -9,7 +9,9 @@ import {
 } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
-import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// Custom worker entry bundles a Math.sumPrecise polyfill ahead of the pdf.js
+// worker — see services/pdfWorker.ts.
+import workerSrc from '../services/pdfWorker?worker&url';
 import {
   trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating,
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,

@@ -58,4 +58,10 @@ export default defineConfig({
   optimizeDeps: {
     include: ['epubjs'],
   },
+  // The pdf.js worker is an ES module (it uses import/export and dynamic
+  // imports for its wasm/cmap assets), so our custom worker entry must be
+  // emitted as ESM, not the default IIFE.
+  worker: {
+    format: 'es',
+  },
 })

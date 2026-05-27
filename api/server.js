@@ -252,6 +252,36 @@ const baseUrl = () =>
 // Coerce a value to a trimmed string of at most n chars, or null.
 const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
 
+// ── Download token helpers ───────────────────────────────────────────────────
+
+// Stable TOKEN_SECRET in env is recommended for production (tokens survive
+// restarts). A random ephemeral secret still works fine since tokens are
+// short-lived (TOKEN_TTL) and the user re-clicks to get a fresh one.
+const TOKEN_SECRET = process.env.TOKEN_SECRET || randomBytes(32).toString('hex');
+const TOKEN_TTL = 5 * 60 * 1000; // 5 minutes
+
+const signDownloadToken = (itemId, filename) => {
+  const payload = Buffer.from(
+    JSON.stringify({ itemId, filename, exp: Date.now() + TOKEN_TTL }),
+  ).toString('base64url');
+  const sig = createHmac('sha256', TOKEN_SECRET).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+};
+
+const verifyDownloadToken = (token, itemId, filename) => {
+  if (!token || typeof token !== 'string') return false;
+  const dot = token.indexOf('.');
+  if (dot < 1) return false;
+  const payloadB64 = token.slice(0, dot);
+  const sigB64     = token.slice(dot + 1);
+  try {
+    const expected = createHmac('sha256', TOKEN_SECRET).update(payloadB64).digest('base64url');
+    if (expected !== sigB64) return false;
+    const data = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    return data.itemId === itemId && data.filename === filename && Date.now() <= data.exp;
+  } catch { return false; }
+};
+
 // ── Routes ───────────────────────────────────────────────────────────────────
 
 // Health check
@@ -605,29 +635,64 @@ app.get('/api/file/:itemId/:filename', validateItemId, async (req, res) => {
   }
 });
 
-// Download endpoint (used by the Download buttons). Serves the file via Nginx
-// X-Accel-Redirect with a Content-Disposition that gives a human-readable name
-// derived from the item's title/author/language.
-//
-// A plain <a download> navigation can't send the x-telegram-init-data header,
-// so this endpoint intentionally uses the SAME gate as the previous download
-// path (/content/ behind nginx auth_request): an IP blacklist check only. This
-// keeps download security identical to before — the change here is purely the
-// filename. (Whitelist enforcement still applies to in-app reading via /api/file.)
+// Issue a short-lived signed download token.
+// checkUserAccess: blocks blacklisted users + attaches req.telegramUser / req.cachedSettings.
+// Private items additionally require whitelist membership (same gate as /api/file).
+// Public items require only the blacklist check (already enforced by checkUserAccess).
+app.post('/api/download-token', checkUserAccess, async (req, res) => {
+  const { itemId, filename } = req.body || {};
+  if (!itemId || !filename ||
+      !/^[a-zA-Z0-9_-]+$/.test(itemId) ||
+      !/^[a-zA-Z0-9._-]+$/.test(filename)) {
+    return res.status(400).json({ error: 'Invalid parameters' });
+  }
+
+  try {
+    const itemRes = await pool.query('SELECT data FROM items WHERE id = $1', [itemId]);
+    const item = itemRes.rows[0]?.data;
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    // Private items: additionally enforce whitelist
+    if (item.isPrivate) {
+      const settings = req.cachedSettings;
+      if (!settings.globalAccess) {
+        const allowed = settings.allowedUsers || [];
+        const user = req.telegramUser;
+        const ok = user && (
+          allowed.includes(user.id) ||
+          (user.username && allowed.includes(user.username))
+        );
+        if (!ok) return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
+    // Verify the requested file actually exists on disk
+    const filePath = path.join(CONTENT_DIR, itemId, filename);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+
+    const token = signDownloadToken(itemId, filename);
+    res.json({ token, url: `/api/download/${itemId}/${filename}?t=${token}` });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Serve the file for download. Requires a valid presigned token (?t=...) issued
+// by POST /api/download-token — this is the only auth gate, so the token must
+// have already verified blacklist + whitelist membership at issue time.
 app.get('/api/download/:itemId/:filename', validateItemId, async (req, res) => {
   const { filename } = req.params;
   if (!/^[a-zA-Z0-9._-]+$/.test(filename))
     return res.status(400).json({ error: 'Invalid filename' });
 
+  if (!verifyDownloadToken(req.query.t, req.params.itemId, filename)) {
+    return res.status(403).json({ error: 'Invalid or expired download token' });
+  }
+
   try {
     const itemRes = await pool.query('SELECT data FROM items WHERE id = $1', [req.params.itemId]);
     const item = itemRes.rows[0]?.data;
     if (!item) return res.status(404).json({ error: 'Item not found' });
-
-    const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
-    const settings = await getSettingsCached();
-    const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
-    if (ip && bl.includes(ip)) return res.status(403).json({ error: 'Access denied' });
 
     const filesRes = await pool.query(
       'SELECT filename, file_type, language, uploaded_at FROM uploaded_files WHERE item_id = $1 ORDER BY uploaded_at ASC',
@@ -643,7 +708,7 @@ app.get('/api/download/:itemId/:filename', validateItemId, async (req, res) => {
       `attachment; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(niceName)}`,
     );
     res.setHeader('X-Accel-Redirect', `/internal-content/${req.params.itemId}/${filename}`);
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.status(200).end();
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -146,6 +146,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   const [avgRating, setAvgRating]        = useState(item.rating);
   const [isFav, setIsFav]                = useState(false);
 
+  // Download: keyed by f.url — tracks in-flight requests and transient errors
+  const [downloadPending, setDownloadPending] = useState<Record<string, boolean>>({});
+  const [downloadErr, setDownloadErr]         = useState<Record<string, string>>({});
+
   const epubViewerRef     = useRef<HTMLDivElement>(null);
   const renditionRef      = useRef<any>(null);
   const bookRef           = useRef<any>(null);
@@ -184,16 +188,47 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     return url;
   };
 
-  // Rewrites /content/:itemId/:file → /api/download/:itemId/:file. That endpoint
-  // serves the file with a human-readable Content-Disposition name (Title -
-  // Author (lang)) and access-checks private items.
-  const toDownloadUrl = (url: string): string => {
+  // Request a presigned download token from the server (blacklist + whitelist
+  // check happens there with Telegram auth), then trigger a browser download.
+  const handleDownload = async (f: FileFormat) => {
+    const key = f.url;
+
+    // For non-content URLs fall back to direct navigation
+    let itemId: string, filename: string;
     try {
-      const u = new URL(url, window.location.href);
-      const m = u.pathname.match(/^\/content\/([^/]+)\/(.+)$/);
-      if (m) return `/api/download/${m[1]}/${m[2]}`;
-    } catch { /* already relative or malformed */ }
-    return url;
+      const u = new URL(f.url, window.location.href);
+      const m = u.pathname.match(/^\/content\/([^/]+)\/([^/]+)$/);
+      if (!m) { window.open(f.url, '_blank'); return; }
+      [, itemId, filename] = m;
+    } catch { window.open(f.url, '_blank'); return; }
+
+    setDownloadPending(prev => ({ ...prev, [key]: true }));
+    setDownloadErr(prev => ({ ...prev, [key]: '' }));
+    try {
+      const resp = await fetch('/api/download-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...tgHeaders() },
+        body: JSON.stringify({ itemId, filename }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        throw new Error(body.error || 'Access denied');
+      }
+      const { url } = await resp.json();
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      trackActivity('download', item.id);
+    } catch (e: any) {
+      const msg = e?.message || 'Ошибка';
+      setDownloadErr(prev => ({ ...prev, [key]: msg }));
+      setTimeout(() => setDownloadErr(prev => ({ ...prev, [key]: '' })), 4000);
+    } finally {
+      setDownloadPending(prev => ({ ...prev, [key]: false }));
+    }
   };
 
   // (Re)applies EPUB highlights/underlines for the given display mode. Removes
@@ -1306,9 +1341,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                     </button>
                   ) : (
                     isFileDownloadAllowed && (
-                      <a href={toDownloadUrl(f.url)} download onClick={() => trackActivity('download', item.id)} className="block w-full bg-slate-900 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4">
-                        <Download size={16} strokeWidth={3} />Download
-                      </a>
+                      <button
+                        onClick={() => handleDownload(f)}
+                        disabled={downloadPending[f.url]}
+                        className="w-full bg-slate-900 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-slate-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4 disabled:opacity-60"
+                      >
+                        {downloadPending[f.url]
+                          ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                          : <Download size={16} strokeWidth={3} />
+                        }
+                        {downloadErr[f.url] || 'Download'}
+                      </button>
                     )
                   )}
                   <div className="flex items-center justify-between px-2 pb-1">
@@ -1324,9 +1367,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                       <span className="text-[9px] font-black text-slate-300 dark:text-slate-500 uppercase tracking-wider ml-1">{f.size}</span>
                     </div>
                     {isFileReadAllowed && isFileDownloadAllowed && (
-                      <a href={toDownloadUrl(f.url)} download onClick={() => trackActivity('download', item.id)} className="p-2 bg-white dark:bg-white/10 text-slate-300 dark:text-slate-400 hover:text-red-600 border border-slate-100 dark:border-white/10 rounded-xl transition-all shadow-sm">
-                        <Download size={18} strokeWidth={2.5} />
-                      </a>
+                      <button
+                        onClick={() => handleDownload(f)}
+                        disabled={downloadPending[f.url]}
+                        title={downloadErr[f.url] || undefined}
+                        className="p-2 bg-white dark:bg-white/10 text-slate-300 dark:text-slate-400 hover:text-red-600 border border-slate-100 dark:border-white/10 rounded-xl transition-all shadow-sm disabled:opacity-60"
+                      >
+                        {downloadPending[f.url]
+                          ? <span className="block w-[18px] h-[18px] border-2 border-slate-300/30 border-t-slate-500 rounded-full animate-spin" />
+                          : <Download size={18} strokeWidth={2.5} />
+                        }
+                      </button>
                     )}
                     {!isFileReadAllowed && !isFileDownloadAllowed && (
                       <div className="p-2 text-slate-300 dark:text-slate-600"><Lock size={16} strokeWidth={2.5} /></div>

@@ -603,6 +603,10 @@ app.post('/api/items/reset-stats', requireApiKey, async (req, res) => {
 // Delete one catalog item
 app.delete('/api/items/:itemId', requireApiKey, validateItemId, async (req, res) => {
   try {
+    // Remove uploaded files first (best-effort — don't fail if folder missing)
+    const itemDir = path.join(CONTENT_DIR, req.params.itemId);
+    try { fs.rmSync(itemDir, { recursive: true, force: true }); } catch { /* noop */ }
+    await pool.query('DELETE FROM uploaded_files WHERE item_id = $1', [req.params.itemId]);
     await pool.query('DELETE FROM items WHERE id = $1', [req.params.itemId]);
     res.json({ ok: true });
   } catch (e) {

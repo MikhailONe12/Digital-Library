@@ -50,6 +50,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   // Deploy control (talks to the host deploy-agent via the API mailbox endpoints)
   const [deployStatus, setDeployStatus] = useState<any>(null);
   const [deployBusy, setDeployBusy] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<MediaItem | null>(null);
 
   const fetchDeployStatus = async () => {
     const key = getServerApiKey();
@@ -1134,7 +1135,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </div>
                         <div className="flex gap-2">
                            <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Edit2 size={16}/></button>
-                           <button onClick={async () => { if(confirm(ta.confirmDeleteItem)) { const key = getServerApiKey(); try { await fetch(`/api/upload/${i.id}`, { method: 'DELETE', headers: key ? { 'x-api-key': key } : {} }); } catch {} try { await deleteItem(i.id); toast.success(ta.itemDeleted); } catch { /* error toasted */ } finally { onUpdate(); } } }} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button>
+                           <button onClick={() => setItemToDelete(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button>
                         </div>
                      </div>
                   ))}
@@ -1518,6 +1519,42 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100">
                <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">{ta.saveAsset}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete confirmation modal ──────────────────────────────────────── */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-sm bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-600/10 flex items-center justify-center mb-4">
+              <Trash2 size={22} className="text-red-600" />
+            </div>
+            <h3 className="text-base font-black text-slate-900 dark:text-white mb-1">{ta.confirmDeleteItem}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-2">{ta.confirmDeleteItemDesc}</p>
+            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-6">«{typeof itemToDelete.title === 'object' ? (itemToDelete.title[lang] || itemToDelete.title.en || itemToDelete.title.ru) : itemToDelete.title}»</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setItemToDelete(null)}
+                className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/15 transition-colors"
+              >
+                {ta.cancel}
+              </button>
+              <button
+                onClick={async () => {
+                  const id = itemToDelete.id;
+                  setItemToDelete(null);
+                  try {
+                    await deleteItem(id);
+                    toast.success(ta.itemDeleted);
+                  } catch { /* error already toasted by db layer */ }
+                  onUpdate();
+                }}
+                className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                {ta.deleteConfirm}
+              </button>
             </div>
           </div>
         </div>

@@ -61,3 +61,75 @@ After editing compose: `docker compose up -d library-api`.
 ```bash
 journalctl -u digital-library-deploy -f
 ```
+
+---
+
+## Database backups
+
+The same agent also handles Postgres backups. By default it runs `pg_dump`
+every 6 hours and writes the dump to `/mnt/library/app/backups` on the host
+(local-disk target — active out of the box). Two optional targets can be
+enabled later from the admin panel: SCP to a second VPS and upload to an
+S3-compatible bucket.
+
+### One-time setup
+
+```bash
+sudo mkdir -p /mnt/library/app/backups
+sudo chmod 750 /mnt/library/app/backups
+```
+
+That's it — backups start running automatically the next time the agent
+starts. No env vars need to change.
+
+### Enabling the optional targets
+
+Open Admin → Data → "Database backups" → ⚙ Configure backups.
+
+**Second VPS (SCP)**
+1. On the host, create or reuse an SSH key (`/root/.ssh/id_ed25519`).
+2. Copy the public key to the backup server: `ssh-copy-id backup@target.host`.
+3. In the admin panel: enable "Second VPS", fill host/user/path/key-path, save.
+
+**S3-compatible storage**
+1. Install awscli on the host: `apt install -y awscli`.
+2. Get an access key + secret from your provider (Yandex, Selectel, Backblaze, AWS).
+3. In the admin panel: enable "Object storage S3", fill endpoint/region/bucket/prefix
+   and the access/secret keys, save.
+
+### Retention
+
+The agent prunes old local dumps so the disk doesn't fill up:
+- 7 most recent daily backups
+- 4 most recent weekly backups
+- 12 most recent monthly backups
+
+Tunable in the admin panel.
+
+### Restoring
+
+In the admin panel, pick a backup from the list, click "Restore", and type
+`RESTORE` to confirm. The agent will:
+1. `docker cp` the dump into the postgres container
+2. Run `pg_restore --clean --if-exists --no-owner` against the DB
+3. Report success/failure in the status panel
+
+The restore is destructive — current data is replaced. Make a backup right
+before restoring if you want a rollback point.
+
+### Files in the control directory
+
+In addition to the deploy files above:
+- `backup-config.json` — written by the API when admin saves config. Read by
+  the agent. Contains secrets (S3 keys, SSH config) — `chmod 600`.
+- `backup-request-*.json` — admin pressed "Back up now". Consumed by agent.
+- `backup-restore-*.json` — `{ "filename": "..." }` from the admin panel.
+  Triggers `pg_restore`.
+- `backup-status.json` — written by the agent. Lists local backups + last run
+  result. Read by the API.
+
+### Tuning env vars (in the unit file)
+
+- `BACKUP_DIR` — where local dumps live (default `/mnt/library/app/backups`).
+- `DB_CONTAINER` — postgres container name (default `library-db`).
+- `DB_USER`, `DB_NAME` — credentials for `pg_dump` / `pg_restore`.

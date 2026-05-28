@@ -6,7 +6,8 @@ import {
   ShieldCheck, X, AtSign, Unlock, Lock,
   Percent, Database, Upload, Video,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4,
-  ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle
+  ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
+  HardDrive, Cloud, Server, Save, RotateCcw, Settings
 } from 'lucide-react';
 import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
@@ -89,6 +90,96 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     const id = setInterval(fetchDeployStatus, 4000);
     return () => clearInterval(id);
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Backups ────────────────────────────────────────────────────────────────
+  const [backupInfo, setBackupInfo] = useState<any>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [showBackupConfig, setShowBackupConfig] = useState(false);
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
+  const [restoreConfirm, setRestoreConfirm] = useState('');
+  // Local working copy of the config for the editor — pre-filled from server, sent on save
+  const [backupCfgDraft, setBackupCfgDraft] = useState<any>(null);
+
+  const fetchBackupStatus = async () => {
+    const key = getServerApiKey();
+    try {
+      const res = await fetch('/api/admin/backup/status', { headers: key ? { 'x-api-key': key } : {} });
+      if (res.ok) setBackupInfo(await res.json());
+    } catch { /* offline */ }
+  };
+
+  const triggerBackup = async () => {
+    const key = getServerApiKey();
+    setBackupBusy(true);
+    try {
+      const res = await fetch('/api/admin/backup/run', { method: 'POST', headers: key ? { 'x-api-key': key } : {} });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Backup failed to start'); }
+    } catch { alert('Agent unavailable'); }
+    finally { setBackupBusy(false); setTimeout(fetchBackupStatus, 1500); }
+  };
+
+  const triggerRestore = async (filename: string) => {
+    const key = getServerApiKey();
+    setBackupBusy(true);
+    try {
+      const res = await fetch('/api/admin/backup/restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(key ? { 'x-api-key': key } : {}) },
+        body: JSON.stringify({ filename }),
+      });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Restore failed to start'); }
+    } catch { alert('Agent unavailable'); }
+    finally {
+      setBackupBusy(false);
+      setRestoreTarget(null);
+      setRestoreConfirm('');
+      setTimeout(fetchBackupStatus, 1500);
+    }
+  };
+
+  const saveBackupConfig = async () => {
+    if (!backupCfgDraft) return;
+    const key = getServerApiKey();
+    setBackupBusy(true);
+    try {
+      const res = await fetch('/api/admin/backup/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(key ? { 'x-api-key': key } : {}) },
+        body: JSON.stringify(backupCfgDraft),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBackupCfgDraft(data.config);
+        setShowBackupConfig(false);
+      } else {
+        const e = await res.json().catch(() => ({}));
+        alert(e.error || 'Save failed');
+      }
+    } catch { alert('Agent unavailable'); }
+    finally { setBackupBusy(false); setTimeout(fetchBackupStatus, 800); }
+  };
+
+  // Refresh backup status alongside deploy status while Data tab is open
+  useEffect(() => {
+    if (activeTab !== 'data') return;
+    fetchBackupStatus();
+    const id = setInterval(fetchBackupStatus, 6000);
+    return () => clearInterval(id);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When backup config arrives from server, seed the editor draft (only once)
+  useEffect(() => {
+    if (backupInfo?.config && !backupCfgDraft) setBackupCfgDraft(backupInfo.config);
+  }, [backupInfo, backupCfgDraft]);
+
+  // Pretty-print bytes for the backups list
+  const formatBytes = (n: number): string => {
+    if (!n) return '—';
+    if (n >= 1024 * 1024 * 1024) return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+    if (n >= 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    if (n >= 1024) return (n / 1024).toFixed(0) + ' KB';
+    return n + ' B';
+  };
   const [loginLoading, setLoginLoading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -1032,6 +1123,128 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               })()}
             </div>
 
+            {/* ── Database backups ────────────────────────────────────────── */}
+            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+              <div className="flex items-center gap-4 mb-6">
+                <div className="p-3 bg-red-50 text-red-600 rounded-2xl"><HardDrive size={24} /></div>
+                <div className="flex-1">
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{ta.backupTitle}</h3>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{ta.backupSubtitle}</p>
+                </div>
+                <button
+                  onClick={() => setShowBackupConfig(true)}
+                  className="p-2.5 bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+                  title={ta.backupConfigure}
+                >
+                  <Settings size={16} />
+                </button>
+              </div>
+
+              {(() => {
+                const bi = backupInfo;
+                const offline = !bi || bi.agent === 'offline';
+                const st = bi?.status;
+                const cfg = bi?.config || backupCfgDraft;
+                const last = st?.lastRun;
+                const targetSummary = cfg?.targets ? Object.entries(cfg.targets)
+                  .filter(([, v]: any) => v?.enabled).map(([k]) => k) : [];
+                return (
+                  <div className="space-y-5">
+                    {/* Status row */}
+                    <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
+                      {offline ? (
+                        <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
+                          <AlertCircle size={14} className="text-amber-500" /> {ta.backupAgentOffline}
+                        </p>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupActiveTargets}</span>
+                            <span className="text-[10px] font-black text-slate-600">
+                              {targetSummary.length > 0 ? targetSummary.join(' · ') : ta.backupNoTargets}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupSchedule}</span>
+                            <span className="text-[10px] font-black text-slate-600">
+                              {cfg?.schedule?.enabled
+                                ? `${ta.backupEvery} ${cfg.schedule.intervalHours}${ta.backupHours}`
+                                : ta.backupScheduleOff}
+                            </span>
+                          </div>
+                          {last && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupLastRun}</span>
+                              <span className="flex items-center gap-1.5 text-[10px] font-bold">
+                                {last.success
+                                  ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={11} /> {ta.deployOk}</span>
+                                  : <span className="text-red-600 flex items-center gap-1"><AlertCircle size={11} /> {ta.deployErr}</span>
+                                }
+                                <span className="text-slate-400">{new Date(last.finishedAt || last.startedAt).toLocaleString()}</span>
+                              </span>
+                            </div>
+                          )}
+                          {last?.error && (
+                            <p className="text-[10px] font-mono text-red-500 bg-red-50 p-2 rounded-lg break-words">{last.error}</p>
+                          )}
+                          {st?.lastRestore && (
+                            <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupLastRestore}</span>
+                              <span className="text-[10px] font-bold">
+                                {st.lastRestore.success === false
+                                  ? <span className="text-red-600">{ta.deployErr}</span>
+                                  : st.lastRestore.success
+                                  ? <span className="text-green-600">{ta.deployOk}</span>
+                                  : <span className="text-blue-600">…</span>
+                                }
+                                <span className="text-slate-400 ml-2">{st.lastRestore.filename}</span>
+                              </span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* Run-now button */}
+                    <button
+                      onClick={triggerBackup}
+                      disabled={offline || backupBusy}
+                      className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700 disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <Save size={16} /> {ta.backupRunNow}
+                    </button>
+
+                    {/* Backups list */}
+                    {!offline && (
+                      <div>
+                        <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.backupAvailable}</p>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {(st?.backups || []).length === 0 && (
+                            <p className="text-center text-[10px] text-slate-300 font-bold uppercase tracking-widest py-4">{ta.backupNoBackups}</p>
+                          )}
+                          {(st?.backups || []).map((b: any) => (
+                            <div key={b.filename} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{b.filename}</p>
+                                <p className="text-[9px] text-slate-400">{new Date(b.createdAt).toLocaleString()} · {formatBytes(b.sizeBytes)}</p>
+                              </div>
+                              <button
+                                onClick={() => { setRestoreTarget(b.filename); setRestoreConfirm(''); }}
+                                disabled={backupBusy}
+                                className="ml-3 px-3 py-2 bg-white border border-slate-200 text-slate-500 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 text-[9px] font-black uppercase tracking-widest rounded-xl transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                              >
+                                <RotateCcw size={11} /> {ta.backupRestore}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
             <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
               <div className="flex items-center gap-4 mb-6">
                   <div className="p-3 bg-red-50 text-red-600 rounded-2xl">
@@ -1630,6 +1843,216 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             </div>
             <div className="p-4 bg-slate-50 border-t border-slate-100">
                <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">{ta.saveAsset}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Restore confirmation modal ─────────────────────────────────────── */}
+      {restoreTarget && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-4">
+              <RotateCcw size={22} className="text-amber-600" />
+            </div>
+            <h3 className="text-base font-black text-slate-900 mb-1">{ta.backupRestoreConfirm}</h3>
+            <p className="text-xs text-slate-500 leading-relaxed mb-2">{ta.backupRestoreDesc}</p>
+            <p className="text-xs font-mono font-bold text-slate-700 truncate mb-4 bg-slate-50 p-2 rounded-lg">{restoreTarget}</p>
+            <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2 block">{ta.backupRestoreConfirmType}</label>
+            <input
+              autoFocus
+              value={restoreConfirm}
+              onChange={e => setRestoreConfirm(e.target.value)}
+              placeholder="RESTORE"
+              className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold focus:border-amber-500 outline-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setRestoreTarget(null); setRestoreConfirm(''); }}
+                className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                {ta.cancel}
+              </button>
+              <button
+                onClick={() => triggerRestore(restoreTarget)}
+                disabled={restoreConfirm.trim().toUpperCase() !== 'RESTORE' || backupBusy}
+                className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition-colors"
+              >
+                {ta.backupRestore}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Backup config modal ────────────────────────────────────────────── */}
+      {showBackupConfig && backupCfgDraft && (
+        <div className="fixed inset-0 z-[600] bg-slate-900/40 backdrop-blur-xl flex items-end md:items-center justify-center p-0 md:p-5">
+          <div className="bg-white w-full md:max-w-2xl rounded-t-[2rem] md:rounded-[3rem] border border-white shadow-2xl overflow-hidden h-[90vh] md:max-h-[85vh] flex flex-col">
+            <div className="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10 shrink-0">
+              <h3 className="text-base font-black uppercase tracking-tighter">{ta.backupConfigure}</h3>
+              <button onClick={() => setShowBackupConfig(false)} className="p-2 bg-slate-50 rounded-full hover:bg-red-50 hover:text-red-600"><X size={20} /></button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-6 flex-1">
+              {/* Schedule */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.backupSchedule}</p>
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <span className="text-xs font-bold text-slate-700">{ta.backupAutomaticBackups}</span>
+                    <div className="relative">
+                      <input type="checkbox" className="sr-only peer"
+                        checked={!!backupCfgDraft.schedule?.enabled}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), enabled: e.target.checked}})} />
+                      <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
+                    </div>
+                  </label>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupIntervalHours}</label>
+                    <input type="number" min="1" max="168" className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                      value={backupCfgDraft.schedule?.intervalHours ?? 6}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), intervalHours: parseInt(e.target.value) || 6}})} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Target #1 — Local (active by default) */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2">
+                    <HardDrive size={11} /> {ta.backupTargetLocal} <span className="text-green-600">●</span>
+                  </p>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer"
+                      checked={!!backupCfgDraft.targets?.local?.enabled}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, local: {...(backupCfgDraft.targets?.local || {}), enabled: e.target.checked}}})} />
+                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed">{ta.backupLocalDesc}</p>
+              </div>
+
+              {/* Target #2 — Remote VPS (disabled by default) */}
+              <div className="opacity-90">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2">
+                    <Server size={11} /> {ta.backupTargetRemote} <span className="text-slate-300">●</span>
+                  </p>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer"
+                      checked={!!backupCfgDraft.targets?.remote?.enabled}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), enabled: e.target.checked}}})} />
+                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">{ta.backupRemoteDesc}</p>
+                <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteHost}</label>
+                      <input type="text" placeholder="backup.example.com" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.remote?.host || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), host: e.target.value}}})} />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteUser}</label>
+                      <input type="text" placeholder="backup" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.remote?.user || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), user: e.target.value}}})} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemotePath}</label>
+                    <input type="text" placeholder="/var/backups/library" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                      value={backupCfgDraft.targets?.remote?.path || ''}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), path: e.target.value}}})} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="col-span-2">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteKeyPath}</label>
+                      <input type="text" placeholder="/root/.ssh/id_ed25519" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.remote?.sshKeyPath || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), sshKeyPath: e.target.value}}})} />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemotePort}</label>
+                      <input type="number" placeholder="22" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.remote?.port ?? 22}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), port: parseInt(e.target.value) || 22}}})} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Target #3 — S3 (disabled by default) */}
+              <div className="opacity-90">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2">
+                    <Cloud size={11} /> {ta.backupTargetS3} <span className="text-slate-300">●</span>
+                  </p>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer"
+                      checked={!!backupCfgDraft.targets?.s3?.enabled}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), enabled: e.target.checked}}})} />
+                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
+                  </label>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">{ta.backupS3Desc}</p>
+                <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Endpoint}</label>
+                      <input type="text" placeholder="https://storage.yandexcloud.net" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.s3?.endpoint || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), endpoint: e.target.value}}})} />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Region}</label>
+                      <input type="text" placeholder="ru-central1" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.s3?.region || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), region: e.target.value}}})} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Bucket}</label>
+                      <input type="text" placeholder="library-backups" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.s3?.bucket || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), bucket: e.target.value}}})} />
+                    </div>
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Prefix}</label>
+                      <input type="text" placeholder="prod/" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                        value={backupCfgDraft.targets?.s3?.prefix || ''}
+                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), prefix: e.target.value}}})} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3AccessKey}</label>
+                    <input type="text" placeholder={backupCfgDraft.targets?.s3?.accessKey === '***' ? ta.backupS3SecretSet : 'AKIA...'} className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none"
+                      value={backupCfgDraft.targets?.s3?.accessKey === '***' ? '' : (backupCfgDraft.targets?.s3?.accessKey || '')}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), accessKey: e.target.value}}})} />
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3SecretKey}</label>
+                    <input type="password" placeholder={backupCfgDraft.targets?.s3?.secretKey === '***' ? ta.backupS3SecretSet : '••••••••'} className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none"
+                      value={backupCfgDraft.targets?.s3?.secretKey === '***' ? '' : (backupCfgDraft.targets?.s3?.secretKey || '')}
+                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), secretKey: e.target.value}}})} />
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-[9px] text-slate-400 italic leading-relaxed">{ta.backupSecretsNotice}</p>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+              <button onClick={() => setShowBackupConfig(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-colors">
+                {ta.cancel}
+              </button>
+              <button onClick={saveBackupConfig} disabled={backupBusy} className="flex-1 py-3 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-red-700 disabled:opacity-40 transition-colors">
+                {ta.save}
+              </button>
             </div>
           </div>
         </div>

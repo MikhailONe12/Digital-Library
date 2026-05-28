@@ -355,6 +355,116 @@ app.post('/api/admin/deploy/mode', requireApiKey, (req, res) => {
   }
 });
 
+// ── Backup control ───────────────────────────────────────────────────────────
+// Same mailbox pattern as deploy: the API only reads/writes files in the shared
+// control directory. The host agent runs pg_dump / pg_restore / scp / aws s3.
+
+const BACKUP_CONFIG_FILE = path.join(DEPLOY_CONTROL_DIR, 'backup-config.json');
+const BACKUP_STATUS_FILE = path.join(DEPLOY_CONTROL_DIR, 'backup-status.json');
+
+// Strip credential-shaped fields before returning config to the admin UI.
+// Replaced with "***" if set, empty string if not set — that way the UI can
+// show "configured" vs "blank" without ever revealing the actual secret.
+const maskBackupConfig = (cfg) => {
+  if (!cfg) return cfg;
+  const c = JSON.parse(JSON.stringify(cfg));
+  const mask = (v) => (v ? '***' : '');
+  if (c.targets?.remote) {
+    c.targets.remote.sshKeyPath = c.targets.remote.sshKeyPath || '';
+    // sshKeyPath is a path, not a secret, so we leave it visible
+  }
+  if (c.targets?.s3) {
+    c.targets.s3.accessKey = mask(c.targets.s3.accessKey);
+    c.targets.s3.secretKey = mask(c.targets.s3.secretKey);
+  }
+  return c;
+};
+
+// Merge an incoming partial config over the existing one, preserving any
+// "***" placeholders (admin didn't change that secret in this submission).
+const mergeBackupConfig = (existing, incoming) => {
+  const out = JSON.parse(JSON.stringify(existing || {}));
+  if (!incoming || typeof incoming !== 'object') return out;
+  if (incoming.schedule) out.schedule = { ...(out.schedule || {}), ...incoming.schedule };
+  if (incoming.retention) out.retention = { ...(out.retention || {}), ...incoming.retention };
+  if (incoming.targets) {
+    out.targets = out.targets || {};
+    for (const k of ['local', 'remote', 's3']) {
+      if (!incoming.targets[k]) continue;
+      const merged = { ...(out.targets[k] || {}), ...incoming.targets[k] };
+      // Preserve real secrets the UI sent back as "***"
+      if (k === 's3') {
+        if (incoming.targets.s3.accessKey === '***') merged.accessKey = out.targets.s3?.accessKey || '';
+        if (incoming.targets.s3.secretKey === '***') merged.secretKey = out.targets.s3?.secretKey || '';
+      }
+      out.targets[k] = merged;
+    }
+  }
+  return out;
+};
+
+const readBackupConfigSafe = () => {
+  try { return JSON.parse(fs.readFileSync(BACKUP_CONFIG_FILE, 'utf8')); } catch { return null; }
+};
+
+// GET backup status + masked config
+app.get('/api/admin/backup/status', requireApiKey, (req, res) => {
+  let status = null, cfg = null;
+  try { status = JSON.parse(fs.readFileSync(BACKUP_STATUS_FILE, 'utf8')); } catch { /* not yet */ }
+  cfg = readBackupConfigSafe();
+  res.json({
+    agent: status ? 'online' : 'offline',
+    status,
+    config: maskBackupConfig(cfg),
+  });
+});
+
+// Trigger an immediate backup
+app.post('/api/admin/backup/run', requireApiKey, (req, res) => {
+  try {
+    fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
+    const file = path.join(DEPLOY_CONTROL_DIR, `backup-request-${Date.now()}.json`);
+    fs.writeFileSync(file, JSON.stringify({ requestedAt: new Date().toISOString() }));
+    res.json({ queued: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not queue backup: ' + (e?.message || String(e)) });
+  }
+});
+
+// Trigger a restore from a previous local backup. Destructive — the admin UI
+// requires typing a confirmation phrase before calling this.
+app.post('/api/admin/backup/restore', requireApiKey, (req, res) => {
+  const filename = req.body?.filename;
+  if (typeof filename !== 'string' || !/^[a-zA-Z0-9._-]+\.dump$/.test(filename)) {
+    return res.status(400).json({ error: 'Invalid filename' });
+  }
+  try {
+    fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
+    const file = path.join(DEPLOY_CONTROL_DIR, `backup-restore-${Date.now()}.json`);
+    fs.writeFileSync(file, JSON.stringify({ filename, requestedAt: new Date().toISOString() }));
+    res.json({ queued: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not queue restore: ' + (e?.message || String(e)) });
+  }
+});
+
+// Update backup config (schedule + targets). Secrets sent as "***" are kept.
+app.put('/api/admin/backup/config', requireApiKey, (req, res) => {
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Invalid config' });
+  }
+  try {
+    fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
+    const existing = readBackupConfigSafe() || {};
+    const next = mergeBackupConfig(existing, req.body);
+    fs.writeFileSync(BACKUP_CONFIG_FILE, JSON.stringify(next, null, 2));
+    try { fs.chmodSync(BACKUP_CONFIG_FILE, 0o600); } catch { /* host fs */ }
+    res.json({ config: maskBackupConfig(next) });
+  } catch (e) {
+    res.status(500).json({ error: 'Could not save config: ' + (e?.message || String(e)) });
+  }
+});
+
 // Upload cover image
 // POST /api/upload/:itemId/cover  (field: file)
 app.post('/api/upload/:itemId/cover',

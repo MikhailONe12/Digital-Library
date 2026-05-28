@@ -701,14 +701,30 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
         const base     = page.getViewport({ scale: 1 });
         const fitScale = Math.min(perPageWidth / base.width, containerHeight / base.height);
         const viewport = page.getViewport({ scale: fitScale * pdfScale });
+
+        // Render at physical pixels (devicePixelRatio) so text stays crisp on
+        // Retina / high-DPI phones — pdf.js produces vector text, but if the
+        // canvas buffer is at CSS-pixel resolution the browser ends up scaling
+        // a bitmap up to 2×/3× and the text turns fuzzy. Cap DPR at 3 — beyond
+        // that the gain is invisible while memory cost grows quadratically.
+        const dpr      = Math.min(window.devicePixelRatio || 1, 3);
+        const cssW     = Math.floor(viewport.width);
+        const cssH     = Math.floor(viewport.height);
         const canvas   = document.createElement('canvas');
-        canvas.width   = Math.floor(viewport.width);
-        canvas.height  = Math.floor(viewport.height);
+        canvas.width   = Math.floor(cssW * dpr);
+        canvas.height  = Math.floor(cssH * dpr);
+        canvas.style.width  = cssW + 'px';
+        canvas.style.height = cssH + 'px';
         canvas.className = 'block';
         canvas.style.filter = PDF_FILTER[readerTheme];
+
         let task: any;
         try {
-          task = page.render({ canvas, viewport });
+          // `transform` scales pdf.js's internal coordinate system to fill the
+          // larger canvas buffer; the viewport stays at CSS px so layout match-
+          // ing (text-layer, annotations) keeps working.
+          const transform = dpr !== 1 ? [dpr, 0, 0, dpr, 0, 0] : null;
+          task = page.render({ canvas, viewport, transform });
         } catch (e: any) {
           if (!disposed) setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
           return null;

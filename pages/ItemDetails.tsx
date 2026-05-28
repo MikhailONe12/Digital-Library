@@ -1,11 +1,11 @@
 
-import React, { useEffect, useRef, useState } from 'react';
-import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor } from '../types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor, ArticleLink } from '../types';
 import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
-  Search,
+  Search, Newspaper, ExternalLink, Layers, Tag as TagIcon, Layers3,
 } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
@@ -17,6 +17,7 @@ import {
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,
   getReadingProgress, saveReadingProgress,
   getAnnotations, addAnnotation, deleteAnnotation,
+  getDb,
 } from '../services/db';
 import { pickText, handleCoverError, getVideoPoster } from '../utils';
 import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
@@ -84,11 +85,25 @@ interface ItemDetailsProps {
   item: MediaItem;
   onBack: () => void;
   onRefresh: () => void;
+  /** Used by the series strip to jump to a sibling without going back home. */
+  onOpenItem?: (item: MediaItem) => void;
   lang: Locale;
   t: any;
 }
 
-const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang, t }) => {
+interface ParsedArticle {
+  url: string;
+  title: string;
+  byline?: string;
+  excerpt?: string;
+  siteName?: string;
+  lang?: string;
+  content: string;
+}
+
+const PDF_SPREAD_KEY = 'reader_pdf_spread';
+
+const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
 
@@ -149,6 +164,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // Download: keyed by f.url — tracks in-flight requests and transient errors
   const [downloadPending, setDownloadPending] = useState<Record<string, boolean>>({});
   const [downloadErr, setDownloadErr]         = useState<Record<string, string>>({});
+
+  // PDF: two-page spread (landscape only). Persisted across sessions.
+  const [pdfSpread, setPdfSpread] = useState<boolean>(() => {
+    try { return localStorage.getItem(PDF_SPREAD_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PDF_SPREAD_KEY, pdfSpread ? '1' : '0'); } catch { /* quota */ }
+  }, [pdfSpread]);
+
+  // Article reader (in-app via /api/article-extract)
+  const [activeArticle, setActiveArticle]   = useState<ArticleLink | null>(null);
+  const [articleData, setArticleData]       = useState<ParsedArticle | null>(null);
+  const [articleLoading, setArticleLoading] = useState(false);
+  const [articleError, setArticleError]     = useState<string | null>(null);
 
   const epubViewerRef     = useRef<HTMLDivElement>(null);
   const renditionRef      = useRef<any>(null);
@@ -619,6 +648,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // swapped into the DOM only once fully rendered. No canvas is ever reused,
   // so there is no stale-pixel or pdf.js canvas-in-use conflict to leave a
   // page blank; the previous page stays visible until the new one is ready.
+  // Spread mode renders pdfPage AND pdfPage+1 side-by-side when the container
+  // is wide enough — only activates in landscape on a sufficiently large screen.
   useEffect(() => {
     if (!activeReaderUrl || pdfTotalPages === 0) return;
     const doc       = pdfDocRef.current;
@@ -633,55 +664,77 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         pdfRenderTaskRef.current = null;
       }
 
-      let page: any;
-      try { page = await doc.getPage(pdfPage); }
-      catch (e: any) {
-        if (!disposed) setPdfError('Ошибка загрузки страницы: ' + (e?.message || String(e)));
-        return;
-      }
-      if (disposed) return;
-
       const parent          = container.parentElement;
       const containerWidth  = parent?.clientWidth  || window.innerWidth  || 800;
       const containerHeight = parent?.clientHeight || window.innerHeight || 600;
-      const base            = page.getViewport({ scale: 1 });
-      // 100% (pdfScale=1) fits the whole page inside the viewport (fit-to-page);
-      // on wide desktop screens this avoids an oversized fit-to-width render.
-      const fitScale        = Math.min(containerWidth / base.width, containerHeight / base.height);
-      const viewport        = page.getViewport({ scale: fitScale * pdfScale });
+      // Spread is only worth it on a landscape, reasonably wide viewport.
+      const spreadActive = pdfSpread && containerWidth > containerHeight && containerWidth >= 900 && pdfTotalPages > 1;
+      const pagesToRender = spreadActive && pdfPage < pdfTotalPages ? [pdfPage, pdfPage + 1] : [pdfPage];
+      // Reserve a slim gap between facing pages in spread mode.
+      const gapPx = spreadActive ? 8 : 0;
 
-      const canvas  = document.createElement('canvas');
-      canvas.width  = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      canvas.className = 'block';
-      // Apply filter directly to canvas — parent-div filters are not composited
-      // correctly with GPU-accelerated canvas on desktop Chromium/Safari.
-      canvas.style.filter = PDF_FILTER[readerTheme];
-
-      let task: any;
-      try {
-        task = page.render({ canvas, viewport });
-      } catch (e: any) {
-        if (!disposed) setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
-        return;
-      }
-      pdfRenderTaskRef.current = task;
-      try {
-        await task.promise;
-        if (disposed) return;
-        container.replaceChildren(canvas);
-        setPdfError(null);
-      } catch (e: any) {
-        if (e?.name !== 'RenderingCancelledException' && !disposed) {
-          setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
+      const renderOne = async (n: number, perPageWidth: number): Promise<HTMLCanvasElement | null> => {
+        let page: any;
+        try { page = await doc.getPage(n); }
+        catch (e: any) {
+          if (!disposed) setPdfError('Ошибка загрузки страницы: ' + (e?.message || String(e)));
+          return null;
         }
-      } finally {
-        if (pdfRenderTaskRef.current === task) pdfRenderTaskRef.current = null;
+        if (disposed) return null;
+        const base     = page.getViewport({ scale: 1 });
+        const fitScale = Math.min(perPageWidth / base.width, containerHeight / base.height);
+        const viewport = page.getViewport({ scale: fitScale * pdfScale });
+        const canvas   = document.createElement('canvas');
+        canvas.width   = Math.floor(viewport.width);
+        canvas.height  = Math.floor(viewport.height);
+        canvas.className = 'block';
+        canvas.style.filter = PDF_FILTER[readerTheme];
+        let task: any;
+        try {
+          task = page.render({ canvas, viewport });
+        } catch (e: any) {
+          if (!disposed) setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
+          return null;
+        }
+        pdfRenderTaskRef.current = task;
+        try {
+          await task.promise;
+          if (disposed) return null;
+          return canvas;
+        } catch (e: any) {
+          if (e?.name !== 'RenderingCancelledException' && !disposed) {
+            setPdfError('Ошибка рендера: ' + (e?.message || String(e)));
+          }
+          return null;
+        } finally {
+          if (pdfRenderTaskRef.current === task) pdfRenderTaskRef.current = null;
+        }
+      };
+
+      const perPageWidth = Math.floor((containerWidth - gapPx) / pagesToRender.length);
+      const canvases: HTMLCanvasElement[] = [];
+      for (const n of pagesToRender) {
+        const c = await renderOne(n, perPageWidth);
+        if (!c) return;
+        canvases.push(c);
       }
+      if (disposed) return;
+
+      if (canvases.length === 1) {
+        container.replaceChildren(canvases[0]);
+      } else {
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.gap = gapPx + 'px';
+        wrapper.style.alignItems = 'flex-start';
+        canvases.forEach(c => wrapper.appendChild(c));
+        container.replaceChildren(wrapper);
+      }
+      setPdfError(null);
     })();
 
     return () => { disposed = true; };
-  }, [pdfPage, pdfTotalPages, pdfScale, activeReaderUrl, chromeVisible]);
+  }, [pdfPage, pdfTotalPages, pdfScale, activeReaderUrl, chromeVisible, pdfSpread]);
 
   // Save PDF progress when page changes (after doc is ready)
   useEffect(() => {
@@ -692,17 +745,21 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
   // Keep ref in sync for keyboard handler closure
   useEffect(() => { pdfTotalPagesRef.current = pdfTotalPages; }, [pdfTotalPages]);
 
+  // Step size for paging — 2 in spread mode, 1 otherwise.
+  const pdfStep = () => (pdfSpread && window.innerWidth >= 900 && window.innerWidth > window.innerHeight ? 2 : 1);
+
   // Keyboard navigation (desktop ← / →)
   useEffect(() => {
     if (!activeReaderUrl) return;
     const onKey = (e: KeyboardEvent) => {
       if (annotationOpenRef.current) return; // typing a note — let arrows move the cursor
-      if (e.key === 'ArrowLeft')  setPdfPage(p => Math.max(1, p - 1));
-      if (e.key === 'ArrowRight') setPdfPage(p => Math.min(pdfTotalPagesRef.current, p + 1));
+      const step = pdfStep();
+      if (e.key === 'ArrowLeft')  setPdfPage(p => Math.max(1, p - step));
+      if (e.key === 'ArrowRight') setPdfPage(p => Math.min(pdfTotalPagesRef.current, p + step));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeReaderUrl]);
+  }, [activeReaderUrl, pdfSpread]);
 
   // Live-update canvas filter when PDF theme changes without re-rendering the page
   useEffect(() => {
@@ -882,8 +939,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      if (dx < 0) setPdfPage(p => Math.min(pdfTotalPages, p + 1));
-      else         setPdfPage(p => Math.max(1, p - 1));
+      const step = pdfStep();
+      if (dx < 0) setPdfPage(p => Math.min(pdfTotalPages, p + step));
+      else         setPdfPage(p => Math.max(1, p - step));
     }
   };
 
@@ -907,6 +965,53 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
     if (/\.(mp4|webm|ogg|mov)$/i.test(url)) return <video src={url} controls className="w-full h-full bg-slate-100" poster={item.coverUrl} />;
     return null;
   };
+
+  // Series siblings: items sharing item.series, ordered by seriesOrder. We use
+  // the catalog snapshot at render time — this widget is a navigation aid, so
+  // a stale list (until next refresh) is acceptable.
+  const seriesSiblings = useMemo<MediaItem[]>(() => {
+    if (!item.series) return [];
+    const all = getDb().items || [];
+    return all
+      .filter(i => i.series === item.series)
+      .sort((a, b) => (a.seriesOrder ?? 999) - (b.seriesOrder ?? 999));
+  }, [item.id, item.series]);
+
+  const currentSeriesIdx = seriesSiblings.findIndex(i => i.id === item.id);
+  const prevInSeries = currentSeriesIdx > 0 ? seriesSiblings[currentSeriesIdx - 1] : null;
+  const nextInSeries = currentSeriesIdx >= 0 && currentSeriesIdx < seriesSiblings.length - 1
+    ? seriesSiblings[currentSeriesIdx + 1] : null;
+
+  // Article extraction — fetch when activeArticle becomes non-null.
+  useEffect(() => {
+    if (!activeArticle) {
+      setArticleData(null);
+      setArticleError(null);
+      return;
+    }
+    let cancelled = false;
+    setArticleLoading(true);
+    setArticleError(null);
+    setArticleData(null);
+    fetch(`/api/article-extract?url=${encodeURIComponent(activeArticle.url)}`)
+      .then(async r => {
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${r.status}`);
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (cancelled) return;
+        setArticleData({
+          ...data,
+          title: activeArticle.title || data.title || activeArticle.url,
+        });
+      })
+      .catch(e => { if (!cancelled) setArticleError(e?.message || 'Не удалось загрузить статью'); })
+      .finally(() => { if (!cancelled) setArticleLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeArticle]);
 
   // Prefer the new multi-video list; fall back to the legacy single videoUrl.
   const videoList: VideoLink[] = (item.videos && item.videos.length > 0)
@@ -1310,6 +1415,87 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
           </div>
         )}
 
+        {/* Tags */}
+        {item.tags && item.tags.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><TagIcon size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.tags}</h2>
+            <div className="flex flex-wrap gap-2">
+              {item.tags.map(tag => (
+                <span key={tag} className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300">#{tag}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Series strip */}
+        {item.series && seriesSiblings.length > 1 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Layers size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.series}: {item.series}</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {seriesSiblings.map(sib => {
+                const isCurrent = sib.id === item.id;
+                return (
+                  <button
+                    key={sib.id}
+                    onClick={() => { if (!isCurrent && onOpenItem) onOpenItem(sib); }}
+                    disabled={isCurrent}
+                    className={`flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border transition-all ${isCurrent ? 'border-red-500 ring-2 ring-red-500/30 cursor-default' : 'border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95'}`}
+                  >
+                    <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative">
+                      {sib.coverUrl && <img src={sib.coverUrl} className="w-full h-full object-cover" alt="" />}
+                      {sib.seriesOrder != null && (
+                        <span className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-black px-1.5 py-0.5 rounded">#{sib.seriesOrder}</span>
+                      )}
+                    </div>
+                    <div className="p-2 bg-white dark:bg-[#1c1c1e]">
+                      <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {(prevInSeries || nextInSeries) && onOpenItem && (
+              <div className="flex gap-2 mt-3">
+                {prevInSeries && (
+                  <button onClick={() => onOpenItem(prevInSeries)} className="flex-1 py-2.5 px-4 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:border-red-400 active:scale-95 transition-all flex items-center justify-center gap-2 truncate">
+                    <ChevronLeft size={14} /> {t.prevInSeries}
+                  </button>
+                )}
+                {nextInSeries && (
+                  <button onClick={() => onOpenItem(nextInSeries)} className="flex-1 py-2.5 px-4 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-2 truncate">
+                    {t.nextInSeries} <ChevronRight size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Articles */}
+        {item.articles && item.articles.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Newspaper size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.articles}</h2>
+            <div className="space-y-2">
+              {item.articles.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => setActiveArticle(a)}
+                  className="w-full text-left p-4 bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/10 rounded-[1.5rem] hover:border-red-300 transition-all active:scale-[0.99] flex items-center gap-3"
+                >
+                  <div className="p-2.5 bg-red-50 dark:bg-red-500/15 rounded-xl shrink-0">
+                    <Newspaper size={16} className="text-red-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-slate-900 dark:text-white truncate">{a.title || a.url}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">{a.source || new URL(a.url).hostname} · {a.language?.toUpperCase() || ''}</p>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {playableVideos.length > 0 && (
           <div className="mt-10">
             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.preview}</h2>
@@ -1468,6 +1654,76 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
         </div>
       )}
 
+      {/* ── Article Reader ─────────────────────────────────────────────────── */}
+      {activeArticle && (
+        <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
+          <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0`}
+            style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-2 bg-red-600 rounded-lg text-white shrink-0"><Newspaper size={16} /></div>
+              <div className="min-w-0">
+                <p className={`text-[10px] font-black uppercase ${READER_CHROME[readerTheme].sub} tracking-widest leading-none mb-1`}>{activeArticle.source || 'Article'}</p>
+                <p className={`text-xs font-black ${READER_CHROME[readerTheme].text} truncate max-w-[180px]`}>{articleData?.title || activeArticle.title || activeArticle.url}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title="Тема">
+                <ThemeIcon size={16} />
+              </button>
+              <a href={activeArticle.url} target="_blank" rel="noopener noreferrer" className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`} title={t.openOriginal}>
+                <ExternalLink size={16} />
+              </a>
+              <button onClick={() => setActiveArticle(null)} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all`}><X size={20} /></button>
+            </div>
+          </header>
+
+          <div className="flex-1 overflow-y-auto px-5 py-6"
+            style={{ background: readerTheme === 'night' ? '#0f172a' : readerTheme === 'sepia' ? '#f4ecd8' : '#ffffff' }}>
+            {articleLoading && (
+              <div className="h-full flex flex-col items-center justify-center gap-4">
+                <div className="w-8 h-8 border-4 border-slate-300/30 border-t-red-600 rounded-full animate-spin" />
+                <p className={`text-[10px] font-black uppercase tracking-widest ${READER_CHROME[readerTheme].sub}`}>{t.loadingArticle}</p>
+              </div>
+            )}
+            {articleError && (
+              <div className="h-full flex flex-col items-center justify-center gap-4 text-center max-w-md mx-auto">
+                <p className="text-[10px] font-black uppercase text-red-400 tracking-widest">{t.articleError}</p>
+                <p className="text-xs text-slate-500 break-words">{articleError}</p>
+                <a href={activeArticle.url} target="_blank" rel="noopener noreferrer" className="mt-4 px-4 py-2.5 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
+                  <ExternalLink size={14} /> {t.openOriginal}
+                </a>
+              </div>
+            )}
+            {articleData && !articleLoading && (
+              <article className={`mx-auto max-w-2xl ${READER_CHROME[readerTheme].text}`}>
+                <h1 className="text-2xl font-black tracking-tight mb-2">{articleData.title}</h1>
+                {articleData.byline && (
+                  <p className={`text-xs ${READER_CHROME[readerTheme].sub} mb-1`}>{articleData.byline}</p>
+                )}
+                {articleData.siteName && (
+                  <p className={`text-[10px] uppercase tracking-widest ${READER_CHROME[readerTheme].sub} mb-6`}>{articleData.siteName}</p>
+                )}
+                <div
+                  className="article-body text-base leading-relaxed space-y-4"
+                  style={{
+                    fontSize: `${epubFontSize}%`,
+                    color: readerTheme === 'night' ? '#e2e8f0' : readerTheme === 'sepia' ? '#5b4636' : '#1e293b',
+                  }}
+                  dangerouslySetInnerHTML={{ __html: articleData.content }}
+                />
+              </article>
+            )}
+          </div>
+
+          <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-center gap-3 shrink-0`}
+            style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
+            <button onClick={() => setEpubFontSize(s => Math.max(70, s - 10))} disabled={epubFontSize <= 70} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
+            <span className={`text-[10px] font-black ${READER_CHROME[readerTheme].sub} w-11 text-center`}>{epubFontSize}%</span>
+            <button onClick={() => setEpubFontSize(s => Math.min(200, s + 10))} disabled={epubFontSize >= 200} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
+          </footer>
+        </div>
+      )}
+
       {/* ── PDF Reader ─────────────────────────────────────────────────────── */}
       {activeReaderUrl && (
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
@@ -1493,6 +1749,13 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
               </button>
               <button onClick={cycleTheme} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title="Тема">
                 <ThemeIcon size={16} />
+              </button>
+              <button
+                onClick={() => setPdfSpread(s => !s)}
+                className={`p-2.5 ${pdfSpread ? 'bg-red-600 text-white' : READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`}
+                title={pdfSpread ? t.spreadOff : t.spreadOn}
+              >
+                <Layers3 size={16} />
               </button>
               <button onClick={cycleNotesDisplay} className={`p-2.5 ${READER_CHROME[readerTheme].btn} rounded-xl transition-all shrink-0`} title={notesTitle}>
                 <NotesIcon size={16} />
@@ -1535,8 +1798,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
                 if (now - wheelThrottleRef.current < 500) return;
                 if (Math.abs(e.deltaY) < 20) return;
                 wheelThrottleRef.current = now;
-                if (e.deltaY > 0) setPdfPage(p => Math.min(pdfTotalPages, p + 1));
-                else              setPdfPage(p => Math.max(1, p - 1));
+                const step = pdfStep();
+                if (e.deltaY > 0) setPdfPage(p => Math.min(pdfTotalPages, p + step));
+                else              setPdfPage(p => Math.max(1, p - step));
               }}
             >
               <div ref={pdfContainerRef} className="mx-auto w-fit" />
@@ -1593,16 +1857,16 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, lang
 
           <footer className={`px-4 pt-3 ${READER_CHROME[readerTheme].bg} border-t ${READER_CHROME[readerTheme].border} flex items-center justify-between gap-3 shrink-0 ${chromeVisible ? '' : 'hidden'}`}
             style={{ paddingBottom: 'calc(0.75rem + var(--safe-bottom))' }}>
-            <button onClick={() => setPdfPage(p => Math.max(1, p - 1))} disabled={pdfPage <= 1} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
+            <button onClick={() => setPdfPage(p => Math.max(1, p - pdfStep()))} disabled={pdfPage <= 1} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronLeft size={26} /></button>
             <div className="flex flex-col items-center gap-1.5 shrink-0">
               <div className="flex items-center gap-1">
                 <button onClick={() => setPdfScale(s => Math.max(0.1, +(s - 0.1).toFixed(2)))} disabled={pdfScale <= 0.1} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomOut size={16} /></button>
                 <span className={`text-[10px] font-black ${READER_CHROME[readerTheme].sub} w-11 text-center`}>{Math.round(pdfScale * 100)}%</span>
                 <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} disabled={pdfScale >= 3} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
               </div>
-              <p className={`text-[9px] font-black ${READER_CHROME[readerTheme].sub} tracking-widest`}>{pdfTotalPages > 0 ? `${pdfPage} / ${pdfTotalPages}` : '...'}</p>
+              <p className={`text-[9px] font-black ${READER_CHROME[readerTheme].sub} tracking-widest`}>{pdfTotalPages > 0 ? (pdfStep() === 2 && pdfPage < pdfTotalPages ? `${pdfPage}–${pdfPage + 1}` : pdfPage) + ` / ${pdfTotalPages}` : '...'}</p>
             </div>
-            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + 1))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
+            <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + pdfStep()))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
         </div>
       )}

@@ -9,6 +9,8 @@ export interface CatalogQuery {
   searchField: 'all' | 'title' | 'author';
   activeCategory: string | SpecialCategory;
   contentLangFilter: ContentLang[];
+  /** AND filter — only items having every tag in this list match. */
+  tagFilter?: string[];
   sortBy: SortBy;
   lang: Locale;
   isAdmin: boolean;
@@ -84,6 +86,15 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
     available = available.filter(item =>
       q.contentLangFilter.some(l => item.contentLanguages.includes(l)),
     );
+  }
+
+  // 2b. Tags (every selected tag must be present on the item)
+  if (q.tagFilter && q.tagFilter.length > 0) {
+    const wanted = q.tagFilter.map(t => t.toLowerCase());
+    available = available.filter(item => {
+      const tags = (item.tags || []).map(t => t.toLowerCase());
+      return wanted.every(w => tags.includes(w));
+    });
   }
 
   // 3. Search (title + author + description, diacritics-insensitive)

@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { AppState, MediaItem, Locale, ContentLang, FileFormat, CustomType, VideoLink } from '../types';
+import { AppState, MediaItem, Locale, ContentLang, FileFormat, CustomType, VideoLink, ArticleLink } from '../types';
 import {
   Plus, Edit2, Trash2, Users, Eye, Download, LogOut, Tags,
   ShieldCheck, X, AtSign, Unlock, Lock,
@@ -309,6 +309,34 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   const handleRemoveVideo = (id: string) => {
     if (!editingItem) return;
     setEditingItem({ ...editingItem, videos: (editingItem.videos || []).filter(v => v.id !== id) });
+  };
+
+  const handleAddArticle = () => {
+    if (!editingItem) return;
+    const a: ArticleLink = { id: Date.now().toString(), url: '', source: 'Web', language: 'ru' };
+    setEditingItem({ ...editingItem, articles: [...(editingItem.articles || []), a] });
+  };
+
+  const handleUpdateArticle = (id: string, field: keyof ArticleLink, value: string) => {
+    if (!editingItem) return;
+    const updated = (editingItem.articles || []).map(a => a.id === id ? { ...a, [field]: value } : a);
+    setEditingItem({ ...editingItem, articles: updated });
+  };
+
+  const handleRemoveArticle = (id: string) => {
+    if (!editingItem) return;
+    setEditingItem({ ...editingItem, articles: (editingItem.articles || []).filter(a => a.id !== id) });
+  };
+
+  // Tags: comma-separated input → string[], trimmed, deduped, lowercase preserved
+  const handleTagsChange = (raw: string) => {
+    if (!editingItem) return;
+    const tags = raw
+      .split(',')
+      .map(t => t.trim())
+      .filter(Boolean);
+    const unique = Array.from(new Set(tags));
+    setEditingItem({ ...editingItem, tags: unique });
   };
 
   const handleDeleteFormat = async (f: FileFormat) => {
@@ -1289,6 +1317,89 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         value={editingItem.rating ?? 0} onChange={e => setEditingItem({...editingItem, rating: parseFloat(e.target.value) || 0})} />
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Series & Tags */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.seriesAndTags}</p>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.seriesName}</label>
+                      <input type="text" placeholder={ta.seriesNamePh} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.series || ''} onChange={e => setEditingItem({...editingItem, series: e.target.value})}
+                        list="series-suggestions" />
+                      <datalist id="series-suggestions">
+                        {Array.from(new Set(db.items.map(i => i.series).filter(Boolean))).map(s => (
+                          <option key={s} value={s} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <div className="w-24">
+                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.seriesOrder}</label>
+                      <input type="number" min="1" step="1" placeholder="1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                        value={editingItem.seriesOrder ?? ''} onChange={e => setEditingItem({...editingItem, seriesOrder: e.target.value ? parseInt(e.target.value) : undefined})} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.tagsLabel}</label>
+                    <input type="text" placeholder={ta.tagsPlaceholder} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                      value={(editingItem.tags || []).join(', ')} onChange={e => handleTagsChange(e.target.value)} />
+                    {(editingItem.tags || []).length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {(editingItem.tags || []).map(tag => (
+                          <span key={tag} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">#{tag}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Articles (external web articles / social posts) */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{ta.articlesLabel}</p>
+                  <button type="button" onClick={handleAddArticle} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">{ta.addArticle}</button>
+                </div>
+                <div className="space-y-2">
+                  {(editingItem.articles || []).map(a => {
+                    const presets = ['Web', 'Twitter', 'X', 'YandexZen', 'VK', 'Telegram'];
+                    const isCustom = !presets.includes(a.source);
+                    return (
+                      <div key={a.id} className="relative p-2.5 pl-9 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                        <button type="button" onClick={() => handleRemoveArticle(a.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <select
+                            value={isCustom ? '__custom__' : a.source}
+                            onChange={e => handleUpdateArticle(a.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
+                            {presets.map(p => <option key={p} value={p}>{p}</option>)}
+                            <option value="__custom__">{ta.customSource}</option>
+                          </select>
+                          <select
+                            value={a.language || 'ru'}
+                            onChange={e => handleUpdateArticle(a.id, 'language', e.target.value)}
+                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
+                            <option value="ru">RU</option><option value="en">EN</option><option value="es">ES</option>
+                            <option value="it">IT</option><option value="fr">FR</option><option value="de">DE</option>
+                          </select>
+                          {isCustom && (
+                            <input type="text" placeholder={ta.sourceName} className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                              value={a.source} onChange={e => handleUpdateArticle(a.id, 'source', e.target.value)} />
+                          )}
+                        </div>
+                        <input type="text" placeholder="https://..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                          value={a.url} onChange={e => handleUpdateArticle(a.id, 'url', e.target.value)} />
+                        <input type="text" placeholder={ta.articleTitlePh} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                          value={a.title || ''} onChange={e => handleUpdateArticle(a.id, 'title', e.target.value)} />
+                      </div>
+                    );
+                  })}
+                  {(!editingItem.articles || editingItem.articles.length === 0) && (
+                    <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center py-3">{ta.noArticles}</p>
+                  )}
                 </div>
               </div>
 

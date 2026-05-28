@@ -7,6 +7,8 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import { createHmac, randomBytes } from 'crypto';
+import { JSDOM } from 'jsdom';
+import { Readability } from '@mozilla/readability';
 import pkg from 'pg';
 
 const execFileAsync = promisify(execFile);
@@ -542,6 +544,112 @@ app.get('/api/state', checkUserAccess, async (req, res) => {
   } catch (e) {
     console.warn('GET /api/state:', e.message);
     res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// ── Article reader: fetch external URL and run Mozilla Readability ─────────
+// Returns a cleaned-up { title, byline, content (sanitised HTML), excerpt,
+// siteName, length, lang } object the in-app reader can render directly.
+// Aggressive caching keeps repeat opens fast — articles change rarely.
+
+const articleCache = new Map(); // url → { at, data }
+const ARTICLE_CACHE_TTL = 6 * 60 * 60 * 1000; // 6 hours
+const ARTICLE_CACHE_MAX = 200;
+const ARTICLE_FETCH_TIMEOUT = 12_000;
+const ARTICLE_MAX_BYTES = 4 * 1024 * 1024; // 4 MB raw HTML
+
+// Strip <script>/<style>/<iframe>/event handlers + javascript: hrefs.
+// Readability already removes most of this, but be paranoid since the HTML is
+// injected directly into the page.
+const sanitiseHtml = (html) => {
+  if (!html) return '';
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
+    .replace(/\son\w+="[^"]*"/gi, '')
+    .replace(/\son\w+='[^']*'/gi, '')
+    .replace(/href\s*=\s*"\s*javascript:[^"]*"/gi, 'href="#"')
+    .replace(/href\s*=\s*'\s*javascript:[^']*'/gi, "href='#'");
+};
+
+app.get('/api/article-extract', async (req, res) => {
+  const url = req.query.url;
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || url.length > 2000) {
+    return res.status(400).json({ error: 'Invalid URL' });
+  }
+
+  // Cache check
+  const hit = articleCache.get(url);
+  if (hit && Date.now() - hit.at < ARTICLE_CACHE_TTL) {
+    return res.json({ ...hit.data, cached: true });
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ARTICLE_FETCH_TIMEOUT);
+  try {
+    const upstream = await fetch(url, {
+      signal: controller.signal,
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; OptionsDataLibrary/1.0; +https://library.optionsdata.ru)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ru,en;q=0.8,es;q=0.5',
+      },
+    });
+    clearTimeout(timer);
+
+    if (!upstream.ok) return res.status(502).json({ error: `Upstream ${upstream.status}` });
+    const ct = (upstream.headers.get('content-type') || '').toLowerCase();
+    if (!ct.includes('html') && !ct.includes('xml')) {
+      return res.status(415).json({ error: 'Not an HTML page' });
+    }
+
+    // Length-bound the body so a hostile/huge page can't OOM the server.
+    const reader = upstream.body.getReader();
+    const chunks = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > ARTICLE_MAX_BYTES) {
+        try { reader.cancel(); } catch { /* noop */ }
+        return res.status(413).json({ error: 'Article too large' });
+      }
+      chunks.push(value);
+    }
+    const html = Buffer.concat(chunks).toString('utf8');
+
+    const dom = new JSDOM(html, { url });
+    const reader2 = new Readability(dom.window.document);
+    const parsed = reader2.parse();
+    if (!parsed) return res.status(422).json({ error: 'Could not extract article' });
+
+    const data = {
+      url,
+      title:    (parsed.title    || '').slice(0, 500),
+      byline:   (parsed.byline   || '').slice(0, 200),
+      excerpt:  (parsed.excerpt  || '').slice(0, 800),
+      siteName: (parsed.siteName || '').slice(0, 200),
+      lang:     (parsed.lang     || '').slice(0, 8),
+      length:    parsed.length || 0,
+      content:  sanitiseHtml(parsed.content || ''),
+    };
+
+    // Cap cache size (drop oldest)
+    if (articleCache.size >= ARTICLE_CACHE_MAX) {
+      const oldest = articleCache.keys().next().value;
+      if (oldest) articleCache.delete(oldest);
+    }
+    articleCache.set(url, { at: Date.now(), data });
+
+    res.json(data);
+  } catch (e) {
+    clearTimeout(timer);
+    const msg = e?.name === 'AbortError' ? 'Timed out' : (e?.message || 'Fetch failed');
+    res.status(500).json({ error: msg });
   }
 });
 

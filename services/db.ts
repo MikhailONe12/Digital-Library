@@ -583,3 +583,15 @@ export const getProgressPercent = (itemId: string): number => {
   }
   return max;
 };
+
+// Item IDs the user has any active reading progress for. Used for the
+// "Continue reading" shelf on the home screen. Filters out finished books
+// (>=95%) and items the catalog no longer contains.
+export const getInProgressItemIds = (): string[] => {
+  const ids: string[] = [];
+  for (const itemId of Object.keys(progressCache)) {
+    const pct = getProgressPercent(itemId);
+    if (pct > 0 && pct < 95) ids.push(itemId);
+  }
+  return ids;
+};

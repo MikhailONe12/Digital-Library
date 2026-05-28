@@ -1,12 +1,14 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock } from 'lucide-react';
-import { isFavorited, getAverageRating, getProgressPercent } from '../services/db';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon } from 'lucide-react';
+import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
+import { pickText } from '../utils';
 
 interface HomeProps {
   items: MediaItem[];
+  allItems: MediaItem[]; // Unfiltered — used for the "Continue reading" shelf
   onOpenItem: (item: MediaItem) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
@@ -14,6 +16,8 @@ interface HomeProps {
   setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY') => void;
   contentLangFilter: ContentLang[];
   setContentLangFilter: (langs: ContentLang[]) => void;
+  tagFilter: string[];
+  setTagFilter: (tags: string[]) => void;
   searchField: 'all' | 'title' | 'author';
   setSearchField: (f: 'all' | 'title' | 'author') => void;
   sortBy: 'recent' | 'rating' | 'views' | 'alpha';
@@ -24,9 +28,10 @@ interface HomeProps {
   onSecretAdminTrigger?: () => void;
 }
 
-const Home: React.FC<HomeProps> = ({ 
-  items, onOpenItem, searchQuery, setSearchQuery, activeCategory, setActiveCategory,
-  contentLangFilter, setContentLangFilter, searchField, setSearchField,
+const Home: React.FC<HomeProps> = ({
+  items, allItems, onOpenItem, searchQuery, setSearchQuery, activeCategory, setActiveCategory,
+  contentLangFilter, setContentLangFilter, tagFilter, setTagFilter,
+  searchField, setSearchField,
   sortBy, setSortBy,
   categories, lang, t, onSecretAdminTrigger
 }) => {
@@ -35,6 +40,29 @@ const Home: React.FC<HomeProps> = ({
 
   const tg = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
+
+  // Continue-reading shelf: items with active progress, ordered by % asc so the
+  // furthest-from-finished show first (they're more likely to be the active read).
+  const continueItems = useMemo(() => {
+    const ids = new Set(getInProgressItemIds());
+    if (ids.size === 0) return [];
+    return allItems
+      .filter(i => ids.has(i.id))
+      .map(i => ({ item: i, pct: getProgressPercent(i.id) }))
+      .sort((a, b) => b.pct - a.pct) // closer to finish first
+      .slice(0, 12);
+  }, [allItems]);
+
+  // All unique tags across the visible catalog — for the filter chip list.
+  const availableTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of allItems) for (const tag of item.tags || []) if (tag) set.add(tag);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allItems]);
+
+  const toggleTag = (tag: string) => {
+    setTagFilter(tagFilter.includes(tag) ? tagFilter.filter(x => x !== tag) : [...tagFilter, tag]);
+  };
 
   // Секретный триггер: зажатие логотипа на 2 секунды
   const handleStart = () => {
@@ -85,7 +113,7 @@ const Home: React.FC<HomeProps> = ({
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             aria-label={t.filters}
             aria-expanded={isFilterOpen}
-            className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-2.5 rounded-xl transition-all ${isFilterOpen || contentLangFilter.length > 0 || searchField !== 'all' || sortBy !== 'recent' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-red-600 hover:bg-slate-200/60 dark:hover:bg-white/10'}`}
+            className={`absolute right-2.5 top-1/2 -translate-y-1/2 p-2.5 rounded-xl transition-all ${isFilterOpen || contentLangFilter.length > 0 || tagFilter.length > 0 || searchField !== 'all' || sortBy !== 'recent' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-red-600 hover:bg-slate-200/60 dark:hover:bg-white/10'}`}
           >
             <SlidersHorizontal size={18} strokeWidth={2.25} />
           </button>
@@ -152,6 +180,29 @@ const Home: React.FC<HomeProps> = ({
                         </button>
                     </div>
                  </div>
+
+                 {/* Tags */}
+                 {availableTags.length > 0 && (
+                   <div className="space-y-2.5">
+                      <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-2 ml-0.5">
+                         <TagsIcon size={13} /> {t.tags}
+                      </p>
+                      <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                         {availableTags.map(tag => {
+                           const active = tagFilter.includes(tag);
+                           return (
+                             <button
+                               key={tag}
+                               onClick={() => toggleTag(tag)}
+                               className={`px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all ${active ? 'bg-red-600 text-white' : 'bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10'}`}
+                             >
+                               #{tag}
+                             </button>
+                           );
+                         })}
+                      </div>
+                   </div>
+                 )}
 
                  {/* Sort */}
                  <div className="space-y-2.5">
@@ -250,6 +301,38 @@ const Home: React.FC<HomeProps> = ({
           </button>
         ))}
       </div>
+
+      {/* Continue reading shelf — only when not actively filtering / searching */}
+      {continueItems.length > 0 && activeCategory === 'ALL' && !searchQuery.trim() && contentLangFilter.length === 0 && tagFilter.length === 0 && (
+        <div className="mb-8">
+          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+            <BookOpen size={14} className="text-red-600" />
+            <span className="w-6 h-[2px] bg-red-600" />
+            {t.continueReading}
+          </h2>
+          <div className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory">
+            {continueItems.map(({ item, pct }) => (
+              <button
+                key={item.id}
+                onClick={() => onOpenItem(item)}
+                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all hover:shadow-card-hover"
+              >
+                <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
+                  {item.coverUrl && <img src={item.coverUrl} className="w-full h-full object-cover" alt="" />}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/30">
+                    <div className="h-full bg-red-500" style={{ width: `${Math.min(100, pct)}%` }} />
+                  </div>
+                  <div className="absolute bottom-2 left-2 right-2">
+                    <p className="text-white text-xs font-bold tracking-tight line-clamp-2 drop-shadow">{pickText(item.title, lang)}</p>
+                    <p className="text-white/70 text-[10px] mt-0.5">{Math.round(pct)}%</p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
         {items.map(item => (

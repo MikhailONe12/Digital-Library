@@ -34,6 +34,17 @@ export interface VideoLink {
   language?: ContentLang; // Language of this video
 }
 
+// External web article / social-media post associated with an item.
+// Rendered in-app via a server-side readability extraction (or oEmbed widget
+// for known social sources where readability won't work).
+export interface ArticleLink {
+  id: string;
+  url: string;
+  source: string;     // 'Twitter' | 'X' | 'YandexZen' | 'VK' | 'Telegram' | custom
+  title?: string;     // Manual override (otherwise pulled from <title> on extract)
+  language?: ContentLang;
+}
+
 export interface MediaItem {
   id: string;
   title: MultilingualText;
@@ -47,6 +58,10 @@ export interface MediaItem {
   formats: FileFormat[];
   videoUrl?: string;       // legacy single video (kept for backward compatibility)
   videos?: VideoLink[];    // multiple videos with source labels
+  articles?: ArticleLink[]; // external articles / social posts
+  series?: string;         // series name (free text); items sharing it are linked
+  seriesOrder?: number;    // 1-based position within the series
+  tags?: string[];         // free-form keywords for filtering / discovery
   isPrivate: boolean;
   views: number;
   downloads: number;

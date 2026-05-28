@@ -41,6 +41,7 @@ const App: React.FC = () => {
   const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>(
     _savedFilters.contentLangFilter || [],
   );
+  const [tagFilter, setTagFilter] = useState<string[]>(_savedFilters.tagFilter || []);
   const [searchField, setSearchField] = useState<'all' | 'title' | 'author'>(
     _savedFilters.searchField || 'all',
   );
@@ -167,6 +168,7 @@ const App: React.FC = () => {
     searchField,
     activeCategory,
     contentLangFilter,
+    tagFilter,
     sortBy,
     lang,
     isAdmin,
@@ -176,14 +178,23 @@ const App: React.FC = () => {
     isFavorite: (id) => isFavorited(userId, id),
     ratingOf: getAverageRating,
     viewHistory,
-  }), [db.items, db.globalAccess, deferredSearch, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, searchField, sortBy, viewHistory]);
+  }), [db.items, db.globalAccess, deferredSearch, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, tagFilter, searchField, sortBy, viewHistory]);
+
+  // Same access-controlled list, but without search/tag/category filters —
+  // used by the "Continue reading" shelf and tag chip generator on Home.
+  const accessibleItems = useMemo(() => filterAndSortItems(db.items, {
+    searchQuery: '', searchField: 'all', activeCategory: 'ALL',
+    contentLangFilter: [], tagFilter: [], sortBy: 'recent', lang, isAdmin,
+    globalAccess: db.globalAccess, allowedUsers: db.allowedUsers, user,
+    isFavorite: () => false, ratingOf: getAverageRating, viewHistory: [],
+  }), [db.items, db.globalAccess, db.allowedUsers, isAdmin, user, lang]);
 
   // Persist filter state whenever it changes
   useEffect(() => {
     try {
-      localStorage.setItem('library_filters', JSON.stringify({ searchField, sortBy, contentLangFilter, activeCategory }));
+      localStorage.setItem('library_filters', JSON.stringify({ searchField, sortBy, contentLangFilter, tagFilter, activeCategory }));
     } catch { /* quota */ }
-  }, [searchField, sortBy, contentLangFilter, activeCategory]);
+  }, [searchField, sortBy, contentLangFilter, tagFilter, activeCategory]);
 
   // Reflect the UI locale on <html lang> for assistive tech and the browser.
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
@@ -284,6 +295,7 @@ const App: React.FC = () => {
       {currentPage === 'home' && (
         <Home
           items={filteredItems}
+          allItems={accessibleItems}
           onOpenItem={(item) => { setViewHistory(recordView(item.id)); setSelectedItem(item); setCurrentPage('details'); }}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
@@ -291,6 +303,8 @@ const App: React.FC = () => {
           setActiveCategory={setActiveCategory}
           contentLangFilter={contentLangFilter}
           setContentLangFilter={setContentLangFilter}
+          tagFilter={tagFilter}
+          setTagFilter={setTagFilter}
           searchField={searchField}
           setSearchField={setSearchField}
           sortBy={sortBy}
@@ -308,6 +322,7 @@ const App: React.FC = () => {
             item={selectedItem}
             onBack={() => {setCurrentPage('home'); setSelectedItem(null);}}
             onRefresh={() => setDb(getDb())}
+            onOpenItem={(it) => { setViewHistory(recordView(it.id)); setSelectedItem(it); }}
             lang={lang}
             t={t}
           />

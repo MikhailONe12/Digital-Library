@@ -7,7 +7,7 @@ import {
   Percent, Database, Upload, Video,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4,
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
-  HardDrive, Cloud, Server, Save, RotateCcw, Settings
+  HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
 import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
@@ -1571,17 +1571,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               </div>
 
               {/* Articles (external web articles / social posts) */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{ta.articlesLabel}</p>
-                  <button type="button" onClick={handleAddArticle} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">{ta.addArticle}</button>
+              <div className="border-2 border-dashed border-red-200 bg-red-50/40 rounded-3xl p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 bg-red-600 rounded-lg text-white"><Newspaper size={14} /></div>
+                    <p className="text-[11px] font-black uppercase text-red-600 tracking-widest">{ta.articlesLabel}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddArticle}
+                    className="flex items-center gap-1.5 text-[10px] font-black uppercase bg-red-600 text-white px-3 py-2 rounded-xl shadow-md shadow-red-200 hover:bg-red-700 active:scale-95 transition-all"
+                  >
+                    <PlusIcon size={12} strokeWidth={3} /> {ta.addArticle}
+                  </button>
                 </div>
+                <p className="text-[10px] text-slate-500 leading-relaxed mb-3">{ta.articlesHelp}</p>
                 <div className="space-y-2">
                   {(editingItem.articles || []).map(a => {
                     const presets = ['Web', 'Twitter', 'X', 'YandexZen', 'VK', 'Telegram'];
                     const isCustom = !presets.includes(a.source);
                     return (
-                      <div key={a.id} className="relative p-2.5 pl-9 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                      <div key={a.id} className="relative p-2.5 pl-9 bg-white rounded-2xl border border-red-100 space-y-2">
                         <button type="button" onClick={() => handleRemoveArticle(a.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
                         <div className="flex flex-wrap items-center gap-2">
                           <select
@@ -1603,7 +1613,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               value={a.source} onChange={e => handleUpdateArticle(a.id, 'source', e.target.value)} />
                           )}
                         </div>
-                        <input type="text" placeholder="https://..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                        <input type="url" placeholder="https://dzen.ru/a/... · https://x.com/user/status/... · https://vk.com/wall..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
                           value={a.url} onChange={e => handleUpdateArticle(a.id, 'url', e.target.value)} />
                         <input type="text" placeholder={ta.articleTitlePh} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
                           value={a.title || ''} onChange={e => handleUpdateArticle(a.id, 'title', e.target.value)} />
@@ -1611,7 +1621,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     );
                   })}
                   {(!editingItem.articles || editingItem.articles.length === 0) && (
-                    <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center py-3">{ta.noArticles}</p>
+                    <button
+                      type="button"
+                      onClick={handleAddArticle}
+                      className="w-full py-4 border-2 border-dashed border-red-300 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-100 hover:border-red-400 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <PlusIcon size={14} strokeWidth={3} /> {ta.addFirstArticle}
+                    </button>
                   )}
                 </div>
               </div>

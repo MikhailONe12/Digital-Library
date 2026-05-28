@@ -6,6 +6,7 @@ import {
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
   Search, Newspaper, ExternalLink, Layers, Tag as TagIcon, Layers3,
+  CheckCircle2, RotateCcw,
 } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
@@ -17,7 +18,7 @@ import {
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,
   getReadingProgress, saveReadingProgress,
   getAnnotations, addAnnotation, deleteAnnotation,
-  getDb,
+  getDb, getProgressPercent, markItemFinished, resetItemProgress,
 } from '../services/db';
 import { pickText, handleCoverError, getVideoPoster } from '../utils';
 import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
@@ -160,6 +161,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const [userRating, setUserRatingState] = useState(0);
   const [avgRating, setAvgRating]        = useState(item.rating);
   const [isFav, setIsFav]                = useState(false);
+  // Reading-progress display state. Refreshed on mount and whenever the user
+  // explicitly marks finished / resets so the UI flips without a page reload.
+  const [progressPct, setProgressPct]    = useState<number>(0);
 
   // Download: keyed by f.url — tracks in-flight requests and transient errors
   const [downloadPending, setDownloadPending] = useState<Record<string, boolean>>({});
@@ -298,8 +302,21 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     setIsFav(isFavorited(userId, item.id));
     setUserRatingState(getUserRating(userId, item.id));
     setAvgRating(getAverageRating(item.id));
+    setProgressPct(getProgressPercent(item.id));
     onRefresh();
   }, [item.id, userId]);
+
+  const handleMarkFinished = async () => {
+    await markItemFinished(userId, item.id);
+    setProgressPct(getProgressPercent(item.id));
+    onRefresh();
+  };
+
+  const handleResetProgress = async () => {
+    await resetItemProgress(userId, item.id);
+    setProgressPct(getProgressPercent(item.id));
+    onRefresh();
+  };
 
   useEffect(() => {
     if (activeReaderUrl || activeEpubUrl) {
@@ -1396,6 +1413,47 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             <p className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight">{item.publishedDate}</p>
           </div>
         </div>
+
+        {/* Reading progress + mark-finished / reset buttons */}
+        {(progressPct > 0 || item.formats.some(f => f.allowReading !== false)) && (
+          <div className="bg-white dark:bg-[#1c1c1e] p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm mt-4 px-6">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <p className="text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest shrink-0">{t.progress}</p>
+                <span className={`text-xs font-black tabular-nums ${progressPct >= 95 ? 'text-green-600' : progressPct > 0 ? 'text-red-600' : 'text-slate-300 dark:text-slate-600'}`}>
+                  {progressPct > 0 ? `${Math.round(progressPct)}%` : '—'}
+                </span>
+                {progressPct >= 95 && <CheckCircle2 size={14} className="text-green-600" />}
+              </div>
+              <div className="flex gap-2 shrink-0">
+                {progressPct < 95 && (
+                  <button
+                    onClick={handleMarkFinished}
+                    className="px-3 py-1.5 bg-green-50 dark:bg-green-500/15 text-green-700 dark:text-green-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-green-100 dark:hover:bg-green-500/25 transition-colors flex items-center gap-1.5"
+                    title={t.markFinished}
+                  >
+                    <CheckCircle2 size={12} /> {t.markFinished}
+                  </button>
+                )}
+                {progressPct > 0 && (
+                  <button
+                    onClick={handleResetProgress}
+                    className="px-3 py-1.5 bg-slate-50 dark:bg-white/10 text-slate-500 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 dark:hover:bg-white/15 transition-colors flex items-center gap-1.5"
+                    title={t.resetProgress}
+                  >
+                    <RotateCcw size={12} /> {t.resetProgress}
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${progressPct >= 95 ? 'bg-green-500' : 'bg-red-500'}`}
+                style={{ width: `${Math.min(100, progressPct)}%` }}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="bg-white dark:bg-[#1c1c1e] p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm mt-4 flex items-center justify-between px-8">
           <p className="text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.rateThis}</p>

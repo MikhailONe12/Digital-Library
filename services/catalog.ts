@@ -2,7 +2,7 @@ import { MediaItem, Locale, ContentLang } from '../types';
 import { pickText } from '../utils';
 
 export type SortBy = 'recent' | 'rating' | 'views' | 'alpha';
-export type SpecialCategory = 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY';
+export type SpecialCategory = 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY' | 'FINISHED';
 
 export interface CatalogQuery {
   searchQuery: string;
@@ -19,6 +19,8 @@ export interface CatalogQuery {
   user?: { id: number | string; username?: string } | null;
   isFavorite: (itemId: string) => boolean;
   ratingOf: (itemId: string) => number;
+  /** Reading-progress lookup (0-100). Used by the FINISHED category. */
+  progressOf?: (itemId: string) => number;
   viewHistory: string[];
   /** Injectable clock for deterministic tests; defaults to Date.now(). */
   now?: number;
@@ -112,6 +114,9 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
   // 4. Category (NEW and HISTORY have their own ordering and return early)
   if (q.activeCategory === 'FAVORITES') {
     available = available.filter(item => q.isFavorite(item.id));
+  } else if (q.activeCategory === 'FINISHED') {
+    const pct = q.progressOf || (() => 0);
+    available = available.filter(item => pct(item.id) >= 95);
   } else if (q.activeCategory === 'NEW') {
     const cutoff = (q.now ?? Date.now()) - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     return available

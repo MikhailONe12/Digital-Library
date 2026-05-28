@@ -964,14 +964,28 @@ app.post('/api/items/reset-stats', requireApiKey, async (req, res) => {
   }
 });
 
-// Delete one catalog item
+// Delete one catalog item. Cascades to all per-user tables so no orphan rows
+// linger after content is removed — the schema has no FK ON DELETE CASCADE
+// between items and user_*, so we clean up explicitly here.
 app.delete('/api/items/:itemId', requireApiKey, validateItemId, async (req, res) => {
+  const { itemId } = req.params;
   try {
-    // Remove uploaded files first (best-effort — don't fail if folder missing)
-    const itemDir = path.join(CONTENT_DIR, req.params.itemId);
+    // 1. Files on disk
+    const itemDir = path.join(CONTENT_DIR, itemId);
     try { fs.rmSync(itemDir, { recursive: true, force: true }); } catch { /* noop */ }
-    await pool.query('DELETE FROM uploaded_files WHERE item_id = $1', [req.params.itemId]);
-    await pool.query('DELETE FROM items WHERE id = $1', [req.params.itemId]);
+
+    // 2. Catalog + uploaded files registry + every per-user trace of this item.
+    //    Run sequentially (not in a transaction) so a single failing query
+    //    doesn't block the rest — leftover rows are harmless without the parent.
+    const sweep = async (sql) => { try { await pool.query(sql, [itemId]); } catch (e) { console.warn('cascade-delete', sql.split(' ')[2], e.message); } };
+    await sweep('DELETE FROM uploaded_files        WHERE item_id = $1');
+    await sweep('DELETE FROM user_reading_progress WHERE item_id = $1');
+    await sweep('DELETE FROM user_bookmarks        WHERE item_id = $1');
+    await sweep('DELETE FROM user_annotations      WHERE item_id = $1');
+    await sweep('DELETE FROM user_favorites        WHERE item_id = $1');
+    await sweep('DELETE FROM user_ratings          WHERE item_id = $1');
+    await sweep('DELETE FROM item_events           WHERE item_id = $1');
+    await pool.query('DELETE FROM items WHERE id = $1', [itemId]);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1337,6 +1351,24 @@ app.get('/api/users/:userId/progress/:itemId',
       res.json(rows);
     } catch {
       res.json([]);
+    }
+  },
+);
+
+// Wipe all reading progress for an item (used by the "Reset progress" button
+// in Item Details). Removes both per-file rows and the synthetic "finished"
+// marker, so the book becomes fresh again on the next open.
+app.delete('/api/users/:userId/progress/:itemId',
+  validateUserId, validateItemId,
+  async (req, res) => {
+    try {
+      await pool.query(
+        'DELETE FROM user_reading_progress WHERE user_id = $1 AND item_id = $2',
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
     }
   },
 );

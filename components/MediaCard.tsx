@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { MediaItem, Locale, ContentLang } from '../types';
-import { Star, ShieldCheck, Heart, BookOpen } from 'lucide-react';
+import { Star, ShieldCheck, Heart, BookOpen, CheckCircle2 } from 'lucide-react';
 import { pickText } from '../utils';
 import CardCover from './CardCover';
 
@@ -61,10 +61,16 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
             </div>
           )}
           {progress != null && progress > 0 && (
-            <div className="bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-              <BookOpen size={10} strokeWidth={2.5} />
-              {Math.min(100, Math.round(progress))}%
-            </div>
+            progress >= 95 ? (
+              <div className="bg-green-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+                <CheckCircle2 size={10} strokeWidth={2.5} />
+              </div>
+            ) : (
+              <div className="bg-red-600 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+                <BookOpen size={10} strokeWidth={2.5} />
+                {Math.round(progress)}%
+              </div>
+            )
           )}
         </div>
 
@@ -74,11 +80,11 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
             </h3>
         </div>
 
-        {/* Reading progress bar */}
+        {/* Reading progress bar — green when finished (>= 95%), red while in progress */}
         {progress != null && progress > 0 && (
           <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/20">
             <div
-              className="h-full bg-red-500 transition-all duration-500"
+              className={`h-full transition-all duration-500 ${progress >= 95 ? 'bg-green-500' : 'bg-red-500'}`}
               style={{ width: `${Math.min(100, progress)}%` }}
             />
           </div>

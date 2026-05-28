@@ -595,3 +595,31 @@ export const getInProgressItemIds = (): string[] => {
   }
   return ids;
 };
+
+// True when the user has reached >= 95% of any format for this item (or
+// pressed "mark as finished" which writes a synthetic 100% marker row).
+export const isFinished = (itemId: string): boolean => getProgressPercent(itemId) >= 95;
+
+// Mark a book as read without actually scrolling to the end. Writes a
+// synthetic progress row with format_url='__finished__' so getProgressPercent
+// reports 100% via its existing max-across-formats logic.
+export const markItemFinished = async (userId: string, itemId: string): Promise<void> => {
+  if (!progressCache[itemId]) progressCache[itemId] = {};
+  progressCache[itemId]['__finished__'] = { position: '100', position_total: 100, format_url: '__finished__' };
+  try {
+    await fetch(`/api/users/${userId}/progress/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ position: '100', positionTotal: 100, formatUrl: '__finished__' }),
+    });
+  } catch { /* best effort */ }
+};
+
+// Drop all reading-progress rows for this item — both real (per-file) progress
+// and the synthetic "finished" marker. After this, the book is "fresh" again.
+export const resetItemProgress = async (userId: string, itemId: string): Promise<void> => {
+  delete progressCache[itemId];
+  try {
+    await fetch(`/api/users/${userId}/progress/${itemId}`, { method: 'DELETE' });
+  } catch { /* best effort */ }
+};

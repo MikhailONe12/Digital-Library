@@ -2,7 +2,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2 } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText } from '../utils';
 
@@ -12,8 +12,8 @@ interface HomeProps {
   onOpenItem: (item: MediaItem) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY';
-  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY') => void;
+  activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY' | 'FINISHED';
+  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY' | 'FINISHED') => void;
   contentLangFilter: ContentLang[];
   setContentLangFilter: (langs: ContentLang[]) => void;
   tagFilter: string[];
@@ -261,6 +261,21 @@ const Home: React.FC<HomeProps> = ({
           <Clock size={19} strokeWidth={2.25} />
         </button>
 
+        {/* Finished Button — books read to >= 95% */}
+        <button
+          onClick={() => setActiveCategory('FINISHED')}
+          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
+            activeCategory === 'FINISHED'
+            ? 'bg-green-600 text-white'
+            : 'bg-white dark:bg-[#1c1c1e] text-green-600 dark:text-green-400 border border-slate-200 dark:border-white/[0.08]'
+          }`}
+          aria-label={t.finished}
+          aria-pressed={activeCategory === 'FINISHED'}
+          title={t.finished}
+        >
+          <CheckCircle2 size={19} strokeWidth={2.25} />
+        </button>
+
         {/* New Arrivals Button */}
         <button
           onClick={() => setActiveCategory('NEW')}
@@ -350,10 +365,10 @@ const Home: React.FC<HomeProps> = ({
       {items.length === 0 && (
           <div className="py-24 text-center">
               <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
-                  {activeCategory === 'FAVORITES' ? <Heart size={36} /> : activeCategory === 'NEW' ? <Sparkles size={36} /> : activeCategory === 'HISTORY' ? <Clock size={36} /> : <Search size={36} />}
+                  {activeCategory === 'FAVORITES' ? <Heart size={36} /> : activeCategory === 'NEW' ? <Sparkles size={36} /> : activeCategory === 'HISTORY' ? <Clock size={36} /> : activeCategory === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
               </div>
               <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
-                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : t.noResults}
+                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : activeCategory === 'FINISHED' ? t.noFinishedYet : t.noResults}
               </p>
           </div>
       )}

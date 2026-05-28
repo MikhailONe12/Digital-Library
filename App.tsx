@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense, lazy } from 'react';
-import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory } from './services/db';
+import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { filterAndSortItems } from './services/catalog';
@@ -177,6 +177,7 @@ const App: React.FC = () => {
     user,
     isFavorite: (id) => isFavorited(userId, id),
     ratingOf: getAverageRating,
+    progressOf: getProgressPercent,
     viewHistory,
   }), [db.items, db.globalAccess, deferredSearch, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, tagFilter, searchField, sortBy, viewHistory]);
 

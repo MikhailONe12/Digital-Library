@@ -35,6 +35,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   // Removed 'users' from activeTab type as it is merged into security
   const [activeTab, setActiveTab] = useState<'stats' | 'items' | 'types' | 'data' | 'security'>('stats');
   const [editingItem, setEditingItem] = useState<Partial<MediaItem> | null>(null);
+  // Publication date can be a full ISO date ("2021-05-29") or just a year
+  // ("2021"). The mode is derived from the stored value whenever a different
+  // item is opened, then toggled manually by the admin.
+  const [pubDateMode, setPubDateMode] = useState<'date' | 'year'>('date');
+  useEffect(() => {
+    if (!editingItem) return;
+    setPubDateMode(/^\d{4}$/.test(editingItem.publishedDate || '') ? 'year' : 'date');
+  }, [editingItem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [newUserNickname, setNewUserNickname] = useState('');
   const [newBlacklistEntry, setNewBlacklistEntry] = useState('');
   const [newTypeLabels, setNewTypeLabels] = useState({ en: '', ru: '', es: '' });
@@ -1520,9 +1528,40 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   </div>
                   <div className="flex flex-col sm:flex-row gap-3">
                     <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.pubDate}</label>
-                      <input type="date" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.publishedDate || ''} onChange={e => setEditingItem({...editingItem, publishedDate: e.target.value})} />
+                      <div className="flex items-center justify-between ml-2 mb-1">
+                        <label className="text-[8px] font-black uppercase text-slate-400">{ta.pubDate}</label>
+                        <div className="flex gap-0.5 bg-slate-100 rounded-lg p-0.5">
+                          <button type="button"
+                            onClick={() => {
+                              setPubDateMode('date');
+                              const v = editingItem.publishedDate || '';
+                              const next = /^\d{4}$/.test(v) ? `${v}-01-01` : (v || new Date().toISOString().split('T')[0]);
+                              setEditingItem({ ...editingItem, publishedDate: next });
+                            }}
+                            className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-colors ${pubDateMode === 'date' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}`}>
+                            {ta.pubModeDate}
+                          </button>
+                          <button type="button"
+                            onClick={() => {
+                              setPubDateMode('year');
+                              const v = editingItem.publishedDate || '';
+                              const next = v.match(/^(\d{4})/)?.[1] || String(new Date().getFullYear());
+                              setEditingItem({ ...editingItem, publishedDate: next });
+                            }}
+                            className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-colors ${pubDateMode === 'year' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}`}>
+                            {ta.pubModeYear}
+                          </button>
+                        </div>
+                      </div>
+                      {pubDateMode === 'year' ? (
+                        <input type="number" min="1000" max="2100" step="1" placeholder="2021"
+                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                          value={editingItem.publishedDate || ''} onChange={e => setEditingItem({ ...editingItem, publishedDate: e.target.value })} />
+                      ) : (
+                        <input type="date"
+                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                          value={editingItem.publishedDate || ''} onChange={e => setEditingItem({ ...editingItem, publishedDate: e.target.value })} />
+                      )}
                     </div>
                     <div className="flex-1">
                       <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.editorialRating}</label>

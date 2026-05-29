@@ -1,5 +1,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor, ArticleLink } from '../types';
 import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
@@ -285,6 +286,24 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
       } catch { /* invalid CFI */ }
     });
   };
+
+  // Lock body scroll while any reader overlay is open. Without this, the
+  // underlying ItemDetails page is still scrollable behind the reader (the
+  // parent has `animate-in slide-in-from-right-4`, whose transform turns
+  // every position:fixed descendant into one positioned RELATIVE to the
+  // parent — Portal below addresses that for the visual fit, lock prevents
+  // background scroll either way).
+  useEffect(() => {
+    if (!activeReaderUrl && !activeEpubUrl && !activeArticle) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [activeReaderUrl, activeEpubUrl, activeArticle]);
 
   const cycleNotesDisplay = () =>
     setNotesDisplay(m => (m === 'full' ? 'mini' : m === 'mini' ? 'hidden' : 'full'));
@@ -1652,7 +1671,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
       </div>
 
       {/* ── EPUB Reader ────────────────────────────────────────────────────── */}
-      {activeEpubUrl && (
+      {/* Rendered via Portal at document.body so the reader is positioned
+          relative to the viewport, not to ItemDetails (whose animate-in
+          transform would otherwise be the containing block for fixed). */}
+      {activeEpubUrl && createPortal(
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
           <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0 ${chromeVisible ? '' : 'hidden'}`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
@@ -1725,11 +1747,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             </div>
             <button onClick={() => renditionRef.current?.next()} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Article Reader ─────────────────────────────────────────────────── */}
-      {activeArticle && (
+      {activeArticle && createPortal(
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
           <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
@@ -1795,11 +1818,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             <span className={`text-[10px] font-black ${READER_CHROME[readerTheme].sub} w-11 text-center`}>{epubFontSize}%</span>
             <button onClick={() => setEpubFontSize(s => Math.min(200, s + 10))} disabled={epubFontSize >= 200} className={`p-2.5 ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-xl transition-all`}><ZoomIn size={16} /></button>
           </footer>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── PDF Reader ─────────────────────────────────────────────────────── */}
-      {activeReaderUrl && (
+      {activeReaderUrl && createPortal(
         <div className={`fixed inset-0 z-[500] ${READER_CHROME[readerTheme].bg} flex flex-col animate-in fade-in duration-300`}>
           <header className={`px-4 pb-4 flex items-center justify-between ${READER_CHROME[readerTheme].bg} border-b ${READER_CHROME[readerTheme].border} shrink-0 ${chromeVisible ? '' : 'hidden'}`}
             style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
@@ -1942,7 +1966,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             </div>
             <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + pdfStep()))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

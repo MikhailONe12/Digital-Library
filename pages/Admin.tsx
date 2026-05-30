@@ -776,7 +776,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
   return (
     <div
-      className="p-4 md:p-6 animate-in fade-in min-h-screen pb-24 max-w-7xl mx-auto"
+      className="p-4 md:p-6 animate-in fade-in min-h-screen pb-24 max-w-7xl mx-auto overflow-x-hidden"
       style={{ paddingTop: 'calc(3.5rem + var(--safe-top))' }}
     >
       <header className="flex items-center justify-between mb-6 md:mb-10">
@@ -1152,7 +1152,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         )}
 
         {activeTab === 'data' && (
-          <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+          <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500 min-w-0 overflow-x-hidden">
 
             {/* Deploy control */}
             <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
@@ -1378,7 +1378,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <div className="flex gap-2">
                         <input
                           type="password"
-                          className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none"
+                          className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none"
                           placeholder={ta.apiKeyPlaceholder}
                           value={serverApiKeyInput}
                           onChange={e => setServerApiKeyInput(e.target.value)}
@@ -1557,7 +1557,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       </label>
                       <div className="flex gap-2 mt-1">
                           <input
-                              className="flex-1 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none"
+                              className="flex-1 min-w-0 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none"
                               placeholder={ta.exportWord}
                               value={exportConfirm}
                               onChange={e => setExportConfirm(e.target.value)}
@@ -1591,7 +1591,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       </label>
                       <div className="flex gap-2 mt-1">
                           <input
-                              className="flex-1 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
+                              className="flex-1 min-w-0 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
                               placeholder={ta.rewriteWord}
                               value={importConfirm}
                               onChange={e => setImportConfirm(e.target.value)}
@@ -2083,7 +2083,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         <div className="col-span-2">
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.fileUrl}</label>
                           <div className="flex gap-1">
-                            <input placeholder="https://..." className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
+                            <input placeholder="https://..." className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
                               value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
                             <button type="button"
                               onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }}

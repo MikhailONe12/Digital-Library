@@ -135,4 +135,9 @@ export interface AppState {
   customTypes: CustomType[];
   defaultLanguage: Locale;
   globalAccess: boolean;
+  /** Identifiers (Telegram usernames + IPs) that should NOT be counted in
+   *  traffic or per-item analytics. Applied both at write-time (events from
+   *  these visitors aren't recorded) and at read-time (the analytics endpoint
+   *  filters out any older rows that match). */
+  analyticsExcludes: { usernames: string[]; ips: string[] };
 }

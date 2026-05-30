@@ -640,6 +640,23 @@ const DEFAULT_SETTINGS = {
   customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
+  // Telegram usernames + IPs whose visits and item events should NOT be
+  // counted in analytics. Applied both at write-time (POST /api/visits and
+  // POST /api/items/:itemId/track skip the insert) and at read-time
+  // (GET /api/analytics filters out any pre-existing rows that match).
+  analyticsExcludes: { usernames: [], ips: [] },
+};
+
+// True when the visitor is on the admin's "don't count me" list. Cheap —
+// settings are cached for 30 s. Username comparison is case-insensitive and
+// tolerates a leading @.
+const isAnalyticsExcluded = (username, ip, settings) => {
+  const ex = settings?.analyticsExcludes || {};
+  const u = (username || '').toLowerCase().replace(/^@/, '');
+  const ipClean = (ip || '').trim();
+  const exU = (ex.usernames || []).map(x => String(x).toLowerCase().replace(/^@/, ''));
+  const exI = (ex.ips || []).map(x => String(x).trim());
+  return (u && u !== 'guest' && exU.includes(u)) || (ipClean && ipClean !== 'unknown' && exI.includes(ipClean));
 };
 
 // Full app state (catalog + settings + average ratings)
@@ -1018,7 +1035,13 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
   }
   const field = type === 'view' ? 'views' : 'downloads';
   const username = clip(req.body?.username, 64);
+  const ip = (req.headers['x-real-ip'] || req.ip || '').toString().split(',')[0].trim();
   try {
+    const settings = await getSettingsCached();
+    if (isAnalyticsExcluded(username, ip, settings)) {
+      // Don't pollute the visible counters or the events feed
+      return res.json({ ok: true, skipped: 'excluded' });
+    }
     await pool.query(
       `UPDATE items
           SET data = jsonb_set(data, '{${field}}',
@@ -1059,14 +1082,18 @@ app.put('/api/settings', requireApiKey, async (req, res) => {
 // Record a page visit (public — visitor action)
 app.post('/api/visits', async (req, res) => {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+  const username = clip(req.body?.username, 64);
+  const ip       = clip(req.body?.ip, 64);
   try {
+    const settings = await getSettingsCached();
+    if (isAnalyticsExcluded(username, ip, settings)) {
+      return res.json({ ok: true, skipped: 'excluded' });
+    }
     await pool.query(
       `INSERT INTO visit_logs (id, username, ip, platform, device)
        VALUES ($1, $2, $3, $4, $5)`,
       [
-        id,
-        clip(req.body?.username, 64),
-        clip(req.body?.ip, 64),
+        id, username, ip,
         clip(req.body?.platform, 32),
         clip(req.body?.device, 256),
       ],
@@ -1077,16 +1104,49 @@ app.post('/api/visits', async (req, res) => {
   }
 });
 
+// Reset just the traffic log (visit_logs) — separate from the per-item event
+// reset so the admin can wipe noisy traffic numbers without losing view/
+// download history on books.
+app.post('/api/visits/reset', requireApiKey, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM visit_logs');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Aggregated analytics for the admin dashboard (protected — sensitive data)
 app.get('/api/analytics', requireApiKey, async (req, res) => {
   try {
+    // Read-time filter — drops any pre-existing rows belonging to excluded
+    // usernames/IPs (events recorded BEFORE the exclude list was set). The
+    // write-time filter on /api/visits + /api/items/:itemId/track stops new
+    // ones from being recorded going forward.
+    const settings = await getSettingsCached();
+    const exU = ((settings.analyticsExcludes?.usernames) || [])
+      .map(x => String(x).toLowerCase().replace(/^@/, '')).filter(Boolean);
+    const exI = ((settings.analyticsExcludes?.ips) || [])
+      .map(x => String(x).trim()).filter(Boolean);
+    // Build a parameterised WHERE for SQL injection safety
+    const userNotIn = exU.length > 0
+      ? `AND lower(username) NOT IN (${exU.map((_, i) => `$${i + 1}`).join(',')})`
+      : '';
+    const visitNotIn = (exU.length + exI.length) > 0
+      ? `WHERE 1=1
+           ${exU.length > 0 ? `AND (username IS NULL OR lower(username) NOT IN (${exU.map((_, i) => `$${i + 1}`).join(',')}))` : ''}
+           ${exI.length > 0 ? `AND (ip IS NULL OR ip NOT IN (${exI.map((_, i) => `$${exU.length + i + 1}`).join(',')}))` : ''}`
+      : '';
+
     const statsRes = await pool.query(
       `SELECT to_char(timestamp, 'YYYY-MM-DD') AS date,
               count(*) FILTER (WHERE event_type = 'view')::int     AS views,
               count(*) FILTER (WHERE event_type = 'download')::int AS downloads
          FROM item_events
+        WHERE 1=1 ${userNotIn}
         GROUP BY 1
         ORDER BY 1`,
+      exU,
     );
 
     const eventsRes = await pool.query(
@@ -1094,8 +1154,9 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
               count(*)::int AS cnt,
               to_char(max(timestamp), 'YYYY-MM-DD') AS last_active
          FROM item_events
-        WHERE username IS NOT NULL
+        WHERE username IS NOT NULL ${userNotIn}
         GROUP BY username, item_id, event_type`,
+      exU,
     );
 
     const users = {};
@@ -1122,8 +1183,10 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
     const logsRes = await pool.query(
       `SELECT id, timestamp, username, ip, platform, device
          FROM visit_logs
+        ${visitNotIn}
         ORDER BY timestamp DESC
         LIMIT 2000`,
+      [...exU, ...exI],
     );
 
     res.json({

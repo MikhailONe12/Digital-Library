@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -611,6 +611,69 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         onUpdate();
       }
     }
+  };
+
+  const handleResetTrafficStats = async () => {
+    if (confirm(ta.confirmResetTraffic)) {
+      try {
+        await resetTrafficStats();
+        await loadAnalytics();
+        toast.success(ta.trafficReset);
+      } catch {
+        /* toasted by db layer */
+      } finally {
+        onUpdate();
+      }
+    }
+  };
+
+  // Analytics excludes — Telegram usernames + IPs that shouldn't be counted.
+  // Used to keep the admin's own browsing from inflating dashboards.
+  const [newExcludeUsername, setNewExcludeUsername] = useState('');
+  const [newExcludeIp, setNewExcludeIp] = useState('');
+
+  const handleAddExcludeUsername = async () => {
+    const v = newExcludeUsername.trim();
+    if (!v) return;
+    try { await addAnalyticsExcludeUsername(v); setNewExcludeUsername(''); onUpdate(); }
+    catch { /* toasted */ }
+  };
+
+  const handleRemoveExcludeUsername = async (u: string) => {
+    try { await removeAnalyticsExcludeUsername(u); onUpdate(); } catch { /* toasted */ }
+  };
+
+  const handleAddExcludeIp = async () => {
+    const v = newExcludeIp.trim();
+    if (!v) return;
+    try { await addAnalyticsExcludeIp(v); setNewExcludeIp(''); onUpdate(); }
+    catch { /* toasted */ }
+  };
+
+  const handleRemoveExcludeIp = async (ip: string) => {
+    try { await removeAnalyticsExcludeIp(ip); onUpdate(); } catch { /* toasted */ }
+  };
+
+  // Auto-detect: pull the current Telegram username + best-effort IP and add
+  // both as excludes. Lets the admin click one button to stop counting
+  // themselves.
+  const handleExcludeSelf = async () => {
+    const tg = (window as any).Telegram?.WebApp;
+    const username = tg?.initDataUnsafe?.user?.username || '';
+    let ip = '';
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const r = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal });
+      clearTimeout(t);
+      const j = await r.json();
+      ip = j.ip || '';
+    } catch { /* no internet — leave blank */ }
+    let added = 0;
+    try { if (username) { await addAnalyticsExcludeUsername(username); added++; } } catch { /* noop */ }
+    try { if (ip)       { await addAnalyticsExcludeIp(ip); added++; } } catch { /* noop */ }
+    if (added > 0) { toast.success(ta.excludeSelfDone); onUpdate(); }
+    else alert(ta.excludeSelfNothing);
   };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
@@ -1285,6 +1348,70 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </button>
                       </div>
                   </div>
+                  {/* Analytics excludes — don't count specific usernames/IPs */}
+                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                      <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1 flex items-center gap-2">
+                          <Ban size={14} /> {ta.excludesTitle}
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.excludesDesc}</p>
+
+                      <button
+                        onClick={handleExcludeSelf}
+                        className="w-full mb-4 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-2"
+                      >
+                        <ShieldCheck size={13} /> {ta.excludeSelfBtn}
+                      </button>
+
+                      {/* Usernames */}
+                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUsernames}</label>
+                      <div className="flex gap-2 mt-1 mb-2">
+                          <input
+                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              placeholder="@username"
+                              value={newExcludeUsername}
+                              onChange={e => setNewExcludeUsername(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddExcludeUsername(); }}
+                          />
+                          <button onClick={handleAddExcludeUsername} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]">
+                          {(db.analyticsExcludes?.usernames || []).length === 0 && (
+                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
+                          )}
+                          {(db.analyticsExcludes?.usernames || []).map(u => (
+                              <span key={u} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700">
+                                  @{u}
+                                  <button onClick={() => handleRemoveExcludeUsername(u)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
+                              </span>
+                          ))}
+                      </div>
+
+                      {/* IPs */}
+                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeIps}</label>
+                      <div className="flex gap-2 mt-1 mb-2">
+                          <input
+                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              placeholder="1.2.3.4"
+                              value={newExcludeIp}
+                              onChange={e => setNewExcludeIp(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddExcludeIp(); }}
+                          />
+                          <button onClick={handleAddExcludeIp} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 min-h-[1.5rem]">
+                          {(db.analyticsExcludes?.ips || []).length === 0 && (
+                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
+                          )}
+                          {(db.analyticsExcludes?.ips || []).map(ip => (
+                              <span key={ip} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 font-mono">
+                                  {ip}
+                                  <button onClick={() => handleRemoveExcludeIp(ip)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
+                              </span>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Reset content stats */}
                   <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
                       <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                           <BarChart4 size={14} /> {ta.resetStatsTitle}
@@ -1292,6 +1419,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetStatsDesc}</p>
                       <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
                           {ta.resetStatsButton}
+                      </button>
+                  </div>
+
+                  {/* Reset traffic stats */}
+                  <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
+                      <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <Monitor size={14} /> {ta.resetTrafficTitle}
+                      </h4>
+                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetTrafficDesc}</p>
+                      <button onClick={handleResetTrafficStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
+                          {ta.resetTrafficButton}
                       </button>
                   </div>
 

@@ -33,6 +33,7 @@ const emptyState = (): AppState => ({
   ],
   defaultLanguage: 'ru',
   globalAccess: false,
+  analyticsExcludes: { usernames: [], ips: [] },
 });
 
 // In-memory cache — source of truth for the UI between renders.
@@ -113,6 +114,7 @@ const putSettings = (): Promise<Response> => {
     customTypes: cache.customTypes,
     defaultLanguage: cache.defaultLanguage,
     globalAccess: cache.globalAccess,
+    analyticsExcludes: cache.analyticsExcludes,
   };
   return writeRequest('Сохранение настроек', '/api/settings', {
     method: 'PUT',
@@ -195,6 +197,10 @@ export const loadDb = async (userId?: string): Promise<AppState> => {
     })(),
     defaultLanguage: remote.defaultLanguage || 'ru',
     globalAccess: !!remote.globalAccess,
+    analyticsExcludes: {
+      usernames: remote.analyticsExcludes?.usernames || [],
+      ips:       remote.analyticsExcludes?.ips || [],
+    },
   };
   avgRatings = remote.ratings || {};
 
@@ -423,6 +429,59 @@ export const resetStats = async (): Promise<void> => {
     method: 'POST',
     headers: authHeaders(),
   });
+};
+
+// Wipe visit_logs only — leaves item view/download counters untouched.
+export const resetTrafficStats = async (): Promise<void> => {
+  cache.visitLogs = [];
+  await writeRequest('Сброс аналитики трафика', '/api/visits/reset', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+};
+
+// ── Analytics excludes (Telegram usernames + IPs not counted in stats) ──────
+
+const cleanUsername = (s: string): string =>
+  s.replace(/^@/, '').trim().toLowerCase();
+const cleanIp = (s: string): string => s.trim();
+
+export const addAnalyticsExcludeUsername = async (username: string): Promise<void> => {
+  const clean = cleanUsername(username);
+  if (!clean) return;
+  const list = cache.analyticsExcludes.usernames;
+  if (list.includes(clean)) return;
+  const prev = { ...cache };
+  cache.analyticsExcludes = { ...cache.analyticsExcludes, usernames: [...list, clean] };
+  await commitSettings(prev);
+};
+
+export const removeAnalyticsExcludeUsername = async (username: string): Promise<void> => {
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    usernames: cache.analyticsExcludes.usernames.filter(u => u !== username),
+  };
+  await commitSettings(prev);
+};
+
+export const addAnalyticsExcludeIp = async (ip: string): Promise<void> => {
+  const clean = cleanIp(ip);
+  if (!clean) return;
+  const list = cache.analyticsExcludes.ips;
+  if (list.includes(clean)) return;
+  const prev = { ...cache };
+  cache.analyticsExcludes = { ...cache.analyticsExcludes, ips: [...list, clean] };
+  await commitSettings(prev);
+};
+
+export const removeAnalyticsExcludeIp = async (ip: string): Promise<void> => {
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    ips: cache.analyticsExcludes.ips.filter(i => i !== ip),
+  };
+  await commitSettings(prev);
 };
 
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {

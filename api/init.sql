@@ -115,3 +115,22 @@ CREATE TABLE IF NOT EXISTS user_reading_progress (
   updated_at     TIMESTAMPTZ DEFAULT NOW(),
   PRIMARY KEY (user_id, item_id, format_url)
 );
+
+-- Error log (built-in lightweight monitoring; replaces an external Sentry).
+-- Both client-side (window.onerror / unhandledrejection / React boundary) and
+-- server-side (Express error handler) failures land here.
+CREATE TABLE IF NOT EXISTS error_log (
+  id          BIGSERIAL   PRIMARY KEY,
+  ts          TIMESTAMPTZ DEFAULT NOW(),
+  source      TEXT        NOT NULL DEFAULT 'client', -- 'client' | 'server'
+  kind        TEXT,        -- 'error' | 'unhandledrejection' | 'react' | route path…
+  message     TEXT        NOT NULL,
+  stack       TEXT,
+  url         TEXT,        -- page URL (client) or request path (server)
+  user_id     TEXT,
+  username    TEXT,
+  user_agent  TEXT,
+  count       INT         NOT NULL DEFAULT 1  -- reserved for future dedup
+);
+
+CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);

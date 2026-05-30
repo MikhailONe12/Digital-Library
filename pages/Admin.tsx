@@ -9,7 +9,8 @@ import {
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, loadErrorLog, clearErrorLog, getServerApiKey, setServerApiKey } from '../services/db';
+import type { ErrorLogRow } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -625,6 +626,31 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         onUpdate();
       }
     }
+  };
+
+  // ── Error log (built-in monitoring) ──────────────────────────────────────
+  const [errorRows, setErrorRows] = useState<ErrorLogRow[]>([]);
+  const [errorsLoading, setErrorsLoading] = useState(false);
+  const [expandedError, setExpandedError] = useState<number | null>(null);
+
+  const refreshErrors = async () => {
+    setErrorsLoading(true);
+    try { setErrorRows(await loadErrorLog()); }
+    finally { setErrorsLoading(false); }
+  };
+
+  // Load the error log whenever the Data tab opens.
+  useEffect(() => {
+    if (activeTab === 'data' && isAdmin) refreshErrors();
+  }, [activeTab, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleClearErrors = async () => {
+    if (!confirm(ta.confirmClearErrors)) return;
+    try {
+      await clearErrorLog();
+      setErrorRows([]);
+      toast.success(ta.errorsCleared);
+    } catch { /* toasted by db layer */ }
   };
 
   // Analytics excludes — Telegram usernames + IPs that shouldn't be counted.
@@ -1542,6 +1568,68 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <button onClick={handleResetTrafficStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
                           {ta.resetTrafficButton}
                       </button>
+                  </div>
+
+                  {/* Error log (built-in monitoring) */}
+                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden">
+                      <div className="flex items-center justify-between mb-1">
+                          <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
+                              <AlertCircle size={14} /> {ta.errorLogTitle}
+                              {errorRows.length > 0 && (
+                                  <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px]">{errorRows.length}</span>
+                              )}
+                          </h4>
+                          <div className="flex items-center gap-1 shrink-0">
+                              <button onClick={refreshErrors} title={ta.errorLogRefresh} className="p-2 text-slate-400 hover:text-slate-700 transition-colors">
+                                  <RefreshCw size={14} className={errorsLoading ? 'animate-spin' : ''} />
+                              </button>
+                              {errorRows.length > 0 && (
+                                  <button onClick={handleClearErrors} title={ta.errorLogClear} className="p-2 text-slate-400 hover:text-red-600 transition-colors">
+                                      <Trash2 size={14} />
+                                  </button>
+                              )}
+                          </div>
+                      </div>
+                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.errorLogDesc}</p>
+
+                      {errorRows.length === 0 ? (
+                          <div className="py-6 text-center">
+                              <CheckCircle2 size={20} className="text-green-500 mx-auto mb-2" />
+                              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{ta.errorLogEmpty}</p>
+                          </div>
+                      ) : (
+                          <div className="space-y-2 max-h-80 overflow-y-auto">
+                              {errorRows.map(e => (
+                                  <div key={e.id} className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+                                      <button
+                                          onClick={() => setExpandedError(expandedError === e.id ? null : e.id)}
+                                          className="w-full text-left p-3 flex items-start gap-2"
+                                      >
+                                          <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[8px] font-black uppercase shrink-0 ${e.source === 'server' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'}`}>
+                                              {e.source}
+                                          </span>
+                                          <div className="min-w-0 flex-1">
+                                              <p className="text-[11px] font-bold text-slate-800 break-words line-clamp-2">{e.message}</p>
+                                              <p className="text-[8px] text-slate-400 mt-1 truncate">
+                                                  {new Date(e.ts).toLocaleString()}
+                                                  {e.kind ? ` · ${e.kind}` : ''}
+                                                  {e.username ? ` · @${e.username}` : ''}
+                                              </p>
+                                          </div>
+                                      </button>
+                                      {expandedError === e.id && (
+                                          <div className="px-3 pb-3 space-y-2 border-t border-slate-100 pt-2">
+                                              {e.url && <p className="text-[9px] text-slate-500 break-all"><b>URL:</b> {e.url}</p>}
+                                              {e.user_agent && <p className="text-[9px] text-slate-400 break-all">{e.user_agent}</p>}
+                                              {e.stack && (
+                                                  <pre className="text-[8px] text-slate-600 bg-slate-50 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-48">{e.stack}</pre>
+                                              )}
+                                          </div>
+                                      )}
+                                  </div>
+                              ))}
+                          </div>
+                      )}
                   </div>
 
                   {/* Export */}

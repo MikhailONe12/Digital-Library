@@ -447,6 +447,39 @@ export const resetTrafficStats = async (): Promise<void> => {
   });
 };
 
+// ── Error log (built-in monitoring) ──────────────────────────────────────────
+
+export interface ErrorLogRow {
+  id: number;
+  ts: string;
+  source: 'client' | 'server';
+  kind: string | null;
+  message: string;
+  stack: string | null;
+  url: string | null;
+  user_id: string | null;
+  username: string | null;
+  user_agent: string | null;
+}
+
+export const loadErrorLog = async (): Promise<ErrorLogRow[]> => {
+  try {
+    const res = await fetch('/api/admin/errors', { headers: authHeaders() });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.errors || [];
+  } catch {
+    return [];
+  }
+};
+
+export const clearErrorLog = async (): Promise<void> => {
+  await writeRequest('Очистка журнала ошибок', '/api/admin/errors/clear', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+};
+
 // ── Analytics excludes (Telegram usernames + IPs not counted in stats) ──────
 
 const cleanUsername = (s: string): string =>

@@ -75,8 +75,75 @@ pool.connect()
 
 const allowedOrigins = (process.env.CORS_ORIGIN || 'https://library.optionsdata.ru').split(',');
 
+// Don't advertise the framework — one less hint for an attacker.
+app.disable('x-powered-by');
+app.set('trust proxy', true); // nginx sets X-Forwarded-For / X-Real-IP
+
 app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST', 'PUT', 'DELETE'] }));
 app.use(express.json({ limit: '10mb' }));
+
+// ── Security headers (helmet-equivalent, dependency-free) ────────────────────
+// These harden every API response. The HTML document's CSP lives in
+// index.html (ships with the frontend build) + nginx; here we cover the API
+// surface so JSON/file responses can't be sniffed, framed or downgraded.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('X-Frame-Options', 'DENY'); // API JSON is never meant to be framed
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-site');
+  // HSTS: force HTTPS for a year (nginx already redirects, this tells browsers
+  // to never even try http). Harmless behind the TLS-terminating proxy.
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+// ── Rate limiting (in-memory sliding window, per IP, dependency-free) ────────
+// A single Node process serves the app, so an in-memory store is sufficient and
+// avoids a Redis dependency. Buckets are pruned lazily on access. Keyed by the
+// real client IP (nginx forwards it via X-Real-IP / X-Forwarded-For).
+const rateBuckets = new Map(); // key -> { count, resetAt }
+
+const clientIp = (req) =>
+  (req.headers['x-real-ip']
+    || (req.headers['x-forwarded-for'] || '').split(',')[0]
+    || req.ip
+    || 'unknown').toString().trim();
+
+// Returns an Express middleware enforcing `max` requests per `windowMs` for the
+// given `name` (name keeps independent routes from sharing a counter).
+const rateLimit = (name, max, windowMs) => (req, res, next) => {
+  const key = `${name}:${clientIp(req)}`;
+  const now = Date.now();
+  let b = rateBuckets.get(key);
+  if (!b || now >= b.resetAt) {
+    b = { count: 0, resetAt: now + windowMs };
+    rateBuckets.set(key, b);
+  }
+  b.count++;
+  if (b.count > max) {
+    const retry = Math.ceil((b.resetAt - now) / 1000);
+    res.setHeader('Retry-After', String(retry));
+    return res.status(429).json({ error: 'Too many requests, slow down.', retryAfter: retry });
+  }
+  next();
+};
+
+// Periodic sweep so the Map can't grow unbounded from one-off IPs.
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of rateBuckets) if (now >= b.resetAt) rateBuckets.delete(k);
+}, 5 * 60 * 1000).unref?.();
+
+// Named limiters reused on the sensitive routes below.
+const limitLogin    = rateLimit('login', 5, 15 * 60 * 1000);   // brute-force guard
+const limitArticle  = rateLimit('article', 30, 60 * 1000);      // SSRF/proxy-abuse guard
+const limitBackup   = rateLimit('backup', 3, 60 * 1000);        // heavy pg_dump guard
+const limitErrors   = rateLimit('errors', 30, 60 * 1000);       // error-report flood guard
+const limitGlobal   = rateLimit('global', 600, 60 * 1000);      // catch-all DoS guard
+
+// Apply the catch-all limiter to every /api route. Specific tighter limiters
+// are attached per-route at their definitions.
+app.use('/api', limitGlobal);
 
 // API key guard for all write operations
 const requireApiKey = (req, res, next) => {
@@ -254,6 +321,31 @@ const baseUrl = () =>
 // Coerce a value to a trimmed string of at most n chars, or null.
 const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
 
+// ── Error logging (built-in monitoring) ──────────────────────────────────────
+
+// Persist one error row. Best-effort: never throws (we don't want logging to
+// take down the request that's already failing). Fields are length-capped.
+const recordError = async ({ source, kind, message, stack, url, userId, username, userAgent }) => {
+  try {
+    await pool.query(
+      `INSERT INTO error_log (source, kind, message, stack, url, user_id, username, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        source === 'server' ? 'server' : 'client',
+        clip(kind, 64),
+        clip(message, 2000) || '(no message)',
+        clip(stack, 8000),
+        clip(url, 512),
+        clip(userId, 64),
+        clip(username, 64),
+        clip(userAgent, 512),
+      ],
+    );
+  } catch (e) {
+    console.warn('recordError failed:', e.message);
+  }
+};
+
 // ── Download token helpers ───────────────────────────────────────────────────
 
 // Stable TOKEN_SECRET in env is recommended for production (tokens survive
@@ -297,7 +389,7 @@ app.get('/api/health', async (req, res) => {
 });
 
 // Admin login: verify ADMIN_PASSWORD, return API_KEY
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', limitLogin, (req, res) => {
   const { password } = req.body || {};
   const adminPassword = process.env.ADMIN_PASSWORD;
   if (!adminPassword || password !== adminPassword) {
@@ -308,6 +400,50 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(503).json({ error: 'API key not configured on server' });
   }
   res.json({ apiKey });
+});
+
+// ── Error monitoring endpoints ───────────────────────────────────────────────
+
+// Public: the frontend posts client-side errors here (rate-limited so it can't
+// be abused as a write-amplification vector). Verified Telegram identity is
+// attached when present.
+app.post('/api/errors', limitErrors, async (req, res) => {
+  const b = req.body || {};
+  const tgUser = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
+  await recordError({
+    source: 'client',
+    kind: b.kind,
+    message: b.message,
+    stack: b.stack,
+    url: b.url,
+    userId: tgUser?.id || b.userId,
+    username: tgUser?.username || b.username,
+    userAgent: req.headers['user-agent'],
+  });
+  res.json({ ok: true });
+});
+
+// Admin: most recent errors (newest first).
+app.get('/api/admin/errors', requireApiKey, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, ts, source, kind, message, stack, url, user_id, username, user_agent
+         FROM error_log ORDER BY ts DESC LIMIT 200`,
+    );
+    res.json({ errors: rows });
+  } catch (e) {
+    res.status(503).json({ error: 'Database unavailable' });
+  }
+});
+
+// Admin: wipe the error log.
+app.post('/api/admin/errors/clear', requireApiKey, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM error_log');
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Deploy control ───────────────────────────────────────────────────────────
@@ -438,7 +574,7 @@ app.get('/api/admin/backup/status', requireApiKey, (req, res) => {
 });
 
 // Trigger an immediate backup
-app.post('/api/admin/backup/run', requireApiKey, (req, res) => {
+app.post('/api/admin/backup/run', limitBackup, requireApiKey, (req, res) => {
   try {
     fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
     const file = path.join(DEPLOY_CONTROL_DIR, `backup-request-${Date.now()}.json`);
@@ -729,7 +865,7 @@ const sanitiseHtml = (html) => {
     .replace(/href\s*=\s*'\s*javascript:[^']*'/gi, "href='#'");
 };
 
-app.get('/api/article-extract', async (req, res) => {
+app.get('/api/article-extract', limitArticle, async (req, res) => {
   const url = req.query.url;
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || url.length > 2000) {
     return res.status(400).json({ error: 'Invalid URL' });
@@ -1505,7 +1641,27 @@ app.use((err, req, res, _next) => {
     return res.status(400).json({ error: err.message });
   }
   console.error('Unhandled error:', err.message);
+  // Persist to the built-in monitor so server crashes are visible in the admin
+  // panel, not just the container logs.
+  recordError({
+    source: 'server',
+    kind: `${req.method} ${req.path}`,
+    message: err.message,
+    stack: err.stack,
+    url: req.originalUrl,
+    userAgent: req.headers['user-agent'],
+  });
   res.status(500).json({ error: 'Internal server error' });
+});
+
+// Last-resort process guards — log uncaught failures instead of dying silently.
+process.on('unhandledRejection', (reason) => {
+  console.error('unhandledRejection:', reason);
+  recordError({ source: 'server', kind: 'unhandledRejection', message: String(reason?.message || reason), stack: reason?.stack });
+});
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException:', err);
+  recordError({ source: 'server', kind: 'uncaughtException', message: err.message, stack: err.stack });
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────

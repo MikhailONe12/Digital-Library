@@ -362,6 +362,21 @@ app.post('/api/admin/deploy/mode', requireApiKey, (req, res) => {
 const BACKUP_CONFIG_FILE = path.join(DEPLOY_CONTROL_DIR, 'backup-config.json');
 const BACKUP_STATUS_FILE = path.join(DEPLOY_CONTROL_DIR, 'backup-status.json');
 
+// Mirrors DEFAULT_BACKUP_CONFIG in deploy-agent/agent.mjs. Returned by GET
+// /api/admin/backup/status when the agent has never written a config file
+// yet, so the admin can pre-configure the targets even before the agent is
+// running on the host. Saving will create the file; the agent will pick it
+// up on its next tick.
+const DEFAULT_BACKUP_CONFIG = {
+  schedule: { enabled: true, intervalHours: 6 },
+  retention: { keepDaily: 7, keepWeekly: 4, keepMonthly: 12 },
+  targets: {
+    local:  { enabled: true,  path: '' },
+    remote: { enabled: false, host: '', user: '', path: '', port: 22, sshKeyPath: '' },
+    s3:     { enabled: false, endpoint: '', region: '', bucket: '', prefix: '', accessKey: '', secretKey: '' },
+  },
+};
+
 // Strip credential-shaped fields before returning config to the admin UI.
 // Replaced with "***" if set, empty string if not set — that way the UI can
 // show "configured" vs "blank" without ever revealing the actual secret.
@@ -409,9 +424,12 @@ const readBackupConfigSafe = () => {
 
 // GET backup status + masked config
 app.get('/api/admin/backup/status', requireApiKey, (req, res) => {
-  let status = null, cfg = null;
+  let status = null;
   try { status = JSON.parse(fs.readFileSync(BACKUP_STATUS_FILE, 'utf8')); } catch { /* not yet */ }
-  cfg = readBackupConfigSafe();
+  // Always hand the UI a usable config — defaults when nothing has been
+  // saved yet — so the admin can pre-configure targets before the agent
+  // ever runs. Saving creates the file; the agent reads it on next tick.
+  const cfg = readBackupConfigSafe() || DEFAULT_BACKUP_CONFIG;
   res.json({
     agent: status ? 'online' : 'offline',
     status,

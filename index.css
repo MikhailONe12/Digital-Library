@@ -19,6 +19,14 @@
   --app-text: #f5f5f7;
 }
 
+html, body {
+  /* Belt-and-suspenders horizontal-scroll guard. App.tsx's root has
+     `overflow-x-hidden`, but iOS Safari and Telegram WebView can still
+     pan-scroll the page when a deep descendant turns out to be wider
+     than the viewport. Pinning it here keeps a single overflowing
+     element from shifting the whole UI sideways. */
+  overflow-x: hidden;
+}
 body {
   background-color: var(--app-bg);
   color: var(--app-text);

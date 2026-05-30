@@ -1421,7 +1421,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUsernames}</label>
                       <div className="flex gap-2 mt-1 mb-2">
                           <input
-                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
                               placeholder="@username"
                               value={newExcludeUsername}
                               onChange={e => setNewExcludeUsername(e.target.value)}
@@ -1445,7 +1445,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeIps}</label>
                       <div className="flex gap-2 mt-1 mb-2">
                           <input
-                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
                               placeholder="1.2.3.4"
                               value={newExcludeIp}
                               onChange={e => setNewExcludeIp(e.target.value)}
@@ -1469,7 +1469,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUserIds}</label>
                       <div className="flex gap-2 mt-1 mb-2">
                           <input
-                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
                               placeholder="123456789"
                               inputMode="numeric"
                               value={newExcludeUserId}
@@ -1495,7 +1495,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <p className="text-[9px] text-slate-400 mt-1 mb-2 leading-relaxed">{ta.browsersHelp}</p>
                       <div className="flex gap-2 mb-2">
                           <input
-                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
                               placeholder={ta.browserLabelPh}
                               value={browserLabel}
                               onChange={e => setBrowserLabel(e.target.value)}
@@ -1512,7 +1512,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               return (
                                   <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white border-slate-200 text-slate-700'}`}>
                                       <span className="font-mono text-slate-400 shrink-0">{b.token.slice(0, 8)}…</span>
-                                      <span className="flex-1 truncate">{b.label}</span>
+                                      <span className="flex-1 min-w-0 truncate">{b.label}</span>
                                       <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span>
                                       {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>}
                                       <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button>

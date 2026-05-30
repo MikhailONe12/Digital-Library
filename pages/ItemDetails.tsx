@@ -89,6 +89,9 @@ interface ItemDetailsProps {
   onRefresh: () => void;
   /** Used by the series strip to jump to a sibling without going back home. */
   onOpenItem?: (item: MediaItem) => void;
+  /** Used by the clickable author name + "more by this author" strip — go
+   *  back home with the author filter pre-applied. */
+  onOpenAuthor?: (author: string) => void;
   lang: Locale;
   t: any;
 }
@@ -105,7 +108,7 @@ interface ParsedArticle {
 
 const PDF_SPREAD_KEY = 'reader_pdf_spread';
 
-const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, lang, t }) => {
+const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
 
@@ -943,6 +946,72 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     setAnnotations(prev => prev.filter(a => a.id !== id));
   };
 
+  // Export annotations as Markdown — one file per book. Each highlight is a
+  // blockquote with the selected text; user notes appear as italic paragraphs
+  // below; metadata (page, date, colour) on a small line. Sorted by page when
+  // present, otherwise by creation time.
+  const annotationsToMarkdown = (anns: Annotation[]): string => {
+    const title = pickText(item.title, lang) || 'Untitled';
+    const lines: string[] = [];
+    lines.push(`# ${title}`);
+    const meta = [item.author, item.publishedDate].filter(Boolean).join(' — ');
+    if (meta) lines.push(`*${meta}*`);
+    lines.push('');
+    lines.push(`> ${anns.length} ${t.exportNotesCount}`);
+    lines.push('');
+
+    const sorted = [...anns].sort((a, b) => {
+      if (a.page != null && b.page != null) return a.page - b.page;
+      if (a.page != null) return -1;
+      if (b.page != null) return 1;
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    });
+
+    for (const a of sorted) {
+      if (a.selected_text) {
+        // Multi-line selections become a single multi-line blockquote.
+        const quoted = a.selected_text.split('\n').map(l => `> ${l}`).join('\n');
+        lines.push(quoted);
+        lines.push('');
+      }
+      if (a.note) {
+        lines.push(`*${a.note.replace(/\n/g, ' ')}*`);
+        lines.push('');
+      }
+      const m: string[] = [];
+      if (a.page != null) m.push(`${t.exportNotesPage} ${a.page}`);
+      m.push(new Date(a.created_at).toLocaleDateString());
+      if (a.color) m.push(a.color);
+      lines.push(`<sub>${m.join(' · ')}</sub>`);
+      lines.push('');
+      lines.push('---');
+      lines.push('');
+    }
+    return lines.join('\n');
+  };
+
+  // Sanitise the title into a safe filename: keep letters/digits/space/dash,
+  // collapse whitespace, cap at 80 chars so it doesn't blow OS limits.
+  const safeFilename = (s: string): string =>
+    (s.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, ' ').trim() || 'notes').slice(0, 80);
+
+  const handleExportAnnotations = (isEpub: boolean) => {
+    // Same visibility filter as the panel uses, so what's exported matches
+    // what the user just saw.
+    const list = annotations.filter(a => isEpub ? !!a.cfi_range : a.page != null);
+    if (list.length === 0) return;
+    const md = annotationsToMarkdown(list);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${safeFilename(pickText(item.title, lang))} — notes.md`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleAddPdfBookmark = () => {
     setBookmarkName('');
     setBookmarkDraft({ position: String(pdfPage), defaultLabel: `Страница ${pdfPage}` });
@@ -1033,6 +1102,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const prevInSeries = currentSeriesIdx > 0 ? seriesSiblings[currentSeriesIdx - 1] : null;
   const nextInSeries = currentSeriesIdx >= 0 && currentSeriesIdx < seriesSiblings.length - 1
     ? seriesSiblings[currentSeriesIdx + 1] : null;
+
+  // Other books by the same author — case-insensitive, trimmed. Capped at 12
+  // since this is a horizontal strip; user always has the full list via the
+  // clickable author name → home page with the author filter pre-applied.
+  const authorSiblings = useMemo<MediaItem[]>(() => {
+    const a = (item.author || '').trim().toLowerCase();
+    if (!a) return [];
+    const all = getDb().items || [];
+    return all
+      .filter(i => i.id !== item.id && (i.author || '').trim().toLowerCase() === a)
+      .sort((x, y) => new Date(y.publishedDate || 0).getTime() - new Date(x.publishedDate || 0).getTime())
+      .slice(0, 12);
+  }, [item.id, item.author]);
 
   // Article extraction — fetch when activeArticle becomes non-null.
   useEffect(() => {
@@ -1226,8 +1308,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     return (
     <div className="absolute inset-y-0 right-0 w-72 bg-slate-950 border-l border-white/10 flex flex-col z-30 animate-in slide-in-from-right-2 duration-200">
       <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
-        <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">Аннотации</p>
-        <button onClick={() => setShowAnnotations(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
+        <p className="text-[10px] font-black uppercase text-white/60 tracking-widest">{t.annotations}</p>
+        <div className="flex items-center gap-1">
+          {visible.length > 0 && (
+            <button
+              onClick={() => handleExportAnnotations(isEpub)}
+              title={t.exportNotes}
+              className="p-1.5 text-white/40 hover:text-white transition-colors"
+            >
+              <Download size={14} />
+            </button>
+          )}
+          <button onClick={() => setShowAnnotations(false)} className="text-white/40 hover:text-white transition-colors"><X size={16} /></button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {visible.length === 0 && (
@@ -1441,7 +1534,18 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
         <div className="grid grid-cols-2 gap-4 mt-6">
           <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">
             <div className="flex items-center gap-3 mb-1"><User size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.author}</p></div>
-            <p className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight">{item.author}</p>
+            {item.author?.trim() && onOpenAuthor ? (
+              <button
+                type="button"
+                onClick={() => onOpenAuthor(item.author.trim())}
+                className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight w-full text-left hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                title={t.viewAllByAuthor}
+              >
+                {item.author}
+              </button>
+            ) : (
+              <p className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight">{item.author || '—'}</p>
+            )}
           </div>
           <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">
             <div className="flex items-center gap-3 mb-1"><Calendar size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.published}</p></div>
@@ -1560,6 +1664,41 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                   </button>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {/* More by this author — horizontal strip of sibling books, capped at 12 */}
+        {authorSiblings.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+              <User size={14} className="text-red-600" />
+              <span className="w-6 h-[2px] bg-red-600" />
+              {t.moreByAuthor}: {item.author}
+            </h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {authorSiblings.map(sib => (
+                <button
+                  key={sib.id}
+                  onClick={() => onOpenItem?.(sib)}
+                  className="flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95 transition-all"
+                >
+                  <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative">
+                    {sib.coverUrl && <img src={sib.coverUrl} className="w-full h-full object-cover" alt="" />}
+                  </div>
+                  <div className="p-2 bg-white dark:bg-[#1c1c1e]">
+                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {onOpenAuthor && (
+              <button
+                onClick={() => onOpenAuthor(item.author.trim())}
+                className="mt-3 w-full py-2.5 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:border-red-400 active:scale-95 transition-all"
+              >
+                {t.viewAllByAuthor}
+              </button>
             )}
           </div>
         )}

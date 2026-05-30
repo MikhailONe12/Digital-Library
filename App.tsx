@@ -324,6 +324,19 @@ const App: React.FC = () => {
             onBack={() => {setCurrentPage('home'); setSelectedItem(null);}}
             onRefresh={() => setDb(getDb())}
             onOpenItem={(it) => { setViewHistory(recordView(it.id)); setSelectedItem(it); }}
+            onOpenAuthor={(author) => {
+              // Jump back to the catalog with the author filter pre-applied.
+              // Clear competing filters so the result list shows everything
+              // the author has — not the intersection with current tag/lang/
+              // category selections.
+              setSearchField('author');
+              setSearchQuery(author);
+              setActiveCategory('ALL');
+              setContentLangFilter([]);
+              setTagFilter([]);
+              setSelectedItem(null);
+              setCurrentPage('home');
+            }}
             lang={lang}
             t={t}
           />

@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, getServerApiKey, setServerApiKey } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -654,12 +654,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     try { await removeAnalyticsExcludeIp(ip); onUpdate(); } catch { /* toasted */ }
   };
 
-  // Auto-detect: pull the current Telegram username + best-effort IP and add
-  // both as excludes. Lets the admin click one button to stop counting
-  // themselves.
+  // Auto-detect: pull the current Telegram username + numeric user ID + best-
+  // effort IP and add them all, AND register this browser by token. One click
+  // covers every dimension — IP changes don't matter once the browser token
+  // is in place.
   const handleExcludeSelf = async () => {
     const tg = (window as any).Telegram?.WebApp;
     const username = tg?.initDataUnsafe?.user?.username || '';
+    const userId   = tg?.initDataUnsafe?.user?.id;
     let ip = '';
     try {
       const ctrl = new AbortController();
@@ -669,12 +671,53 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
       const j = await r.json();
       ip = j.ip || '';
     } catch { /* no internet — leave blank */ }
+
+    const labelParts = [username && `@${username}`, ip, navigator.platform].filter(Boolean);
+    const browserLabel = labelParts.join(' · ') || 'Этот браузер';
+
     let added = 0;
     try { if (username) { await addAnalyticsExcludeUsername(username); added++; } } catch { /* noop */ }
+    try { if (userId)   { await addAnalyticsExcludeUserId(userId); added++; } } catch { /* noop */ }
     try { if (ip)       { await addAnalyticsExcludeIp(ip); added++; } } catch { /* noop */ }
+    try { await registerBrowserExclude(browserLabel); added++; } catch { /* noop */ }
+
     if (added > 0) { toast.success(ta.excludeSelfDone); onUpdate(); }
     else alert(ta.excludeSelfNothing);
   };
+
+  // Mark just this browser (no username/IP/ID) — useful for desktop testing
+  // outside Telegram, or when admin doesn't want to expose their @handle.
+  const [browserLabel, setBrowserLabel] = useState('');
+  const handleRegisterBrowser = async () => {
+    const label = browserLabel.trim() || navigator.platform || 'Browser';
+    try {
+      await registerBrowserExclude(label);
+      setBrowserLabel('');
+      toast.success(ta.browserRegistered);
+      onUpdate();
+    } catch { /* toasted */ }
+  };
+
+  const handleRemoveBrowser = async (token: string) => {
+    try { await removeBrowserExclude(token); onUpdate(); } catch { /* toasted */ }
+  };
+
+  // Manual Telegram user ID input
+  const [newExcludeUserId, setNewExcludeUserId] = useState('');
+  const handleAddExcludeUserId = async () => {
+    const v = newExcludeUserId.trim();
+    if (!v) return;
+    try { await addAnalyticsExcludeUserId(v); setNewExcludeUserId(''); onUpdate(); }
+    catch { /* toasted */ }
+  };
+  const handleRemoveExcludeUserId = async (id: string) => {
+    try { await removeAnalyticsExcludeUserId(id); onUpdate(); } catch { /* toasted */ }
+  };
+
+  // True iff this browser's localStorage token is in the server list.
+  const thisBrowserToken = getSkipAnalyticsToken();
+  const thisBrowserExcluded = !!thisBrowserToken
+    && (db.analyticsExcludes?.browsers || []).some(b => b.token === thisBrowserToken);
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1348,12 +1391,24 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         </button>
                       </div>
                   </div>
-                  {/* Analytics excludes — don't count specific usernames/IPs */}
+                  {/* Analytics excludes — don't count specific identifiers */}
                   <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-200">
                       <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1 flex items-center gap-2">
                           <Ban size={14} /> {ta.excludesTitle}
                       </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.excludesDesc}</p>
+                      <p className="text-[9px] text-slate-400 font-bold mb-3">{ta.excludesDesc}</p>
+
+                      {/* "This browser is excluded" indicator */}
+                      <div className={`mb-4 px-3 py-2 rounded-xl text-[10px] font-bold flex items-center justify-between gap-2 ${thisBrowserExcluded ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
+                          <span className="flex items-center gap-1.5">
+                              {thisBrowserExcluded
+                                  ? <><CheckCircle2 size={12} /> {ta.browserExcluded}</>
+                                  : <><AlertCircle size={12} /> {ta.browserNotExcluded}</>}
+                          </span>
+                          {thisBrowserExcluded && thisBrowserToken && (
+                              <span className="font-mono text-[9px] opacity-60">{thisBrowserToken.slice(0, 8)}…</span>
+                          )}
+                      </div>
 
                       <button
                         onClick={handleExcludeSelf}
@@ -1398,7 +1453,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           />
                           <button onClick={handleAddExcludeIp} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
                       </div>
-                      <div className="flex flex-wrap gap-1.5 min-h-[1.5rem]">
+                      <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]">
                           {(db.analyticsExcludes?.ips || []).length === 0 && (
                               <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
                           )}
@@ -1408,6 +1463,62 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                   <button onClick={() => handleRemoveExcludeIp(ip)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
                               </span>
                           ))}
+                      </div>
+
+                      {/* Telegram numeric user IDs — stable across username changes */}
+                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUserIds}</label>
+                      <div className="flex gap-2 mt-1 mb-2">
+                          <input
+                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              placeholder="123456789"
+                              inputMode="numeric"
+                              value={newExcludeUserId}
+                              onChange={e => setNewExcludeUserId(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleAddExcludeUserId(); }}
+                          />
+                          <button onClick={handleAddExcludeUserId} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]">
+                          {(db.analyticsExcludes?.userIds || []).length === 0 && (
+                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
+                          )}
+                          {(db.analyticsExcludes?.userIds || []).map(uid => (
+                              <span key={uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 font-mono">
+                                  {uid}
+                                  <button onClick={() => handleRemoveExcludeUserId(uid)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
+                              </span>
+                          ))}
+                      </div>
+
+                      {/* Registered browsers (per-device localStorage tokens) */}
+                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeBrowsers}</label>
+                      <p className="text-[9px] text-slate-400 mt-1 mb-2 leading-relaxed">{ta.browsersHelp}</p>
+                      <div className="flex gap-2 mb-2">
+                          <input
+                              className="flex-1 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
+                              placeholder={ta.browserLabelPh}
+                              value={browserLabel}
+                              onChange={e => setBrowserLabel(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleRegisterBrowser(); }}
+                          />
+                          <button onClick={handleRegisterBrowser} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.registerThisBrowser}</button>
+                      </div>
+                      <div className="space-y-1.5 min-h-[1.5rem]">
+                          {(db.analyticsExcludes?.browsers || []).length === 0 && (
+                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
+                          )}
+                          {(db.analyticsExcludes?.browsers || []).map(b => {
+                              const isMe = b.token === thisBrowserToken;
+                              return (
+                                  <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white border-slate-200 text-slate-700'}`}>
+                                      <span className="font-mono text-slate-400 shrink-0">{b.token.slice(0, 8)}…</span>
+                                      <span className="flex-1 truncate">{b.label}</span>
+                                      <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span>
+                                      {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>}
+                                      <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button>
+                                  </div>
+                              );
+                          })}
                       </div>
                   </div>
 

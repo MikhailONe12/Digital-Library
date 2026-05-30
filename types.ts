@@ -135,9 +135,22 @@ export interface AppState {
   customTypes: CustomType[];
   defaultLanguage: Locale;
   globalAccess: boolean;
-  /** Identifiers (Telegram usernames + IPs) that should NOT be counted in
-   *  traffic or per-item analytics. Applied both at write-time (events from
-   *  these visitors aren't recorded) and at read-time (the analytics endpoint
-   *  filters out any older rows that match). */
-  analyticsExcludes: { usernames: string[]; ips: string[] };
+  /** Identifiers that should NOT be counted in traffic or per-item
+   *  analytics. Applied at write-time (events from these visitors aren't
+   *  recorded) and partially at read-time (visit_logs / item_events get
+   *  filtered by username + IP that were stored on them).
+   *   • usernames — Telegram @handles (case-insensitive, no leading @)
+   *   • ips       — raw IPv4/IPv6 strings
+   *   • userIds   — Telegram numeric user IDs (stable; username can change)
+   *   • browsers  — per-device tokens; stable across IP changes. Clients
+   *     that have set localStorage.library_skip_analytics_token send it as
+   *     `x-skip-analytics` header; if it matches any registered token, the
+   *     server skips the insert.
+   */
+  analyticsExcludes: {
+    usernames: string[];
+    ips: string[];
+    userIds: string[];
+    browsers: { token: string; label: string; addedAt: string }[];
+  };
 }

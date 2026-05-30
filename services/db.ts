@@ -33,7 +33,7 @@ const emptyState = (): AppState => ({
   ],
   defaultLanguage: 'ru',
   globalAccess: false,
-  analyticsExcludes: { usernames: [], ips: [] },
+  analyticsExcludes: { usernames: [], ips: [], userIds: [], browsers: [] },
 });
 
 // In-memory cache — source of truth for the UI between renders.
@@ -200,6 +200,8 @@ export const loadDb = async (userId?: string): Promise<AppState> => {
     analyticsExcludes: {
       usernames: remote.analyticsExcludes?.usernames || [],
       ips:       remote.analyticsExcludes?.ips || [],
+      userIds:   remote.analyticsExcludes?.userIds || [],
+      browsers:  remote.analyticsExcludes?.browsers || [],
     },
   };
   avgRatings = remote.ratings || {};
@@ -407,9 +409,14 @@ export const toggleGlobalAccess = async (enabled: boolean): Promise<void> => {
 // ── Visit logs (server-backed) ───────────────────────────────────────────────
 
 export const logVisit = (username: string, ip: string, platform: string) => {
+  const tg = (window as any).Telegram?.WebApp;
   fetch('/api/visits', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...skipAnalyticsHeader(),
+      ...(tg?.initData ? { 'x-telegram-init-data': tg.initData } : {}),
+    },
     body: JSON.stringify({
       username: username || 'guest',
       ip: ip || 'unknown',
@@ -484,6 +491,86 @@ export const removeAnalyticsExcludeIp = async (ip: string): Promise<void> => {
   await commitSettings(prev);
 };
 
+// Telegram numeric user IDs — stable across username changes.
+export const addAnalyticsExcludeUserId = async (id: string | number): Promise<void> => {
+  const clean = String(id).trim();
+  if (!clean) return;
+  if (cache.analyticsExcludes.userIds.includes(clean)) return;
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    userIds: [...cache.analyticsExcludes.userIds, clean],
+  };
+  await commitSettings(prev);
+};
+
+export const removeAnalyticsExcludeUserId = async (id: string): Promise<void> => {
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    userIds: cache.analyticsExcludes.userIds.filter(x => x !== id),
+  };
+  await commitSettings(prev);
+};
+
+// ── Browser exclude token (localStorage + server-side list) ─────────────────
+// Token survives IP changes, network swaps and Telegram restarts. Each
+// device that the admin marks gets its own token, so individual devices can
+// be revoked later without affecting others.
+
+const SKIP_TOKEN_KEY = 'library_skip_analytics_token';
+
+export const getSkipAnalyticsToken = (): string => {
+  try { return localStorage.getItem(SKIP_TOKEN_KEY) || ''; } catch { return ''; }
+};
+
+const generateToken = (): string => {
+  const a = new Uint8Array(16);
+  (window.crypto || (window as any).msCrypto).getRandomValues(a);
+  return Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+// Register THIS browser as excluded. Generates a fresh token (if none yet),
+// stores it in localStorage, and adds it server-side. Subsequent visits and
+// item events from this browser will be silently dropped.
+export const registerBrowserExclude = async (label: string): Promise<void> => {
+  let token = getSkipAnalyticsToken();
+  if (!token) {
+    token = generateToken();
+    try { localStorage.setItem(SKIP_TOKEN_KEY, token); } catch { /* quota */ }
+  }
+  // De-dupe: a browser already on the list just gets the label refreshed.
+  const existing = cache.analyticsExcludes.browsers.filter(b => b.token !== token);
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    browsers: [...existing, { token, label, addedAt: new Date().toISOString() }],
+  };
+  await commitSettings(prev);
+};
+
+// Remove one browser entry from the server list. If it was THIS browser's
+// own token, also clear localStorage so the indicator updates immediately.
+export const removeBrowserExclude = async (token: string): Promise<void> => {
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    browsers: cache.analyticsExcludes.browsers.filter(b => b.token !== token),
+  };
+  await commitSettings(prev);
+  if (getSkipAnalyticsToken() === token) {
+    try { localStorage.removeItem(SKIP_TOKEN_KEY); } catch { /* noop */ }
+  }
+};
+
+// Header sent on every analytics-recording request (visits + item events).
+// When the token matches a registered browser exclude, the server short-
+// circuits without an INSERT.
+const skipAnalyticsHeader = (): Record<string, string> => {
+  const t = getSkipAnalyticsToken();
+  return t ? { 'x-skip-analytics': t } : {};
+};
+
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {
   const idx = cache.items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
@@ -501,7 +588,11 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
 
   fetch(`/api/items/${itemId}/track`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...skipAnalyticsHeader(),
+      ...(tg?.initData ? { 'x-telegram-init-data': tg.initData } : {}),
+    },
     body: JSON.stringify({ type, username }),
   }).catch(() => {/* best effort */});
 };

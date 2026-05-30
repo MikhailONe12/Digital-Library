@@ -640,23 +640,33 @@ const DEFAULT_SETTINGS = {
   customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
-  // Telegram usernames + IPs whose visits and item events should NOT be
-  // counted in analytics. Applied both at write-time (POST /api/visits and
+  // Identifiers whose visits / item events should NOT be counted in
+  // analytics. Applied both at write-time (POST /api/visits and
   // POST /api/items/:itemId/track skip the insert) and at read-time
   // (GET /api/analytics filters out any pre-existing rows that match).
-  analyticsExcludes: { usernames: [], ips: [] },
+  analyticsExcludes: { usernames: [], ips: [], userIds: [], browsers: [] },
 };
 
-// True when the visitor is on the admin's "don't count me" list. Cheap —
-// settings are cached for 30 s. Username comparison is case-insensitive and
-// tolerates a leading @.
-const isAnalyticsExcluded = (username, ip, settings) => {
+// True when the visitor matches any entry on the admin's "don't count me"
+// list. Cheap — settings are cached for 30 s. Username comparison is
+// case-insensitive and tolerates a leading @. browserToken is the value of
+// the `x-skip-analytics` request header; userId is the Telegram numeric ID.
+const isAnalyticsExcluded = (username, ip, userId, browserToken, settings) => {
   const ex = settings?.analyticsExcludes || {};
   const u = (username || '').toLowerCase().replace(/^@/, '');
   const ipClean = (ip || '').trim();
-  const exU = (ex.usernames || []).map(x => String(x).toLowerCase().replace(/^@/, ''));
-  const exI = (ex.ips || []).map(x => String(x).trim());
-  return (u && u !== 'guest' && exU.includes(u)) || (ipClean && ipClean !== 'unknown' && exI.includes(ipClean));
+  const uid = userId != null ? String(userId) : '';
+
+  const exU   = (ex.usernames || []).map(x => String(x).toLowerCase().replace(/^@/, ''));
+  const exI   = (ex.ips || []).map(x => String(x).trim());
+  const exUid = (ex.userIds || []).map(x => String(x).trim());
+  const exTok = (ex.browsers || []).map(b => b?.token).filter(Boolean);
+
+  if (u && u !== 'guest' && exU.includes(u)) return true;
+  if (ipClean && ipClean !== 'unknown' && exI.includes(ipClean)) return true;
+  if (uid && exUid.includes(uid)) return true;
+  if (browserToken && exTok.includes(browserToken)) return true;
+  return false;
 };
 
 // Full app state (catalog + settings + average ratings)
@@ -1036,9 +1046,12 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
   const field = type === 'view' ? 'views' : 'downloads';
   const username = clip(req.body?.username, 64);
   const ip = (req.headers['x-real-ip'] || req.ip || '').toString().split(',')[0].trim();
+  const tgUser  = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
+  const userId  = tgUser?.id || null;
+  const browserToken = clip(req.headers['x-skip-analytics'], 80);
   try {
     const settings = await getSettingsCached();
-    if (isAnalyticsExcluded(username, ip, settings)) {
+    if (isAnalyticsExcluded(username, ip, userId, browserToken, settings)) {
       // Don't pollute the visible counters or the events feed
       return res.json({ ok: true, skipped: 'excluded' });
     }
@@ -1084,9 +1097,14 @@ app.post('/api/visits', async (req, res) => {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
   const username = clip(req.body?.username, 64);
   const ip       = clip(req.body?.ip, 64);
+  // Use the verified Telegram user (initData HMAC) — body fields would be
+  // trivially spoofable. browserToken arrives via custom header.
+  const tgUser  = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
+  const userId  = tgUser?.id || req.body?.userId || null;
+  const browserToken = clip(req.headers['x-skip-analytics'], 80);
   try {
     const settings = await getSettingsCached();
-    if (isAnalyticsExcluded(username, ip, settings)) {
+    if (isAnalyticsExcluded(username, ip, userId, browserToken, settings)) {
       return res.json({ ok: true, skipped: 'excluded' });
     }
     await pool.query(

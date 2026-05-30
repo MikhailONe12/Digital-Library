@@ -1392,7 +1392,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       </div>
                   </div>
                   {/* Analytics excludes — don't count specific identifiers */}
-                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-200">
+                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden">
                       <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest mb-1 flex items-center gap-2">
                           <Ban size={14} /> {ta.excludesTitle}
                       </h4>
@@ -1501,7 +1501,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               onChange={e => setBrowserLabel(e.target.value)}
                               onKeyDown={e => { if (e.key === 'Enter') handleRegisterBrowser(); }}
                           />
-                          <button onClick={handleRegisterBrowser} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.registerThisBrowser}</button>
+                          <button onClick={handleRegisterBrowser} title={ta.registerThisBrowser} className="px-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0 flex items-center justify-center"><Plus size={14} strokeWidth={3} /></button>
                       </div>
                       <div className="space-y-1.5 min-h-[1.5rem]">
                           {(db.analyticsExcludes?.browsers || []).length === 0 && (

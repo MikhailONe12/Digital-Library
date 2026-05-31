@@ -1298,9 +1298,14 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
       .map(x => String(x).toLowerCase().replace(/^@/, '')).filter(Boolean);
     const exI = ((settings.analyticsExcludes?.ips) || [])
       .map(x => String(x).trim()).filter(Boolean);
-    // Build a parameterised WHERE for SQL injection safety
+    // Build a parameterised WHERE for SQL injection safety.
+    // `username IS NULL OR lower(...) NOT IN (...)` — without the IS NULL
+    // branch, NULL-username rows (historical events from handle-less Telegram
+    // visitors recorded before the id_<N> fallback) would evaluate to NULL
+    // instead of TRUE and be silently dropped from BOTH the timeline and
+    // the leaderboard the moment any exclude is configured.
     const userNotIn = exU.length > 0
-      ? `AND lower(username) NOT IN (${exU.map((_, i) => `$${i + 1}`).join(',')})`
+      ? `AND (username IS NULL OR lower(username) NOT IN (${exU.map((_, i) => `$${i + 1}`).join(',')}))`
       : '';
     const visitNotIn = (exU.length + exI.length) > 0
       ? `WHERE 1=1

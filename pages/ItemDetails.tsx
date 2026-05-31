@@ -1538,16 +1538,16 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
               <button
                 type="button"
                 onClick={() => onOpenAuthor(item.author.trim())}
-                className="group w-full text-left flex items-center gap-1.5 active:scale-[0.98] transition-transform"
+                className="group w-full text-left flex items-start gap-1.5 active:scale-[0.98] transition-transform"
                 title={t.viewAllByAuthor}
               >
-                <span className="text-sm font-black truncate text-red-600 dark:text-red-400 tracking-tight underline decoration-red-300/60 dark:decoration-red-500/40 underline-offset-2 decoration-2 group-active:decoration-red-600">
+                <span className="text-sm font-black break-words leading-tight text-red-600 dark:text-red-400 tracking-tight underline decoration-red-300/60 dark:decoration-red-500/40 underline-offset-2 decoration-2 group-active:decoration-red-600">
                   {item.author}
                 </span>
-                <ChevronRight size={14} strokeWidth={3} className="text-red-600 dark:text-red-400 shrink-0 transition-transform group-active:translate-x-0.5" />
+                <ChevronRight size={14} strokeWidth={3} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5 transition-transform group-active:translate-x-0.5" />
               </button>
             ) : (
-              <p className="text-sm font-black truncate text-slate-900 dark:text-white tracking-tight">{item.author || '—'}</p>
+              <p className="text-sm font-black break-words leading-tight text-slate-900 dark:text-white tracking-tight">{item.author || '—'}</p>
             )}
           </div>
           <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">

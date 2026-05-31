@@ -961,7 +961,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             {db.visitLogs && db.visitLogs.slice(0, 50).map(log => (
                                 <tr key={log.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                     <td className="p-3 text-slate-400 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                                    <td className="p-3 font-bold text-slate-700">{log.username}</td>
+                                    <td className="p-3 font-bold text-slate-700">{log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}</td>
                                     <td className="p-3 text-slate-500">{log.ip}</td>
                                     <td className="p-3 text-right text-slate-400 truncate max-w-[150px]">{log.platform}</td>
                                 </tr>
@@ -1120,15 +1120,24 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                 <tr key={user.username} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
                                     <td className="p-3 text-[10px] font-black text-slate-300">#{idx + 1}</td>
                                     <td className="p-3">
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold uppercase text-[8px]">
-                                                {user.username.slice(0, 2)}
+                                        {(() => {
+                                          // Identifier shape from /api/items/:itemId/track:
+                                          //   real @handles  → plain string (lowercased)
+                                          //   no-handle Telegram users → `id_<numericId>`
+                                          // Display them differently so admins can tell which is which at a glance.
+                                          const isId = user.username.startsWith('id_');
+                                          const labelMain = isId ? `ID ${user.username.slice(3)}` : `@${user.username}`;
+                                          const avatar = isId ? '#' : user.username.slice(0, 2);
+                                          return (
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold uppercase text-[8px]">{avatar}</div>
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{labelMain}</p>
+                                                    <p className="text-[8px] text-slate-400">{user.lastActive}</p>
+                                                </div>
                                             </div>
-                                            <div>
-                                                <p className="text-[10px] font-bold text-slate-700 group-hover:text-blue-600 transition-colors">@{user.username}</p>
-                                                <p className="text-[8px] text-slate-400">{user.lastActive}</p>
-                                            </div>
-                                        </div>
+                                          );
+                                        })()}
                                     </td>
                                     <td className="p-3">
                                         <div className="flex flex-wrap gap-1">

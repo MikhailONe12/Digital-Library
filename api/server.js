@@ -1198,9 +1198,18 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
         WHERE id = $1`,
       [req.params.itemId],
     );
+    // Pick the most informative identifier we can. Without this the leader-
+    // board's `WHERE username IS NOT NULL` silently drops every Telegram user
+    // who hasn't set a @handle (typical for new accounts), so the table looked
+    // empty even with active traffic.
+    //   1. body-supplied @username (lowercased on the client)
+    //   2. verified Telegram numeric ID, prefixed `id_` so it can't collide
+    //      with a real handle and the admin UI can format it as "ID 12345"
+    //   3. NULL — anonymous web visitor with no Telegram identity at all
+    const trackedUser = username || (userId ? `id_${userId}` : null);
     await pool.query(
       `INSERT INTO item_events (item_id, username, event_type) VALUES ($1, $2, $3)`,
-      [req.params.itemId, username, type],
+      [req.params.itemId, trackedUser, type],
     );
     res.json({ ok: true });
   } catch (e) {
@@ -1243,11 +1252,18 @@ app.post('/api/visits', async (req, res) => {
     if (isAnalyticsExcluded(username, ip, userId, browserToken, settings)) {
       return res.json({ ok: true, skipped: 'excluded' });
     }
+    // Same identifier resolution as item_events: a real @handle wins, then
+    // verified Telegram numeric ID (`id_NN`), then whatever the body said
+    // ("guest" by default from the client). Keeps the access log distinct
+    // per anonymous Telegram visitor instead of one giant "guest" pile.
+    const loggedUser = (username && username !== 'guest')
+      ? username
+      : (userId ? `id_${userId}` : username);
     await pool.query(
       `INSERT INTO visit_logs (id, username, ip, platform, device)
        VALUES ($1, $2, $3, $4, $5)`,
       [
-        id, username, ip,
+        id, loggedUser, ip,
         clip(req.body?.platform, 32),
         clip(req.body?.device, 256),
       ],

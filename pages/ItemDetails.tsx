@@ -1519,7 +1519,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
               <Heart size={20} fill={isFav ? "white" : "none"} strokeWidth={isFav ? 0 : 3} />
             </button>
           </div>
-          <div className="flex-1 pt-6">
+          {/* pt-1 (not pt-6) so the type badge's top edge lines up with the
+              cover's top edge — they sit in the same items-start flex row. */}
+          <div className="flex-1 min-w-0 pt-1">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-[10px] font-black uppercase text-red-600 bg-red-50 dark:bg-red-500/15 px-2 py-0.5 rounded-md tracking-widest">{item.type}</span>
             </div>

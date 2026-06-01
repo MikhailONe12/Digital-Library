@@ -337,6 +337,18 @@ const App: React.FC = () => {
               setSelectedItem(null);
               setCurrentPage('home');
             }}
+            onOpenTag={(tag) => {
+              // Same "jump home with one filter" pattern as author. Tag filter
+              // is AND-matched, so clear search + category + lang to avoid
+              // empty result lists.
+              setSearchField('all');
+              setSearchQuery('');
+              setActiveCategory('ALL');
+              setContentLangFilter([]);
+              setTagFilter([tag]);
+              setSelectedItem(null);
+              setCurrentPage('home');
+            }}
             lang={lang}
             t={t}
           />

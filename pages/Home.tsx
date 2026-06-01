@@ -3,7 +3,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2 } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText } from '../utils';
 
@@ -107,9 +107,21 @@ const Home: React.FC<HomeProps> = ({
           <input
             type="text" placeholder={t.search}
             aria-label={t.search}
-            className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-4 pl-14 pr-14 text-[15px] font-normal text-slate-900 dark:text-white shadow-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all placeholder:text-slate-400"
+            className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-4 pl-14 pr-24 text-[15px] font-normal text-slate-900 dark:text-white shadow-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all placeholder:text-slate-400"
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
           />
+          {/* Clear button — shown only when the query is non-empty so it never
+              shifts the layout against the filter pill on the right. */}
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              aria-label={t.clearSearch}
+              type="button"
+              className="absolute right-14 top-1/2 -translate-y-1/2 p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
+            >
+              <X size={16} strokeWidth={2.5} />
+            </button>
+          )}
           <button
             onClick={() => setIsFilterOpen(!isFilterOpen)}
             aria-label={t.filters}

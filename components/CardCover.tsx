@@ -31,33 +31,34 @@ const CardCover: React.FC<CardCoverProps> = ({ item, lang }) => {
   const [thumb, setThumb] = useState<string | null>(null);
   const ref = useRef<HTMLImageElement>(null);
 
+  // Generation logic used to be gated behind an IntersectionObserver to keep
+  // bandwidth low on the catalog grid, but it caused blank tiles in
+  // horizontal strips (series/author/continue-reading) where the IO root +
+  // overflow-x scrolling interact in unreliable ways across browsers. The
+  // underlying thumbnailers are already two-layer cached (in-memory + IDB)
+  // so on a repeat render they resolve synchronously; on first render the
+  // cost is one bounded async task per visible tile. Worth it for reliable
+  // covers everywhere.
   useEffect(() => {
-    if (hasCover || (!epubFormat && !pdfFormat && !directVideoUrl) || !ref.current) return;
+    if (hasCover || (!epubFormat && !pdfFormat && !directVideoUrl)) return;
     let cancelled = false;
-    const el = ref.current;
-    const io = new IntersectionObserver(entries => {
-      if (!entries[0].isIntersecting) return;
-      io.disconnect();
-      if (epubFormat) {
-        // Try EPUB cover first (best quality); fall back to PDF page 1
-        getEpubThumbnail(epubFormat.url).then(d => {
-          if (cancelled) return;
-          if (d) { setThumb(d); return; }
-          if (pdfFormat) {
-            const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
-            getPdfThumbnail(url).then(d2 => { if (!cancelled && d2) setThumb(d2); });
-          }
-        });
-      } else if (pdfFormat) {
-        const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
-        getPdfThumbnail(url).then(d => { if (!cancelled && d) setThumb(d); });
-      } else if (directVideoUrl) {
-        getVideoThumbnail(directVideoUrl).then(d => { if (!cancelled && d) setThumb(d); });
-      }
-    }, { rootMargin: '200px' });
-    io.observe(el);
-    return () => { cancelled = true; io.disconnect(); };
-  }, [hasCover, epubFormat, pdfFormat, directVideoUrl]);
+    if (epubFormat) {
+      getEpubThumbnail(epubFormat.url).then(d => {
+        if (cancelled) return;
+        if (d) { setThumb(d); return; }
+        if (pdfFormat) {
+          const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
+          getPdfThumbnail(url).then(d2 => { if (!cancelled && d2) setThumb(d2); });
+        }
+      });
+    } else if (pdfFormat) {
+      const url = pdfFormat.url.replace(/\.djvu?$/i, '.pdf');
+      getPdfThumbnail(url).then(d => { if (!cancelled && d) setThumb(d); });
+    } else if (directVideoUrl) {
+      getVideoThumbnail(directVideoUrl).then(d => { if (!cancelled && d) setThumb(d); });
+    }
+    return () => { cancelled = true; };
+  }, [hasCover, epubFormat?.url, pdfFormat?.url, directVideoUrl]);
 
   const src = hasCover ? item.coverUrl : (thumb || youtubePoster || COVER_FALLBACK);
 

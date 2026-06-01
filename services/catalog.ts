@@ -36,8 +36,10 @@ export const normalizeText = (s: string): string =>
 const escapeRegExp = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Relevance score for an item against an already-normalized needle. Higher is
-// better: title beats author beats description; a prefix/word-start match beats
-// a mid-word substring. Returns 0 when nothing matches the selected field(s).
+// better: title beats author beats tag beats description; a prefix/word-start
+// match beats a mid-word substring. Returns 0 when nothing matches the
+// selected field(s). Tags participate in "all" searches and also match a
+// leading `#` so users can type `#трейдинг` and have it work.
 export const scoreItem = (
   item: MediaItem,
   needle: string,
@@ -45,21 +47,31 @@ export const scoreItem = (
   lang: Locale,
 ): number => {
   if (!needle) return 0;
+  // Strip a leading "#" so '#трейдинг' searches the same as 'трейдинг' but
+  // still works on title/author/description text.
+  const cleanNeedle = needle.replace(/^#+/, '');
+  if (!cleanNeedle) return 0;
+
   const title = normalizeText(pickText(item.title, lang));
   const author = normalizeText(item.author || '');
   const desc = normalizeText(pickText(item.description, lang, ''));
+  const tagsText = (item.tags || []).map(t => normalizeText(t)).join(' ');
 
+  // "all": include tags with their own (high) weight — typing a tag word
+  // should surface every item that's tagged with it, even if the title
+  // doesn't contain that word. Tag-only searches treat the chip set
+  // separately from the catch-all text search.
   const fields: Array<[number, string]> =
     searchField === 'title' ? [[60, title]]
     : searchField === 'author' ? [[45, author]]
-    : [[60, title], [45, author], [25, desc]];
+    : [[60, title], [50, tagsText], [45, author], [25, desc]];
 
-  const wordStart = new RegExp(`\\b${escapeRegExp(needle)}`);
+  const wordStart = new RegExp(`\\b${escapeRegExp(cleanNeedle)}`);
   let best = 0;
   for (const [base, text] of fields) {
-    if (!text.includes(needle)) continue;
+    if (!text.includes(cleanNeedle)) continue;
     let s = base;
-    if (text.startsWith(needle)) s += 30;
+    if (text.startsWith(cleanNeedle)) s += 30;
     else if (wordStart.test(text)) s += 15;
     if (s > best) best = s;
   }

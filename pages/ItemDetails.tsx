@@ -93,6 +93,8 @@ interface ItemDetailsProps {
   /** Used by the clickable author name + "more by this author" strip — go
    *  back home with the author filter pre-applied. */
   onOpenAuthor?: (author: string) => void;
+  /** Same idea but for a tag chip — applies the catalog's tag filter. */
+  onOpenTag?: (tag: string) => void;
   lang: Locale;
   t: any;
 }
@@ -109,7 +111,7 @@ interface ParsedArticle {
 
 const PDF_SPREAD_KEY = 'reader_pdf_spread';
 
-const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, lang, t }) => {
+const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, onOpenTag, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
 
@@ -1626,13 +1628,22 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           </div>
         )}
 
-        {/* Tags */}
+        {/* Tags — each chip is a button that filters the catalog by that tag. */}
         {item.tags && item.tags.length > 0 && (
           <div className="mt-8">
             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><TagIcon size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.tags}</h2>
             <div className="flex flex-wrap gap-2">
               {item.tags.map(tag => (
-                <span key={tag} className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300">#{tag}</span>
+                onOpenTag ? (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => onOpenTag(tag)}
+                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-red-600 dark:text-red-400 hover:border-red-400 active:scale-95 transition-all"
+                  >#{tag}</button>
+                ) : (
+                  <span key={tag} className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300">#{tag}</span>
+                )
               ))}
             </div>
           </div>

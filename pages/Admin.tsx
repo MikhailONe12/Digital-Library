@@ -428,15 +428,61 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     setEditingItem({ ...editingItem, articles: (editingItem.articles || []).filter(a => a.id !== id) });
   };
 
-  // Tags: comma-separated input → string[], trimmed, deduped, lowercase preserved
-  const handleTagsChange = (raw: string) => {
+  // Tag chip input. Earlier this was a single text field whose value was
+  // `tags.join(', ')`, but every keystroke ran `split(',').map(trim).filter`,
+  // which silently ate trailing commas/spaces — so the user couldn't type a
+  // separator at all. Now the typing buffer lives in its own state and only
+  // commits to the tag array when the user presses comma / space / Enter
+  // (or blurs), giving the standard chip-input UX.
+  const [tagInput, setTagInput] = useState('');
+
+  const commitTagBuffer = (raw: string) => {
     if (!editingItem) return;
-    const tags = raw
-      .split(',')
-      .map(t => t.trim())
-      .filter(Boolean);
-    const unique = Array.from(new Set(tags));
-    setEditingItem({ ...editingItem, tags: unique });
+    const parts = raw.split(/[,;\n]+/).map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    const current = editingItem.tags || [];
+    // Case-insensitive dedup while preserving the original casing of whichever
+    // copy the user typed first.
+    const seen = new Set(current.map(t => t.toLowerCase()));
+    const merged = [...current];
+    for (const p of parts) {
+      const k = p.toLowerCase();
+      if (!seen.has(k)) { merged.push(p); seen.add(k); }
+    }
+    setEditingItem({ ...editingItem, tags: merged });
+  };
+
+  const handleTagInputChange = (raw: string) => {
+    // If the user just typed a separator, commit everything to the left of it
+    // and keep whatever's to the right as the new buffer (lets them paste a
+    // comma-separated list and get individual chips).
+    if (/[,;\n]/.test(raw)) {
+      const parts = raw.split(/[,;\n]/);
+      const last = parts.pop() || '';
+      commitTagBuffer(parts.join(','));
+      setTagInput(last);
+    } else {
+      setTagInput(raw);
+    }
+  };
+
+  const handleTagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!editingItem) return;
+    if (e.key === 'Enter' || (e.key === ' ' && tagInput.trim().length > 0)) {
+      e.preventDefault();
+      commitTagBuffer(tagInput);
+      setTagInput('');
+    } else if (e.key === 'Backspace' && tagInput === '' && (editingItem.tags || []).length > 0) {
+      // Empty-buffer backspace removes the last chip — standard chip-input UX.
+      const tags = [...(editingItem.tags || [])];
+      tags.pop();
+      setEditingItem({ ...editingItem, tags });
+    }
+  };
+
+  const removeTag = (tag: string) => {
+    if (!editingItem) return;
+    setEditingItem({ ...editingItem, tags: (editingItem.tags || []).filter(t => t !== tag) });
   };
 
   const handleDeleteFormat = async (f: FileFormat) => {
@@ -1942,15 +1988,39 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   </div>
                   <div>
                     <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.tagsLabel}</label>
-                    <input type="text" placeholder={ta.tagsPlaceholder} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                      value={(editingItem.tags || []).join(', ')} onChange={e => handleTagsChange(e.target.value)} />
-                    {(editingItem.tags || []).length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {(editingItem.tags || []).map(tag => (
-                          <span key={tag} className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[10px] font-bold">#{tag}</span>
-                        ))}
-                      </div>
-                    )}
+                    {/* Chip-style tag input: existing chips with X to remove,
+                        free-text buffer at the end that commits on space /
+                        comma / Enter. Backspace on empty buffer removes the
+                        last chip. */}
+                    <div
+                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2 min-h-[3rem] flex flex-wrap items-center gap-1.5 focus-within:border-red-600 transition-colors cursor-text"
+                      onClick={() => (document.getElementById('tag-buffer-input') as HTMLInputElement | null)?.focus()}
+                    >
+                      {(editingItem.tags || []).map(tag => (
+                        <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-red-50 text-red-700 text-[11px] font-bold">
+                          #{tag}
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); removeTag(tag); }}
+                            className="p-0.5 hover:bg-red-100 rounded transition-colors"
+                            aria-label={`Remove ${tag}`}
+                          >
+                            <X size={11} strokeWidth={3} />
+                          </button>
+                        </span>
+                      ))}
+                      <input
+                        id="tag-buffer-input"
+                        type="text"
+                        placeholder={(editingItem.tags || []).length === 0 ? ta.tagsPlaceholder : ''}
+                        className="flex-1 min-w-[6rem] bg-transparent text-xs font-bold outline-none placeholder:text-slate-400"
+                        value={tagInput}
+                        onChange={e => handleTagInputChange(e.target.value)}
+                        onKeyDown={handleTagInputKeyDown}
+                        onBlur={() => { if (tagInput.trim()) { commitTagBuffer(tagInput); setTagInput(''); } }}
+                      />
+                    </div>
+                    <p className="text-[9px] text-slate-400 mt-1 ml-2">{ta.tagsHelp}</p>
                   </div>
                 </div>
               </div>

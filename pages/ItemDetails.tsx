@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor, ArticleLink } from '../types';
+import CardCover from '../components/CardCover';
 import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
@@ -1651,8 +1652,11 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                     disabled={isCurrent}
                     className={`flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border transition-all ${isCurrent ? 'border-red-500 ring-2 ring-red-500/30 cursor-default' : 'border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95'}`}
                   >
-                    <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative">
-                      {sib.coverUrl && <img src={sib.coverUrl} className="w-full h-full object-cover" alt="" />}
+                    <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative overflow-hidden">
+                      {/* CardCover renders the uploaded coverUrl when present
+                          and falls back to a lazy PDF/EPUB/video thumbnail
+                          otherwise — same logic as the main grid. */}
+                      <CardCover item={sib} lang={lang} />
                       {sib.seriesOrder != null && (
                         <span className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-black px-1.5 py-0.5 rounded">#{sib.seriesOrder}</span>
                       )}
@@ -1696,8 +1700,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                   onClick={() => onOpenItem?.(sib)}
                   className="flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95 transition-all"
                 >
-                  <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative">
-                    {sib.coverUrl && <img src={sib.coverUrl} className="w-full h-full object-cover" alt="" />}
+                  <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative overflow-hidden">
+                    {/* Same auto-thumbnail fallback as everywhere else. */}
+                    <CardCover item={sib} lang={lang} />
                   </div>
                   <div className="p-2 bg-white dark:bg-[#1c1c1e]">
                     <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>

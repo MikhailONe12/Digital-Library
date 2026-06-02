@@ -827,27 +827,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
 
   if (!isAdmin) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-6 bg-slate-50">
-        <div className="w-full max-w-md bg-white/80 backdrop-blur-2xl border border-slate-200 p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] shadow-[0_25px_60px_rgba(0,0,0,0.1)] relative">
+      <div className="min-h-screen flex items-center justify-center px-6 bg-slate-50 dark:bg-black/40">
+        <div className="w-full max-w-md bg-white/80 backdrop-blur-2xl border border-slate-200 dark:border-white/10 p-8 md:p-12 rounded-[2rem] md:rounded-[3rem] shadow-[0_25px_60px_rgba(0,0,0,0.1)] relative">
           <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-red-600 w-16 h-16 rounded-2xl flex items-center justify-center shadow-2xl shadow-red-200">
               <ShieldCheck size={32} className="text-white" />
           </div>
-          <h2 className="text-xl md:text-2xl font-black text-center mb-2 mt-8 tracking-tighter uppercase text-slate-900">{t.adminAccess}</h2>
-          <p className="text-slate-400 text-center mb-8 text-[10px] font-black uppercase tracking-[0.2em]">{ta.authorizedOnly}</p>
+          <h2 className="text-xl md:text-2xl font-black text-center mb-2 mt-8 tracking-tighter uppercase text-slate-900 dark:text-white">{t.adminAccess}</h2>
+          <p className="text-slate-400 dark:text-slate-500 text-center mb-8 text-[10px] font-black uppercase tracking-[0.2em]">{ta.authorizedOnly}</p>
           <form onSubmit={handleAdminLogin} className="space-y-4">
             <div className="space-y-1">
-                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-2">{t.apiKey}</label>
+                <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 ml-2">{t.apiKey}</label>
                 <input
                     type="password"
                     placeholder="••••••••"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-4 px-6 focus:ring-4 focus:ring-red-500/5 focus:border-red-600 outline-none transition-all font-mono text-sm"
+                    className="w-full bg-slate-50 dark:bg-black/40 border border-slate-200 dark:border-white/10 rounded-2xl py-4 px-6 focus:ring-4 focus:ring-red-500/5 focus:border-red-600 outline-none transition-all font-mono text-sm"
                     value={apiKeyInput} onChange={e => setApiKeyInput(e.target.value)}
                 />
             </div>
             <button disabled={loginLoading} className="w-full bg-red-600 py-4 rounded-[2rem] font-black text-white uppercase tracking-widest shadow-xl shadow-red-200 transition-all active:scale-95 hover:bg-red-700 text-xs disabled:opacity-60">
                 {loginLoading ? '...' : t.accessDashboard}
             </button>
-            <button type="button" onClick={onBack} className="w-full text-slate-400 font-black text-[9px] uppercase tracking-[0.3em] hover:text-red-600 transition-colors py-2">
+            <button type="button" onClick={onBack} className="w-full text-slate-400 dark:text-slate-500 font-black text-[9px] uppercase tracking-[0.3em] hover:text-red-600 transition-colors py-2">
                 {t.back}
             </button>
           </form>
@@ -863,10 +863,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     >
       <header className="flex items-center justify-between mb-6 md:mb-10">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-none mb-1">Control<span className="text-red-600">Center</span></h1>
-          <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-[0.4em]">{t.adminTerminal}</p>
+          <h1 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tighter uppercase leading-none mb-1">Control<span className="text-red-600">Center</span></h1>
+          <p className="text-[8px] md:text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.4em]">{t.adminTerminal}</p>
         </div>
-        <button onClick={onLogout} className="p-3 md:p-4 bg-white rounded-2xl text-red-600 border border-slate-200 shadow-sm active:scale-95 transition-all">
+        <button onClick={onLogout} className="p-3 md:p-4 bg-white dark:bg-[#1c1c1e] rounded-2xl text-red-600 border border-slate-200 dark:border-white/10 shadow-sm active:scale-95 transition-all">
             <LogOut size={20} strokeWidth={3} />
         </button>
       </header>
@@ -887,7 +887,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 flex-shrink-0 snap-start px-5 py-2.5 rounded-2xl text-[10px] md:text-xs font-black uppercase tracking-widest transition-all duration-300 border whitespace-nowrap
                 ${activeTab === tab 
                   ? 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-200' 
-                  : 'bg-white border-slate-200 text-slate-400 hover:border-red-200 hover:text-red-600'
+                  : 'bg-white dark:bg-[#1c1c1e] border-slate-200 dark:border-white/10 text-slate-400 dark:text-slate-500 hover:border-red-200 hover:text-red-600'
                 }
               `}
             >
@@ -903,8 +903,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
              
             {/* 1. Global Access Control (Moved from Users) */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
                    {t.publicAccessControl}
                 </h3>
                 <div className="flex items-center justify-between">
@@ -914,24 +914,24 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       </div>
                       <div>
                          <h3 className="text-xs font-black uppercase tracking-widest">{t.globalStatus}</h3>
-                         <p className="text-[8px] font-black text-slate-400 uppercase">{db.globalAccess ? 'Open to Public' : 'Whitelist Only'}</p>
+                         <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase">{db.globalAccess ? 'Open to Public' : 'Whitelist Only'}</p>
                       </div>
                    </div>
                    <label className="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" className="sr-only peer" checked={db.globalAccess} onChange={handleToggleGlobal} />
-                      <div className="w-12 h-7 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                      <div className="w-12 h-7 bg-slate-200 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[4px] after:left-[4px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
                    </label>
                 </div>
             </div>
 
             {/* 2. Whitelist Management (Moved from Users) */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                 <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                 <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
                    {t.users} (Whitelist)
                  </h3>
                  <div className="flex gap-2 mb-6">
                     <input 
-                      type="text" placeholder={ta.telegramUsername} className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-black uppercase focus:border-red-600 outline-none"
+                      type="text" placeholder={ta.telegramUsername} className="flex-1 bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-black uppercase focus:border-red-600 outline-none"
                       value={newUserNickname} onChange={e => setNewUserNickname(e.target.value)}
                     />
                     <button onClick={handleAddUser} className="bg-red-600 text-white px-6 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-red-700 transition-colors">{ta.add}</button>
@@ -939,32 +939,32 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                  
                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {db.allowedUsers.length > 0 ? db.allowedUsers.map(u => (
-                       <div key={u} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-red-100 transition-all">
+                       <div key={u} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08] group hover:border-red-100 transition-all">
                           <div className="flex items-center gap-2">
-                             <div className="bg-white p-1.5 rounded-lg text-slate-400"><Users size={12}/></div>
-                             <span className="text-xs font-bold text-slate-700">@{u}</span>
+                             <div className="bg-white dark:bg-[#1c1c1e] p-1.5 rounded-lg text-slate-400 dark:text-slate-500"><Users size={12}/></div>
+                             <span className="text-xs font-bold text-slate-700 dark:text-slate-200">@{u}</span>
                           </div>
-                          <button onClick={() => handleRemoveUser(u)} className="p-2 bg-white rounded-xl text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
+                          <button onClick={() => handleRemoveUser(u)} className="p-2 bg-white dark:bg-[#1c1c1e] rounded-xl text-slate-300 dark:text-slate-600 hover:text-red-600 transition-colors"><Trash2 size={14} /></button>
                        </div>
                     )) : (
-                        <p className="text-[10px] uppercase font-black text-slate-400 col-span-2 text-center py-4">{ta.whitelistEmpty}</p>
+                        <p className="text-[10px] uppercase font-black text-slate-400 dark:text-slate-500 col-span-2 text-center py-4">{ta.whitelistEmpty}</p>
                     )}
                  </div>
             </div>
 
             {/* 3. Blacklist Management */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
                   <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-red-600 uppercase tracking-widest underline decoration-red-200 decoration-4 underline-offset-8">
                       <Ban size={18} /> {t.blacklist}
                   </h3>
                   
                   <div className="flex gap-2 md:gap-3 mb-6 md:mb-8">
                       <div className="relative flex-1">
-                          <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                          <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" size={16} />
                           <input 
                           type="text" 
                           placeholder="@username / IP" 
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-10 pr-4 py-3 md:py-4 text-xs font-black uppercase tracking-widest focus:ring-2 focus:ring-red-600/10 focus:border-red-600 outline-none transition-all"
+                          className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl pl-10 pr-4 py-3 md:py-4 text-xs font-black uppercase tracking-widest focus:ring-2 focus:ring-red-600/10 focus:border-red-600 outline-none transition-all"
                           value={newBlacklistEntry}
                           onChange={(e) => setNewBlacklistEntry(e.target.value)}
                           />
@@ -986,44 +986,44 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               </div>
                               <button 
                                   onClick={() => handleRemoveBlacklist(entry)}
-                                  className="px-3 py-1.5 bg-white text-red-600 text-[9px] font-bold uppercase rounded-lg shadow-sm hover:bg-red-600 hover:text-white transition-colors shrink-0"
+                                  className="px-3 py-1.5 bg-white dark:bg-[#1c1c1e] text-red-600 text-[9px] font-bold uppercase rounded-lg shadow-sm hover:bg-red-600 hover:text-white transition-colors shrink-0"
                               >
                                   {t.unblock}
                               </button>
                           </div>
                       ))}
                       {(!db.blacklist || db.blacklist.length === 0) && (
-                          <p className="col-span-2 text-center text-[10px] text-slate-400 font-bold uppercase py-6">{ta.blacklistEmpty}</p>
+                          <p className="col-span-2 text-center text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase py-6">{ta.blacklistEmpty}</p>
                       )}
                   </div>
             </div>
 
             {/* 4. Access Logs */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm overflow-hidden">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                       <Monitor size={14} className="text-blue-600" /> {t.accessLogs}
                 </h3>
                 <div className="overflow-x-auto overflow-y-auto max-h-[420px]">
                     <table className="w-full text-left border-collapse min-w-[500px]">
-                        <thead className="sticky top-0 z-10 bg-white">
-                            <tr className="border-b border-slate-100">
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{ta.time}</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{ta.user}</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest bg-white">{t.ipAddress}</th>
-                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 tracking-widest text-right bg-white">{t.device}</th>
+                        <thead className="sticky top-0 z-10 bg-white dark:bg-[#1c1c1e]">
+                            <tr className="border-b border-slate-100 dark:border-white/[0.08]">
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{ta.time}</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{ta.user}</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{t.ipAddress}</th>
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest text-right bg-white dark:bg-[#1c1c1e]">{t.device}</th>
                             </tr>
                         </thead>
                         <tbody className="text-[10px] font-mono">
                             {db.visitLogs && db.visitLogs.slice(0, 50).map(log => (
                                 <tr key={log.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                                    <td className="p-3 text-slate-400 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                                    <td className="p-3 font-bold text-slate-700">{log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}</td>
-                                    <td className="p-3 text-slate-500">{log.ip}</td>
-                                    <td className="p-3 text-right text-slate-400 truncate max-w-[150px]">{log.platform}</td>
+                                    <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                                    <td className="p-3 font-bold text-slate-700 dark:text-slate-200">{log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}</td>
+                                    <td className="p-3 text-slate-500 dark:text-slate-400">{log.ip}</td>
+                                    <td className="p-3 text-right text-slate-400 dark:text-slate-500 truncate max-w-[150px]">{log.platform}</td>
                                 </tr>
                             ))}
                             {(!db.visitLogs || db.visitLogs.length === 0) && (
-                                <tr><td colSpan={4} className="p-8 text-center text-slate-400">{ta.noLogs}</td></tr>
+                                <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">{ta.noLogs}</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -1036,34 +1036,34 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-              <div className="bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+              <div className="bg-white dark:bg-[#1c1c1e] p-4 md:p-6 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm relative overflow-hidden group">
                 <div className="relative z-10">
-                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t.totalViews}</p>
-                  <p className="text-2xl md:text-4xl font-black text-slate-900 tracking-tighter">{analytics.totalViews}</p>
+                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{t.totalViews}</p>
+                  <p className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{analytics.totalViews}</p>
                 </div>
                 <Eye className="absolute -right-2 -bottom-2 text-slate-50 opacity-50 md:opacity-100 group-hover:text-red-50 transition-colors" size={60} />
               </div>
-              <div className="bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group">
+              <div className="bg-white dark:bg-[#1c1c1e] p-4 md:p-6 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm relative overflow-hidden group">
                 <div className="relative z-10">
-                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t.totalDownloads}</p>
-                  <p className="text-2xl md:text-4xl font-black text-slate-900 tracking-tighter">{analytics.totalDownloads}</p>
+                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{t.totalDownloads}</p>
+                  <p className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{analytics.totalDownloads}</p>
                 </div>
                 <Download className="absolute -right-2 -bottom-2 text-slate-50 opacity-50 md:opacity-100 group-hover:text-green-50 transition-colors" size={60} />
               </div>
-              <div className="bg-white p-4 md:p-6 rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group col-span-2 md:col-span-1">
+              <div className="bg-white dark:bg-[#1c1c1e] p-4 md:p-6 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm relative overflow-hidden group col-span-2 md:col-span-1">
                 <div className="relative z-10">
-                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{t.conversion}</p>
-                  <p className="text-2xl md:text-4xl font-black text-slate-900 tracking-tighter">{analytics.conversionRate}%</p>
+                  <p className="text-[8px] md:text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1">{t.conversion}</p>
+                  <p className="text-2xl md:text-4xl font-black text-slate-900 dark:text-white tracking-tighter">{analytics.conversionRate}%</p>
                 </div>
                 <Percent className="absolute -right-2 -bottom-2 text-slate-50 opacity-50 md:opacity-100 group-hover:text-blue-50 transition-colors" size={60} />
               </div>
             </div>
 
             {/* Engagement Graph */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 flex items-center gap-2">
-                     <BarChart4 size={14} className="text-slate-400"/> Activity Timeline
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white flex items-center gap-2">
+                     <BarChart4 size={14} className="text-slate-400 dark:text-slate-500"/> Activity Timeline
                   </h3>
                </div>
               <div className="h-48 md:h-64 w-full">
@@ -1093,75 +1093,75 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             {/* NEW: Content Intelligence (Restored) */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
                 {/* Hot Assets (Views) */}
-                <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
+                <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                         <Eye size={14} className="text-red-600" /> {t.hotAssets}
                     </h3>
                     <div className="space-y-3">
                         {analytics.topViews.map((item, idx) => (
-                        <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:border-red-100 transition-all group">
+                        <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08] hover:border-red-100 transition-all group">
                             <div className="flex items-center gap-3 overflow-hidden">
-                                <span className="text-[10px] font-black text-slate-300 shrink-0">#{idx + 1}</span>
+                                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 shrink-0">#{idx + 1}</span>
                                 <div className="w-8 h-10 rounded-md overflow-hidden shrink-0">
                                    <CardCover item={item} lang={lang} />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-red-600 truncate">{pickText(item.title, lang)}</p>
-                                    <p className="text-[8px] font-black text-slate-400 uppercase">{item.type}</p>
+                                    <p className="text-xs font-black text-slate-900 dark:text-white tracking-tight group-hover:text-red-600 truncate">{pickText(item.title, lang)}</p>
+                                    <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase">{item.type}</p>
                                 </div>
                             </div>
                             <div className="text-right shrink-0">
-                                <p className="text-sm font-black text-slate-900">{item.views}</p>
-                                <p className="text-[8px] font-black text-slate-400 uppercase">{ta.hits}</p>
+                                <p className="text-sm font-black text-slate-900 dark:text-white">{item.views}</p>
+                                <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase">{ta.hits}</p>
                             </div>
                         </div>
                         ))}
-                         {analytics.topViews.length === 0 && <p className="text-center text-xs text-slate-300 font-bold uppercase py-4">{ta.noData}</p>}
+                         {analytics.topViews.length === 0 && <p className="text-center text-xs text-slate-300 dark:text-slate-600 font-bold uppercase py-4">{ta.noData}</p>}
                     </div>
                 </div>
 
                 {/* High Utility (Downloads) */}
-                <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
+                <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                         <Download size={14} className="text-green-600" /> {t.highUtility}
                     </h3>
                     <div className="space-y-3">
                         {analytics.topDownloads.map((item, idx) => (
-                        <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:border-green-100 transition-all group">
+                        <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08] hover:border-green-100 transition-all group">
                             <div className="flex items-center gap-3 overflow-hidden">
-                                <span className="text-[10px] font-black text-slate-300 shrink-0">#{idx + 1}</span>
+                                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 shrink-0">#{idx + 1}</span>
                                 <div className="w-8 h-10 rounded-md overflow-hidden shrink-0">
                                    <CardCover item={item} lang={lang} />
                                 </div>
                                 <div className="min-w-0">
-                                    <p className="text-xs font-black text-slate-900 tracking-tight group-hover:text-green-600 truncate">{pickText(item.title, lang)}</p>
-                                    <p className="text-[8px] font-black text-slate-400 uppercase">{item.type}</p>
+                                    <p className="text-xs font-black text-slate-900 dark:text-white tracking-tight group-hover:text-green-600 truncate">{pickText(item.title, lang)}</p>
+                                    <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase">{item.type}</p>
                                 </div>
                             </div>
                             <div className="text-right shrink-0">
-                                <p className="text-sm font-black text-slate-900">{item.downloads}</p>
-                                <p className="text-[8px] font-black text-slate-400 uppercase">{ta.files}</p>
+                                <p className="text-sm font-black text-slate-900 dark:text-white">{item.downloads}</p>
+                                <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase">{ta.files}</p>
                             </div>
                         </div>
                         ))}
-                        {analytics.topDownloads.length === 0 && <p className="text-center text-xs text-slate-300 font-bold uppercase py-4">{ta.noData}</p>}
+                        {analytics.topDownloads.length === 0 && <p className="text-center text-xs text-slate-300 dark:text-slate-600 font-bold uppercase py-4">{ta.noData}</p>}
                     </div>
                 </div>
             </div>
 
             {/* NEW: User Leaderboard (Restored) */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 mb-6 flex items-center gap-2">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                     <Trophy size={14} className="text-yellow-500" /> {t.userLeaderboard}
                 </h3>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse min-w-[300px]">
                         <thead>
-                            <tr className="border-b border-slate-100">
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">{ta.rank}</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">{ta.user}</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest">{ta.interests}</th>
-                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 tracking-widest text-right">{ta.activity}</th>
+                            <tr className="border-b border-slate-100 dark:border-white/[0.08]">
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest">{ta.rank}</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest">{ta.user}</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest">{ta.interests}</th>
+                                <th className="p-3 text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest text-right">{ta.activity}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1174,7 +1174,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                 const uniqueTypes = [...new Set(topTypes)];
                                 return (
                                 <tr key={user.username} className="border-b border-slate-50 hover:bg-slate-50 transition-colors group">
-                                    <td className="p-3 text-[10px] font-black text-slate-300">#{idx + 1}</td>
+                                    <td className="p-3 text-[10px] font-black text-slate-300 dark:text-slate-600">#{idx + 1}</td>
                                     <td className="p-3">
                                         {(() => {
                                           // Identifier shape from /api/items/:itemId/track:
@@ -1188,10 +1188,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                           const avatar = isAnon ? '?' : isId ? '#' : user.username.slice(0, 2);
                                           return (
                                             <div className="flex items-center gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold uppercase text-[8px]">{avatar}</div>
+                                                <div className="w-6 h-6 rounded-full bg-slate-100 dark:bg-white/[0.06] flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold uppercase text-[8px]">{avatar}</div>
                                                 <div>
-                                                    <p className="text-[10px] font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{labelMain}</p>
-                                                    <p className="text-[8px] text-slate-400">{user.lastActive}</p>
+                                                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-200 group-hover:text-blue-600 transition-colors">{labelMain}</p>
+                                                    <p className="text-[8px] text-slate-400 dark:text-slate-500">{user.lastActive}</p>
                                                 </div>
                                             </div>
                                           );
@@ -1201,17 +1201,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                         <div className="flex flex-wrap gap-1">
                                             {uniqueTypes.length > 0 ? uniqueTypes.map(type => (
                                                 <span key={type} className="text-[7px] font-black uppercase bg-red-50 text-red-600 px-1.5 py-0.5 rounded">{type}</span>
-                                            )) : <span className="text-[8px] text-slate-300">—</span>}
+                                            )) : <span className="text-[8px] text-slate-300 dark:text-slate-600">—</span>}
                                         </div>
                                     </td>
                                     <td className="p-3 text-right">
-                                        <p className="text-xs font-black text-slate-900">{user.views + user.downloads}</p>
-                                        <p className="text-[8px] text-slate-400">{user.views}👁 {user.downloads}⬇</p>
+                                        <p className="text-xs font-black text-slate-900 dark:text-white">{user.views + user.downloads}</p>
+                                        <p className="text-[8px] text-slate-400 dark:text-slate-500">{user.views}👁 {user.downloads}⬇</p>
                                     </td>
                                 </tr>
                                 );
                             }) : (
-                                <tr><td colSpan={4} className="p-8 text-center text-xs text-slate-400 font-bold uppercase tracking-widest">{ta.noUserData}</td></tr>
+                                <tr><td colSpan={4} className="p-8 text-center text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">{ta.noUserData}</td></tr>
                             )}
                         </tbody>
                     </table>
@@ -1219,18 +1219,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             </div>
 
             {/* Traffic Analytics Block */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
                   {t.trafficAnalytics}
                 </h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
                    {(['day', 'week', 'month', 'year'] as const).map(period => (
-                       <div key={period} className="p-4 md:p-5 bg-slate-50 rounded-2xl border border-slate-100 relative overflow-hidden">
-                          <p className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">{t[period]}</p>
+                       <div key={period} className="p-4 md:p-5 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08] relative overflow-hidden">
+                          <p className="text-[8px] md:text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">{t[period]}</p>
                           <div className="flex justify-between items-end relative z-10">
                               <div>
-                                  <p className="text-lg md:text-2xl font-black text-slate-900">{trafficStats[period].total}</p>
-                                  <p className="text-[7px] md:text-[8px] font-bold text-slate-400 uppercase tracking-wider">{t.totalVisits}</p>
+                                  <p className="text-lg md:text-2xl font-black text-slate-900 dark:text-white">{trafficStats[period].total}</p>
+                                  <p className="text-[7px] md:text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">{t.totalVisits}</p>
                               </div>
                               <div className="text-right">
                                   <p className="text-base md:text-xl font-black text-blue-600">{trafficStats[period].unique}</p>
@@ -1248,12 +1248,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
           <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500 min-w-0 overflow-x-hidden">
 
             {/* Deploy control */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
               <div className="flex items-center gap-4 mb-6">
                 <div className="p-3 bg-red-50 text-red-600 rounded-2xl"><GitBranch size={24} /></div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{ta.deployTitle}</h3>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{ta.deploySubtitle}</p>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">{ta.deployTitle}</h3>
+                  <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{ta.deploySubtitle}</p>
                 </div>
               </div>
 
@@ -1265,15 +1265,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 return (
                   <div className="space-y-5">
                     {/* Status line */}
-                    <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
+                    <div className="p-5 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-100 dark:border-white/[0.08] space-y-3">
                       {offline ? (
-                        <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-2">
                           <AlertCircle size={14} className="text-amber-500" /> {ta.agentOffline}
                         </p>
                       ) : (
                         <>
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.statusLabel}</span>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{ta.statusLabel}</span>
                             {deploying ? (
                               <span className="text-[10px] font-black text-blue-600 flex items-center gap-1.5"><RefreshCw size={12} className="animate-spin" /> {ta.deployingStatus}</span>
                             ) : ds?.behind ? (
@@ -1282,18 +1282,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               <span className="text-[10px] font-black text-green-600 flex items-center gap-1.5"><CheckCircle2 size={12} /> {ta.upToDate}</span>
                             )}
                           </div>
-                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                          <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400">
                             <span>{ta.serverVersion}</span>
                             <span className="font-mono">{ds?.localCommit || '—'}{ds?.behind ? ` → ${ds?.remoteCommit}` : ''}</span>
                           </div>
                           {ds?.lastFinishedAt && (
-                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500">
+                            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400">
                               <span>{ta.lastDeploy}</span>
                               <span className="flex items-center gap-1.5">
                                 {ds.lastSuccess === false
                                   ? <span className="text-red-600 flex items-center gap-1"><AlertCircle size={11} /> {ta.deployErr}</span>
                                   : <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={11} /> {ta.deployOk}</span>}
-                                <span className="text-slate-400">{new Date(ds.lastFinishedAt).toLocaleString()}</span>
+                                <span className="text-slate-400 dark:text-slate-500">{new Date(ds.lastFinishedAt).toLocaleString()}</span>
                               </span>
                             </div>
                           )}
@@ -1315,14 +1315,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     </button>
 
                     {/* Auto / manual toggle */}
-                    <div className="flex items-center justify-between p-4 bg-slate-50 rounded-3xl border border-slate-100">
+                    <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-100 dark:border-white/[0.08]">
                       <div>
-                        <p className="text-[11px] font-black text-slate-900 uppercase tracking-widest">{ta.autoDeploy}</p>
-                        <p className="text-[9px] font-bold text-slate-400 mt-0.5">{mode === 'auto' ? ta.autoOn : ta.autoOff}</p>
+                        <p className="text-[11px] font-black text-slate-900 dark:text-white uppercase tracking-widest">{ta.autoDeploy}</p>
+                        <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">{mode === 'auto' ? ta.autoOn : ta.autoOff}</p>
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer shrink-0">
                         <input type="checkbox" className="sr-only peer" disabled={offline} checked={mode === 'auto'} onChange={e => setDeployMode(e.target.checked ? 'auto' : 'manual')} />
-                        <div className="w-12 h-7 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-600 peer-disabled:opacity-40" />
+                        <div className="w-12 h-7 bg-slate-200 dark:bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-600 peer-disabled:opacity-40" />
                       </label>
                     </div>
                   </div>
@@ -1331,16 +1331,16 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
             </div>
 
             {/* ── Database backups ────────────────────────────────────────── */}
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
               <div className="flex items-center gap-4 mb-6">
                 <div className="p-3 bg-red-50 text-red-600 rounded-2xl"><HardDrive size={24} /></div>
                 <div className="flex-1">
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{ta.backupTitle}</h3>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{ta.backupSubtitle}</p>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">{ta.backupTitle}</h3>
+                  <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{ta.backupSubtitle}</p>
                 </div>
                 <button
                   onClick={() => setShowBackupConfig(true)}
-                  className="p-2.5 bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors"
+                  className="p-2.5 bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 rounded-xl transition-colors"
                   title={ta.backupConfigure}
                 >
                   <Settings size={16} />
@@ -1358,22 +1358,22 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 return (
                   <div className="space-y-5">
                     {/* Status row */}
-                    <div className="p-5 bg-slate-50 rounded-3xl border border-slate-100 space-y-3">
+                    <div className="p-5 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-100 dark:border-white/[0.08] space-y-3">
                       {offline ? (
-                        <p className="text-[10px] font-bold text-slate-400 flex items-center gap-2">
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 flex items-center gap-2">
                           <AlertCircle size={14} className="text-amber-500" /> {ta.backupAgentOffline}
                         </p>
                       ) : (
                         <>
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupActiveTargets}</span>
-                            <span className="text-[10px] font-black text-slate-600">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{ta.backupActiveTargets}</span>
+                            <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">
                               {targetSummary.length > 0 ? targetSummary.join(' · ') : ta.backupNoTargets}
                             </span>
                           </div>
                           <div className="flex items-center justify-between">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupSchedule}</span>
-                            <span className="text-[10px] font-black text-slate-600">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{ta.backupSchedule}</span>
+                            <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">
                               {cfg?.schedule?.enabled
                                 ? `${ta.backupEvery} ${cfg.schedule.intervalHours}${ta.backupHours}`
                                 : ta.backupScheduleOff}
@@ -1381,13 +1381,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           </div>
                           {last && (
                             <div className="flex items-center justify-between">
-                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupLastRun}</span>
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{ta.backupLastRun}</span>
                               <span className="flex items-center gap-1.5 text-[10px] font-bold">
                                 {last.success
                                   ? <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={11} /> {ta.deployOk}</span>
                                   : <span className="text-red-600 flex items-center gap-1"><AlertCircle size={11} /> {ta.deployErr}</span>
                                 }
-                                <span className="text-slate-400">{new Date(last.finishedAt || last.startedAt).toLocaleString()}</span>
+                                <span className="text-slate-400 dark:text-slate-500">{new Date(last.finishedAt || last.startedAt).toLocaleString()}</span>
                               </span>
                             </div>
                           )}
@@ -1395,8 +1395,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                             <p className="text-[10px] font-mono text-red-500 bg-red-50 p-2 rounded-lg break-words">{last.error}</p>
                           )}
                           {st?.lastRestore && (
-                            <div className="flex items-center justify-between border-t border-slate-200 pt-2">
-                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{ta.backupLastRestore}</span>
+                            <div className="flex items-center justify-between border-t border-slate-200 dark:border-white/10 pt-2">
+                              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{ta.backupLastRestore}</span>
                               <span className="text-[10px] font-bold">
                                 {st.lastRestore.success === false
                                   ? <span className="text-red-600">{ta.deployErr}</span>
@@ -1404,7 +1404,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                   ? <span className="text-green-600">{ta.deployOk}</span>
                                   : <span className="text-blue-600">…</span>
                                 }
-                                <span className="text-slate-400 ml-2">{st.lastRestore.filename}</span>
+                                <span className="text-slate-400 dark:text-slate-500 ml-2">{st.lastRestore.filename}</span>
                               </span>
                             </div>
                           )}
@@ -1427,18 +1427,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.backupAvailable}</p>
                         <div className="space-y-2 max-h-64 overflow-y-auto">
                           {(st?.backups || []).length === 0 && (
-                            <p className="text-center text-[10px] text-slate-300 font-bold uppercase tracking-widest py-4">{ta.backupNoBackups}</p>
+                            <p className="text-center text-[10px] text-slate-300 dark:text-slate-600 font-bold uppercase tracking-widest py-4">{ta.backupNoBackups}</p>
                           )}
                           {(st?.backups || []).map((b: any) => (
-                            <div key={b.filename} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div key={b.filename} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08]">
                               <div className="min-w-0 flex-1">
-                                <p className="text-[10px] font-mono font-bold text-slate-700 truncate">{b.filename}</p>
-                                <p className="text-[9px] text-slate-400">{new Date(b.createdAt).toLocaleString()} · {formatBytes(b.sizeBytes)}</p>
+                                <p className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-200 truncate">{b.filename}</p>
+                                <p className="text-[9px] text-slate-400 dark:text-slate-500">{new Date(b.createdAt).toLocaleString()} · {formatBytes(b.sizeBytes)}</p>
                               </div>
                               <button
                                 onClick={() => { setRestoreTarget(b.filename); setRestoreConfirm(''); }}
                                 disabled={backupBusy}
-                                className="ml-3 px-3 py-2 bg-white border border-slate-200 text-slate-500 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 text-[9px] font-black uppercase tracking-widest rounded-xl transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-40"
+                                className="ml-3 px-3 py-2 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 text-[9px] font-black uppercase tracking-widest rounded-xl transition-colors flex items-center gap-1.5 shrink-0 disabled:opacity-40"
                               >
                                 <RotateCcw size={11} /> {ta.backupRestore}
                               </button>
@@ -1452,26 +1452,26 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               })()}
             </div>
 
-            <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+            <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
               <div className="flex items-center gap-4 mb-6">
                   <div className="p-3 bg-red-50 text-red-600 rounded-2xl">
                       <Database size={24} />
                   </div>
                   <div>
-                      <h3 className="text-sm font-black text-slate-900 uppercase tracking-widest">{ta.database}</h3>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">{ta.backupRestore}</p>
+                      <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">{ta.database}</h3>
+                      <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{ta.backupRestore}</p>
                   </div>
               </div>
               <div className="space-y-6">
-                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-100">
-                      <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">
+                  <div className="p-5 md:p-6 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-100 dark:border-white/[0.08]">
+                      <h4 className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-2">
                           <Upload size={14} /> Server API Key
                       </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mb-3">{ta.apiKeyDesc}</p>
+                      <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mb-3">{ta.apiKeyDesc}</p>
                       <div className="flex gap-2">
                         <input
                           type="password"
-                          className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none"
+                          className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none"
                           placeholder={ta.apiKeyPlaceholder}
                           value={serverApiKeyInput}
                           onChange={e => setServerApiKeyInput(e.target.value)}
@@ -1492,107 +1492,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                       <p className="text-[9px] text-slate-400 font-bold mb-3">{ta.excludesDesc}</p>
 
                       {/* "This browser is excluded" indicator */}
-                      <div className={`mb-4 px-3 py-2 rounded-xl text-[10px] font-bold flex items-center justify-between gap-2 ${thisBrowserExcluded ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}>
-                          <span className="flex items-center gap-1.5">
-                              {thisBrowserExcluded
-                                  ? <><CheckCircle2 size={12} /> {ta.browserExcluded}</>
-                                  : <><AlertCircle size={12} /> {ta.browserNotExcluded}</>}
-                          </span>
-                          {thisBrowserExcluded && thisBrowserToken && (
-                              <span className="font-mono text-[9px] opacity-60">{thisBrowserToken.slice(0, 8)}…</span>
-                          )}
-                      </div>
-
-                      <button
-                        onClick={handleExcludeSelf}
-                        className="w-full mb-4 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-2"
-                      >
-                        <ShieldCheck size={13} /> {ta.excludeSelfBtn}
-                      </button>
-
-                      {/* Usernames */}
-                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUsernames}</label>
-                      <div className="flex gap-2 mt-1 mb-2">
-                          <input
-                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
-                              placeholder="@username"
-                              value={newExcludeUsername}
-                              onChange={e => setNewExcludeUsername(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') handleAddExcludeUsername(); }}
-                          />
-                          <button onClick={handleAddExcludeUsername} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]">
-                          {(db.analyticsExcludes?.usernames || []).length === 0 && (
-                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
-                          )}
-                          {(db.analyticsExcludes?.usernames || []).map(u => (
-                              <span key={u} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700">
-                                  @{u}
-                                  <button onClick={() => handleRemoveExcludeUsername(u)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
-                              </span>
-                          ))}
-                      </div>
-
-                      {/* IPs */}
-                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeIps}</label>
-                      <div className="flex gap-2 mt-1 mb-2">
-                          <input
-                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
-                              placeholder="1.2.3.4"
-                              value={newExcludeIp}
-                              onChange={e => setNewExcludeIp(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') handleAddExcludeIp(); }}
-                          />
-                          <button onClick={handleAddExcludeIp} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]">
-                          {(db.analyticsExcludes?.ips || []).length === 0 && (
-                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
-                          )}
-                          {(db.analyticsExcludes?.ips || []).map(ip => (
-                              <span key={ip} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 font-mono">
-                                  {ip}
-                                  <button onClick={() => handleRemoveExcludeIp(ip)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
-                              </span>
-                          ))}
-                      </div>
-
-                      {/* Telegram numeric user IDs — stable across username changes */}
-                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUserIds}</label>
-                      <div className="flex gap-2 mt-1 mb-2">
-                          <input
-                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
-                              placeholder="123456789"
-                              inputMode="numeric"
-                              value={newExcludeUserId}
-                              onChange={e => setNewExcludeUserId(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') handleAddExcludeUserId(); }}
-                          />
-                          <button onClick={handleAddExcludeUserId} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]">
-                          {(db.analyticsExcludes?.userIds || []).length === 0 && (
-                              <span className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span>
-                          )}
-                          {(db.analyticsExcludes?.userIds || []).map(uid => (
-                              <span key={uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-slate-700 font-mono">
-                                  {uid}
-                                  <button onClick={() => handleRemoveExcludeUserId(uid)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
-                              </span>
-                          ))}
-                      </div>
-
-                      {/* Registered browsers (per-device localStorage tokens) */}
-                      <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeBrowsers}</label>
-                      <p className="text-[9px] text-slate-400 mt-1 mb-2 leading-relaxed">{ta.browsersHelp}</p>
-                      <div className="flex gap-2 mb-2">
-                          <input
-                              className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none"
-                              placeholder={ta.browserLabelPh}
-                              value={browserLabel}
-                              onChange={e => setBrowserLabel(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter') handleRegisterBrowser(); }}
+                      <div className={`mb-4 px-3 py-2 rounded-xl text-[10px] font-bold flex items-center justify-between gap-2 ${thisBrowserExcluded ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-amber-50 text-amber-700 border border-amber-100'}`}> <span className="flex items-center gap-1.5"> {thisBrowserExcluded ? <><CheckCircle2 size={12} /> {ta.browserExcluded}</> : <><AlertCircle size={12} /> {ta.browserNotExcluded}</>} </span> {thisBrowserExcluded && thisBrowserToken && ( <span className="font-mono text-[9px] opacity-60">{thisBrowserToken.slice(0, 8)}…</span> )} </div> <button onClick={handleExcludeSelf} className="w-full mb-4 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all flex items-center justify-center gap-2" > <ShieldCheck size={13} /> {ta.excludeSelfBtn} </button> {/* Usernames */} <label className="text-[8px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest ml-1">{ta.excludeUsernames}</label> <div className="flex gap-2 mt-1 mb-2"> <input className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none" placeholder="@username" value={newExcludeUsername} onChange={e => setNewExcludeUsername(e.target.value)} onKeyDown={e => { if (e.key ==='Enter') handleAddExcludeUsername(); }} /> <button onClick={handleAddExcludeUsername} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button> </div> <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]"> {(db.analyticsExcludes?.usernames || []).length === 0 && ( <span className="text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span> )} {(db.analyticsExcludes?.usernames || []).map(u => ( <span key={u} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg text-[10px] font-bold text-slate-700"> @{u} <button onClick={() => handleRemoveExcludeUsername(u)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button> </span> ))} </div> {/* IPs */} <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeIps}</label> <div className="flex gap-2 mt-1 mb-2"> <input className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none" placeholder="1.2.3.4" value={newExcludeIp} onChange={e => setNewExcludeIp(e.target.value)} onKeyDown={e => { if (e.key ==='Enter') handleAddExcludeIp(); }} /> <button onClick={handleAddExcludeIp} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button> </div> <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]"> {(db.analyticsExcludes?.ips || []).length === 0 && ( <span className="text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span> )} {(db.analyticsExcludes?.ips || []).map(ip => ( <span key={ip} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg text-[10px] font-bold text-slate-700 font-mono"> {ip} <button onClick={() => handleRemoveExcludeIp(ip)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button> </span> ))} </div> {/* Telegram numeric user IDs — stable across username changes */} <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeUserIds}</label> <div className="flex gap-2 mt-1 mb-2"> <input className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none" placeholder="123456789" inputMode="numeric" value={newExcludeUserId} onChange={e => setNewExcludeUserId(e.target.value)} onKeyDown={e => { if (e.key ==='Enter') handleAddExcludeUserId(); }} /> <button onClick={handleAddExcludeUserId} className="px-5 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0">{ta.add}</button> </div> <div className="flex flex-wrap gap-1.5 mb-4 min-h-[1.5rem]"> {(db.analyticsExcludes?.userIds || []).length === 0 && ( <span className="text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase tracking-widest">{ta.excludesEmpty}</span> )} {(db.analyticsExcludes?.userIds || []).map(uid => ( <span key={uid} className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg text-[10px] font-bold text-slate-700 font-mono"> {uid} <button onClick={() => handleRemoveExcludeUserId(uid)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button> </span> ))} </div> {/* Registered browsers (per-device localStorage tokens) */} <label className="text-[8px] font-black uppercase text-slate-500 tracking-widest ml-1">{ta.excludeBrowsers}</label> <p className="text-[9px] text-slate-400 mt-1 mb-2 leading-relaxed">{ta.browsersHelp}</p> <div className="flex gap-2 mb-2"> <input className="flex-1 min-w-0 bg-white border border-slate-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-slate-500 outline-none" placeholder={ta.browserLabelPh} value={browserLabel} onChange={e => setBrowserLabel(e.target.value)} onKeyDown={e => { if (e.key ==='Enter') handleRegisterBrowser(); }}
                           />
                           <button onClick={handleRegisterBrowser} title={ta.registerThisBrowser} className="px-4 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shrink-0 flex items-center justify-center"><Plus size={14} strokeWidth={3} /></button>
                       </div>
@@ -1603,52 +1503,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                           {(db.analyticsExcludes?.browsers || []).map(b => {
                               const isMe = b.token === thisBrowserToken;
                               return (
-                                  <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white border-slate-200 text-slate-700'}`}>
-                                      <span className="font-mono text-slate-400 shrink-0">{b.token.slice(0, 8)}…</span>
-                                      <span className="flex-1 min-w-0 truncate">{b.label}</span>
-                                      <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span>
-                                      {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>}
-                                      <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button>
-                                  </div>
-                              );
-                          })}
-                      </div>
-                  </div>
-
-                  {/* Reset content stats */}
-                  <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
-                      <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                          <BarChart4 size={14} /> {ta.resetStatsTitle}
-                      </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetStatsDesc}</p>
-                      <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
-                          {ta.resetStatsButton}
-                      </button>
-                  </div>
-
-                  {/* Reset traffic stats */}
-                  <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100">
-                      <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                          <Monitor size={14} /> {ta.resetTrafficTitle}
-                      </h4>
-                      <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetTrafficDesc}</p>
-                      <button onClick={handleResetTrafficStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700">
-                          {ta.resetTrafficButton}
-                      </button>
-                  </div>
-
-                  {/* Error log (built-in monitoring) */}
-                  <div className="p-5 md:p-6 bg-slate-50 rounded-3xl border border-slate-200 overflow-hidden">
-                      <div className="flex items-center justify-between mb-1">
-                          <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2">
-                              <AlertCircle size={14} /> {ta.errorLogTitle}
-                              {errorRows.length > 0 && (
-                                  <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px]">{errorRows.length}</span>
-                              )}
-                          </h4>
-                          <div className="flex items-center gap-1 shrink-0">
-                              <button onClick={refreshErrors} title={ta.errorLogRefresh} className="p-2 text-slate-400 hover:text-slate-700 transition-colors">
-                                  <RefreshCw size={14} className={errorsLoading ? 'animate-spin' : ''} />
+                                  <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white dark:bg-[#1c1c1e] border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200'}`}> <span className="font-mono text-slate-400 dark:text-slate-500 shrink-0">{b.token.slice(0, 8)}…</span> <span className="flex-1 min-w-0 truncate">{b.label}</span> <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span> {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>} <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button> </div> ); })} </div> </div> {/* Reset content stats */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <BarChart4 size={14} /> {ta.resetStatsTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetStatsDesc}</p> <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"> {ta.resetStatsButton} </button> </div> {/* Reset traffic stats */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <Monitor size={14} /> {ta.resetTrafficTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetTrafficDesc}</p> <button onClick={handleResetTrafficStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"> {ta.resetTrafficButton} </button> </div> {/* Error log (built-in monitoring) */} <div className="p-5 md:p-6 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden"> <div className="flex items-center justify-between mb-1"> <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"> <AlertCircle size={14} /> {ta.errorLogTitle} {errorRows.length > 0 && ( <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px]">{errorRows.length}</span> )} </h4> <div className="flex items-center gap-1 shrink-0"> <button onClick={refreshErrors} title={ta.errorLogRefresh} className="p-2 text-slate-400 hover:text-slate-700 transition-colors"> <RefreshCw size={14} className={errorsLoading ?'animate-spin' : ''} />
                               </button>
                               {errorRows.length > 0 && (
                                   <button onClick={handleClearErrors} title={ta.errorLogClear} className="p-2 text-slate-400 hover:text-red-600 transition-colors">
@@ -1680,143 +1535,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                               <p className="text-[8px] text-slate-400 mt-1 truncate">
                                                   {new Date(e.ts).toLocaleString()}
                                                   {e.kind ? ` · ${e.kind}` : ''}
-                                                  {e.username ? ` · @${e.username}` : ''}
-                                              </p>
-                                          </div>
-                                      </button>
-                                      {expandedError === e.id && (
-                                          <div className="px-3 pb-3 space-y-2 border-t border-slate-100 pt-2">
-                                              {e.url && <p className="text-[9px] text-slate-500 break-all"><b>URL:</b> {e.url}</p>}
-                                              {e.user_agent && <p className="text-[9px] text-slate-400 break-all">{e.user_agent}</p>}
-                                              {e.stack && (
-                                                  <pre className="text-[8px] text-slate-600 bg-slate-50 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-48">{e.stack}</pre>
-                                              )}
-                                          </div>
-                                      )}
-                                  </div>
-                              ))}
-                          </div>
-                      )}
-                  </div>
-
-                  {/* Export */}
-                  <div className="p-5 md:p-6 bg-amber-50 rounded-3xl border border-amber-200">
-                      <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-2">
-                          <Database size={14} /> {ta.exportTitle}
-                      </h4>
-                      <p className="text-[9px] text-amber-600 font-bold mb-4">
-                          {ta.exportDesc}
-                      </p>
-                      <label className="text-[8px] font-black uppercase text-amber-700 tracking-widest ml-1">
-                          {ta.exportConfirmLabel}
-                      </label>
-                      <div className="flex gap-2 mt-1">
-                          <input
-                              className="flex-1 min-w-0 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none"
-                              placeholder={ta.exportWord}
-                              value={exportConfirm}
-                              onChange={e => setExportConfirm(e.target.value)}
-                          />
-                          <button
-                              onClick={handleExportJson}
-                              disabled={exportConfirm !== ta.exportWord}
-                              className="px-5 bg-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95"
-                          >
-                              {ta.exportButton}
-                          </button>
-                      </div>
-                  </div>
-
-                  {/* Import */}
-                  <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-200">
-                      <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1 flex items-center gap-2">
-                          <Upload size={14} /> {ta.importTitle}
-                      </h4>
-                      <p className="text-[9px] text-red-600 font-bold mb-4">
-                          {ta.importDesc}
-                      </p>
-                      <textarea
-                          className="w-full h-28 bg-white border border-red-200 rounded-2xl p-4 text-[10px] font-mono mb-3 focus:border-red-600 outline-none"
-                          placeholder={ta.importPlaceholder}
-                          value={importJson}
-                          onChange={e => setImportJson(e.target.value)}
-                      />
-                      <label className="text-[8px] font-black uppercase text-red-700 tracking-widest ml-1">
-                          {ta.importConfirmLabel}
-                      </label>
-                      <div className="flex gap-2 mt-1">
-                          <input
-                              className="flex-1 min-w-0 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                              placeholder={ta.rewriteWord}
-                              value={importConfirm}
-                              onChange={e => setImportConfirm(e.target.value)}
-                          />
-                          <button
-                              onClick={handleImportJson}
-                              disabled={importConfirm !== ta.rewriteWord || !importJson.trim()}
-                              className="px-5 bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95"
-                          >
-                              {ta.importButton}
-                          </button>
-                      </div>
-                  </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-
-        {activeTab === 'items' && (
+                                                  {e.username ? ` · @${e.username}` : ''} </p> </div> </button> {expandedError === e.id && ( <div className="px-3 pb-3 space-y-2 border-t border-slate-100 dark:border-white/[0.08] pt-2"> {e.url && <p className="text-[9px] text-slate-500 dark:text-slate-400 break-all"><b>URL:</b> {e.url}</p>} {e.user_agent && <p className="text-[9px] text-slate-400 break-all">{e.user_agent}</p>} {e.stack && ( <pre className="text-[8px] text-slate-600 bg-slate-50 dark:bg-black/40 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-48">{e.stack}</pre> )} </div> )} </div> ))} </div> )} </div> {/* Export */} <div className="p-5 md:p-6 bg-amber-50 rounded-3xl border border-amber-200"> <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-2"> <Database size={14} /> {ta.exportTitle} </h4> <p className="text-[9px] text-amber-600 font-bold mb-4"> {ta.exportDesc} </p> <label className="text-[8px] font-black uppercase text-amber-700 tracking-widest ml-1"> {ta.exportConfirmLabel} </label> <div className="flex gap-2 mt-1"> <input className="flex-1 min-w-0 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none" placeholder={ta.exportWord} value={exportConfirm} onChange={e => setExportConfirm(e.target.value)} /> <button onClick={handleExportJson} disabled={exportConfirm !== ta.exportWord} className="px-5 bg-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95" > {ta.exportButton} </button> </div> </div> {/* Import */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-200"> <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1 flex items-center gap-2"> <Upload size={14} /> {ta.importTitle} </h4> <p className="text-[9px] text-red-600 font-bold mb-4"> {ta.importDesc} </p> <textarea className="w-full h-28 bg-white border border-red-200 rounded-2xl p-4 text-[10px] font-mono mb-3 focus:border-red-600 outline-none" placeholder={ta.importPlaceholder} value={importJson} onChange={e => setImportJson(e.target.value)} /> <label className="text-[8px] font-black uppercase text-red-700 tracking-widest ml-1"> {ta.importConfirmLabel} </label> <div className="flex gap-2 mt-1"> <input className="flex-1 min-w-0 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" placeholder={ta.rewriteWord} value={importConfirm} onChange={e => setImportConfirm(e.target.value)} /> <button onClick={handleImportJson} disabled={importConfirm !== ta.rewriteWord || !importJson.trim()} className="px-5 bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95" > {ta.importButton} </button> </div> </div> </div> </div> </div> )} {activeTab ==='items' && (
            <div className="space-y-6">
                <button 
-                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0]?.id || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })}
-                  className="w-full py-4 bg-red-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-xs shadow-xl shadow-red-200 flex items-center justify-center gap-2"
-               >
-                  <Plus size={18} /> {t.addContent}
-               </button>
-               <div className="space-y-3">
-                  {db.items.map(i => (
-                     <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 flex items-center justify-between shadow-sm">
-                        <div className="flex items-center gap-4 overflow-hidden">
-                           <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 shrink-0 group">
-                              <CardCover item={i} lang={lang} />
-                           </div>
-                           <div className="min-w-0">
-                              <h4 className="text-xs font-black text-slate-900 truncate">{pickText(i.title, lang)}</h4>
-                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{i.type}</span>
-                           </div>
-                        </div>
-                        <div className="flex gap-2">
-                           <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600"><Edit2 size={16}/></button>
-                           <button onClick={() => setItemToDelete(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button>
-                        </div>
-                     </div>
-                  ))}
-               </div>
-           </div>
-        )}
-        
-        {activeTab === 'types' && (
-          <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-            <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3>
-
-            {/* Add new category */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 mb-6 space-y-3">
-              <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{t.addCategory}</p>
-              <div className="grid grid-cols-3 gap-2">
-                {(['ru', 'en', 'es'] as const).map(l => (
-                  <div key={l}>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{l.toUpperCase()}</label>
-                    <input
-                      type="text"
-                      className="w-full bg-white border border-slate-100 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none"
-                      value={newTypeLabels[l]}
-                      onChange={e => {
-                        const val = e.target.value;
-                        typedLangsRef.current.add(l);
-                        setNewTypeLabels(prev => {
-                          const next = { ...prev, [l]: val };
-                          (['en', 'ru', 'es'] as const).forEach(other => {
+                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0]?.id || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })} className="w-full py-4 bg-red-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-xs shadow-xl shadow-red-200 flex items-center justify-center gap-2" > <Plus size={18} /> {t.addContent} </button> <div className="space-y-3"> {db.items.map(i => ( <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] flex items-center justify-between shadow-sm"> <div className="flex items-center gap-4 overflow-hidden"> <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 dark:bg-black/40 shrink-0 group"> <CardCover item={i} lang={lang} /> </div> <div className="min-w-0"> <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">{pickText(i.title, lang)}</h4> <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{i.type}</span> </div> </div> <div className="flex gap-2"> <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><Edit2 size={16}/></button> <button onClick={() => setItemToDelete(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button> </div> </div> ))} </div> </div> )} {activeTab ==='types'&& ( <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm"> <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3> {/* Add new category */} <div className="p-4 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 mb-6 space-y-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{t.addCategory}</p> <div className="grid grid-cols-3 gap-2"> {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{l.toUpperCase()}</label> <input type="text" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/[0.08] rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none" value={newTypeLabels[l]} onChange={e => { const val = e.target.value; typedLangsRef.current.add(l); setNewTypeLabels(prev => { const next = { ...prev, [l]: val }; (['en', 'ru', 'es'] as const).forEach(other => {
                             if (other !== l && !typedLangsRef.current.has(other)) next[other] = val;
                           });
                           return next;
@@ -1838,59 +1560,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   <div key={type.id} className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-3">
                     <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{ta.editSection}</p>
                     <div className="grid grid-cols-3 gap-2">
-                      {(['ru', 'en', 'es'] as const).map(l => (
-                        <div key={l}>
-                          <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{l.toUpperCase()}</label>
-                          <input
-                            type="text"
-                            className="w-full bg-white border border-red-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none"
-                            value={editingType[l]}
-                            onChange={e => setEditingType({ ...editingType, [l]: e.target.value })}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={handleSaveType} className="flex-1 bg-red-600 text-white py-2 rounded-xl font-black uppercase text-[10px] tracking-widest">{ta.save}</button>
-                      <button onClick={() => setEditingType(null)} className="px-5 py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">{ta.cancel}</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div key={type.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div className="min-w-0">
-                      <span className="text-[10px] font-black uppercase text-slate-900">{type[lang] || type.ru || type.en || type.id}</span>
-                      <span className="text-[8px] text-slate-300 ml-2">{[type.ru, type.en, type.es].filter(Boolean).join(' · ')}</span>
-                    </div>
-                    <div className="flex gap-1 shrink-0 ml-2">
-                      <button onClick={() => setEditingType(type)} className="p-1.5 text-slate-300 hover:text-blue-500 transition-colors"><Edit2 size={13} /></button>
-                      <button onClick={() => handleDeleteType(type.id)} className="p-1.5 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={13} /></button>
-                    </div>
-                  </div>
-                )
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {editingItem && (
-        <div className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-xl flex items-end md:items-center justify-center p-0 md:p-5 animate-in fade-in duration-200">
-          <div className="bg-white w-full md:max-w-xl rounded-t-[2rem] md:rounded-[3.5rem] border border-white shadow-2xl overflow-hidden h-[90vh] md:max-h-[90vh] flex flex-col">
-            <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-white sticky top-0 z-10 shrink-0">
-               <h3 className="font-black text-xl uppercase tracking-tighter">{editingItem.id ? 'Edit' : 'New'} Asset</h3>
-               <button onClick={() => setEditingItem(null)} className="p-2 bg-slate-50 rounded-full hover:bg-red-50 hover:text-red-600"><X size={20}/></button>
-            </div>
-            <div className="p-5 overflow-y-auto space-y-8 flex-1 no-scrollbar">
-
-              {/* Titles */}
-              <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.headings}</p>
-                <div className="space-y-3">
-                  {(['ru', 'en', 'es'] as const).map(l => (
-                    <div key={l}>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} {ta.heading}</label>
-                      <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.title?.[l] || ''}
+                      {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{l.toUpperCase()}</label> <input type="text" className="w-full bg-white dark:bg-[#1c1c1e] border border-red-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none" value={editingType[l]} onChange={e => setEditingType({ ...editingType, [l]: e.target.value })} /> </div> ))} </div> <div className="flex gap-2"> <button onClick={handleSaveType} className="flex-1 bg-red-600 text-white py-2 rounded-xl font-black uppercase text-[10px] tracking-widest">{ta.save}</button> <button onClick={() => setEditingType(null)} className="px-5 py-2 bg-slate-100 text-slate-500 rounded-xl font-black uppercase text-[10px]">{ta.cancel}</button> </div> </div> ) : ( <div key={type.id} className="flex justify-between items-center p-3 bg-slate-50 rounded-2xl border border-slate-100"> <div className="min-w-0"> <span className="text-[10px] font-black uppercase text-slate-900">{type[lang] || type.ru || type.en || type.id}</span> <span className="text-[8px] text-slate-300 ml-2">{[type.ru, type.en, type.es].filter(Boolean).join(' · ')}</span> </div> <div className="flex gap-1 shrink-0 ml-2"> <button onClick={() => setEditingType(type)} className="p-1.5 text-slate-300 dark:text-slate-600 hover:text-blue-500 transition-colors"><Edit2 size={13} /></button> <button onClick={() => handleDeleteType(type.id)} className="p-1.5 text-slate-300 hover:text-red-600 transition-colors"><Trash2 size={13} /></button> </div> </div> ) ))} </div> </div> )} </div> {editingItem && ( <div className="fixed inset-0 z-[200] bg-slate-900/40 backdrop-blur-xl flex items-end md:items-center justify-center p-0 md:p-5 animate-in fade-in duration-200"> <div className="bg-white w-full md:max-w-xl rounded-t-[2rem] md:rounded-[3.5rem] border border-white shadow-2xl overflow-hidden h-[90vh] md:max-h-[90vh] flex flex-col"> <div className="p-5 border-b border-slate-50 flex justify-between items-center bg-white dark:bg-[#1c1c1e] sticky top-0 z-10 shrink-0"> <h3 className="font-black text-xl uppercase tracking-tighter">{editingItem.id ?'Edit' : 'New'} Asset</h3> <button onClick={() => setEditingItem(null)} className="p-2 bg-slate-50 dark:bg-black/40 rounded-full hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><X size={20}/></button> </div> <div className="p-5 overflow-y-auto space-y-8 flex-1 no-scrollbar"> {/* Titles */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.headings}</p> <div className="space-y-3"> {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{l} {ta.heading}</label> <input type="text" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.title?.[l] ||''}
                         onChange={e => setEditingItem({...editingItem, title: {...editingItem.title!, [l]: e.target.value}})} />
                     </div>
                   ))}
@@ -1901,48 +1571,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
               <div>
                 <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.descriptionsLabel}</p>
                 <div className="space-y-3">
-                  {(['ru', 'en', 'es'] as const).map(l => (
-                    <div key={l}>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{l} {ta.descriptionWord}</label>
-                      <textarea rows={3} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-medium focus:border-red-600 outline-none resize-none"
-                        value={editingItem.description?.[l] || ''}
-                        onChange={e => setEditingItem({...editingItem, description: {...(editingItem.description || {en:'',ru:'',es:''}), [l]: e.target.value}})} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Info */}
-              <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.basics}</p>
-                <div className="space-y-3">
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.typeLabel}</label>
-                      <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.type || ''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}>
-                        {db.customTypes.map(tp => <option key={tp.id} value={tp.id}>{tp[lang] || tp.ru || tp.en}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.authorLabel}</label>
-                      <input type="text" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.author || ''} onChange={e => setEditingItem({...editingItem, author: e.target.value})} />
-                    </div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between ml-2 mb-1">
-                        <label className="text-[8px] font-black uppercase text-slate-400">{ta.pubDate}</label>
-                        <div className="flex gap-0.5 bg-slate-100 rounded-lg p-0.5">
-                          <button type="button"
-                            onClick={() => {
-                              setPubDateMode('date');
+                  {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{l} {ta.descriptionWord}</label> <textarea rows={3} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-medium focus:border-red-600 outline-none resize-none" value={editingItem.description?.[l] ||''}
+                        onChange={e => setEditingItem({...editingItem, description: {...(editingItem.description || {en:'',ru:'',es:''}), [l]: e.target.value}})} /> </div> ))} </div> </div> {/* Info */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.basics}</p> <div className="space-y-3"> <div className="flex gap-3"> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.typeLabel}</label> <select className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.type ||''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}> {db.customTypes.map(tp => <option key={tp.id} value={tp.id}>{tp[lang] || tp.ru || tp.en}</option>)} </select> </div> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.authorLabel}</label> <input type="text" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.author ||''} onChange={e => setEditingItem({...editingItem, author: e.target.value})} /> </div> </div> <div className="flex flex-col sm:flex-row gap-3"> <div className="flex-1"> <div className="flex items-center justify-between ml-2 mb-1"> <label className="text-[8px] font-black uppercase text-slate-400">{ta.pubDate}</label> <div className="flex gap-0.5 bg-slate-100 dark:bg-white/[0.06] rounded-lg p-0.5"> <button type="button" onClick={() => { setPubDateMode('date');
                               const v = editingItem.publishedDate || '';
                               const next = /^\d{4}$/.test(v) ? `${v}-01-01` : (v || new Date().toISOString().split('T')[0]);
                               setEditingItem({ ...editingItem, publishedDate: next });
                             }}
-                            className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-colors ${pubDateMode === 'date' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}`}>
+                            className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-colors ${pubDateMode === 'date' ? 'bg-white dark:bg-[#1c1c1e] text-red-600 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}>
                             {ta.pubModeDate}
                           </button>
                           <button type="button"
@@ -1952,61 +1587,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                               const next = v.match(/^(\d{4})/)?.[1] || String(new Date().getFullYear());
                               setEditingItem({ ...editingItem, publishedDate: next });
                             }}
-                            className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-colors ${pubDateMode === 'year' ? 'bg-white text-red-600 shadow-sm' : 'text-slate-400'}`}>
+                            className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-wider transition-colors ${pubDateMode === 'year' ? 'bg-white dark:bg-[#1c1c1e] text-red-600 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}>
                             {ta.pubModeYear}
                           </button>
                         </div>
                       </div>
-                      {pubDateMode === 'year' ? (
-                        <input type="number" min="1000" max="2100" step="1" placeholder="2021"
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                          value={editingItem.publishedDate || ''} onChange={e => setEditingItem({ ...editingItem, publishedDate: e.target.value })} />
-                      ) : (
-                        <input type="date"
-                          className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                          value={editingItem.publishedDate || ''} onChange={e => setEditingItem({ ...editingItem, publishedDate: e.target.value })} />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.editorialRating}</label>
-                      <input type="number" min="0" max="5" step="0.1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.rating ?? 0} onChange={e => setEditingItem({...editingItem, rating: parseFloat(e.target.value) || 0})} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Series & Tags */}
-              <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.seriesAndTags}</p>
-                <div className="space-y-3">
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.seriesName}</label>
-                      <input type="text" placeholder={ta.seriesNamePh} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.series || ''} onChange={e => setEditingItem({...editingItem, series: e.target.value})}
-                        list="series-suggestions" />
-                      <datalist id="series-suggestions">
-                        {Array.from(new Set(db.items.map(i => i.series).filter(Boolean))).map(s => (
-                          <option key={s} value={s} />
-                        ))}
-                      </datalist>
-                    </div>
-                    <div className="w-24">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.seriesOrder}</label>
-                      <input type="number" min="1" step="1" placeholder="1" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.seriesOrder ?? ''} onChange={e => setEditingItem({...editingItem, seriesOrder: e.target.value ? parseInt(e.target.value) : undefined})} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.tagsLabel}</label>
-                    {/* Chip-style tag input: existing chips with X to remove,
-                        free-text buffer at the end that commits on space /
-                        comma / Enter. Backspace on empty buffer removes the
-                        last chip. */}
-                    <div
-                      className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-3 py-2 min-h-[3rem] flex flex-wrap items-center gap-1.5 focus-within:border-red-600 transition-colors cursor-text"
-                      onClick={() => (document.getElementById('tag-buffer-input') as HTMLInputElement | null)?.focus()}
+                      {pubDateMode === 'year'? ( <input type="number" min="1000" max="2100" step="1" placeholder="2021" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.publishedDate ||''} onChange={e => setEditingItem({ ...editingItem, publishedDate: e.target.value })} /> ) : ( <input type="date" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.publishedDate ||''} onChange={e => setEditingItem({ ...editingItem, publishedDate: e.target.value })} /> )} </div> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.editorialRating}</label> <input type="number" min="0" max="5" step="0.1" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.rating ?? 0} onChange={e => setEditingItem({...editingItem, rating: parseFloat(e.target.value) || 0})} /> </div> </div> </div> </div> {/* Series & Tags */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.seriesAndTags}</p> <div className="space-y-3"> <div className="flex gap-3"> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.seriesName}</label> <input type="text" placeholder={ta.seriesNamePh} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.series ||''} onChange={e => setEditingItem({...editingItem, series: e.target.value})} list="series-suggestions" /> <datalist id="series-suggestions"> {Array.from(new Set(db.items.map(i => i.series).filter(Boolean))).map(s => ( <option key={s} value={s} /> ))} </datalist> </div> <div className="w-24"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.seriesOrder}</label> <input type="number" min="1" step="1" placeholder="1" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.seriesOrder ??''} onChange={e => setEditingItem({...editingItem, seriesOrder: e.target.value ? parseInt(e.target.value) : undefined})} /> </div> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.tagsLabel}</label> {/* Chip-style tag input: existing chips with X to remove, free-text buffer at the end that commits on space / comma / Enter. Backspace on empty buffer removes the last chip. */} <div className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-3 py-2 min-h-[3rem] flex flex-wrap items-center gap-1.5 focus-within:border-red-600 transition-colors cursor-text" onClick={() => (document.getElementById('tag-buffer-input') as HTMLInputElement | null)?.focus()}
                     >
                       {(editingItem.tags || []).map(tag => (
                         <span key={tag} className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-red-50 text-red-700 text-[11px] font-bold">
@@ -2029,98 +1615,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         value={tagInput}
                         onChange={e => handleTagInputChange(e.target.value)}
                         onKeyDown={handleTagInputKeyDown}
-                        onBlur={() => { if (tagInput.trim()) { commitTagBuffer(tagInput); setTagInput(''); } }}
-                      />
-                    </div>
-                    <p className="text-[9px] text-slate-400 mt-1 ml-2">{ta.tagsHelp}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Articles (external web articles / social posts) */}
-              <div className="border-2 border-dashed border-red-200 bg-red-50/40 rounded-3xl p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-red-600 rounded-lg text-white"><Newspaper size={14} /></div>
-                    <p className="text-[11px] font-black uppercase text-red-600 tracking-widest">{ta.articlesLabel}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddArticle}
-                    className="flex items-center gap-1.5 text-[10px] font-black uppercase bg-red-600 text-white px-3 py-2 rounded-xl shadow-md shadow-red-200 hover:bg-red-700 active:scale-95 transition-all"
-                  >
-                    <PlusIcon size={12} strokeWidth={3} /> {ta.addArticle}
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-500 leading-relaxed mb-3">{ta.articlesHelp}</p>
-                <div className="space-y-2">
-                  {(editingItem.articles || []).map(a => {
-                    const presets = ['Web', 'Twitter', 'X', 'YandexZen', 'VK', 'Telegram'];
-                    const isCustom = !presets.includes(a.source);
-                    return (
-                      <div key={a.id} className="relative p-2.5 pl-9 bg-white rounded-2xl border border-red-100 space-y-2">
-                        <button type="button" onClick={() => handleRemoveArticle(a.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <select
-                            value={isCustom ? '__custom__' : a.source}
-                            onChange={e => handleUpdateArticle(a.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
-                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
-                            {presets.map(p => <option key={p} value={p}>{p}</option>)}
-                            <option value="__custom__">{ta.customSource}</option>
-                          </select>
-                          <select
-                            value={a.language || 'ru'}
-                            onChange={e => handleUpdateArticle(a.id, 'language', e.target.value)}
-                            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
-                            <option value="ru">RU</option><option value="en">EN</option><option value="es">ES</option>
-                            <option value="it">IT</option><option value="fr">FR</option><option value="de">DE</option>
-                          </select>
-                          {isCustom && (
-                            <input type="text" placeholder={ta.sourceName} className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
-                              value={a.source} onChange={e => handleUpdateArticle(a.id, 'source', e.target.value)} />
-                          )}
-                        </div>
-                        <input type="url" placeholder="https://dzen.ru/a/... · https://x.com/user/status/... · https://vk.com/wall..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
-                          value={a.url} onChange={e => handleUpdateArticle(a.id, 'url', e.target.value)} />
-                        <input type="text" placeholder={ta.articleTitlePh} className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
-                          value={a.title || ''} onChange={e => handleUpdateArticle(a.id, 'title', e.target.value)} />
-                      </div>
-                    );
-                  })}
-                  {(!editingItem.articles || editingItem.articles.length === 0) && (
-                    <button
-                      type="button"
-                      onClick={handleAddArticle}
-                      className="w-full py-4 border-2 border-dashed border-red-300 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-100 hover:border-red-400 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <PlusIcon size={14} strokeWidth={3} /> {ta.addFirstArticle}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Media */}
-              <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.media}</p>
-                <div className="space-y-3">
-                  <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.cover}</label>
-                    <div className="flex gap-2">
-                      <input type="text" placeholder="https://..." className="flex-1 bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none"
-                        value={editingItem.coverUrl || ''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
+                        onBlur={() => { if (tagInput.trim()) { commitTagBuffer(tagInput); setTagInput(''); } }} /> </div> <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 ml-2">{ta.tagsHelp}</p> </div> </div> </div> {/* Articles (external web articles / social posts) */} <div className="border-2 border-dashed border-red-200 bg-red-50/40 rounded-3xl p-4"> <div className="flex items-center justify-between mb-2"> <div className="flex items-center gap-2"> <div className="p-1.5 bg-red-600 rounded-lg text-white"><Newspaper size={14} /></div> <p className="text-[11px] font-black uppercase text-red-600 tracking-widest">{ta.articlesLabel}</p> </div> <button type="button" onClick={handleAddArticle} className="flex items-center gap-1.5 text-[10px] font-black uppercase bg-red-600 text-white px-3 py-2 rounded-xl shadow-md shadow-red-200 hover:bg-red-700 active:scale-95 transition-all" > <PlusIcon size={12} strokeWidth={3} /> {ta.addArticle} </button> </div> <p className="text-[10px] text-slate-500 leading-relaxed mb-3">{ta.articlesHelp}</p> <div className="space-y-2"> {(editingItem.articles || []).map(a => { const presets = ['Web', 'Twitter', 'X', 'YandexZen', 'VK', 'Telegram']; const isCustom = !presets.includes(a.source); return ( <div key={a.id} className="relative p-2.5 pl-9 bg-white dark:bg-[#1c1c1e] rounded-2xl border border-red-100 space-y-2"> <button type="button" onClick={() => handleRemoveArticle(a.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 dark:text-slate-600 hover:text-red-500"><X size={14} /></button> <div className="flex flex-wrap items-center gap-2"> <select value={isCustom ?'__custom__' : a.source}
+                            onChange={e => handleUpdateArticle(a.id, 'source', e.target.value === '__custom__' ? '': e.target.value)} className="bg-white border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"> {presets.map(p => <option key={p} value={p}>{p}</option>)} <option value="__custom__">{ta.customSource}</option> </select> <select value={a.language ||'ru'}
+                            onChange={e => handleUpdateArticle(a.id, 'language', e.target.value)} className="bg-white border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"> <option value="ru">RU</option><option value="en">EN</option><option value="es">ES</option> <option value="it">IT</option><option value="fr">FR</option><option value="de">DE</option> </select> {isCustom && ( <input type="text" placeholder={ta.sourceName} className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none" value={a.source} onChange={e => handleUpdateArticle(a.id,'source', e.target.value)} /> )} </div> <input type="url" placeholder="https://dzen.ru/a/... · https://x.com/user/status/... · https://vk.com/wall..." className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none" value={a.url} onChange={e => handleUpdateArticle(a.id,'url', e.target.value)} /> <input type="text" placeholder={ta.articleTitlePh} className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none" value={a.title ||''} onChange={e => handleUpdateArticle(a.id, 'title', e.target.value)} /> </div> ); })} {(!editingItem.articles || editingItem.articles.length === 0) && ( <button type="button" onClick={handleAddArticle} className="w-full py-4 border-2 border-dashed border-red-300 rounded-2xl text-[10px] font-black uppercase tracking-widest text-red-500 hover:bg-red-100 hover:border-red-400 transition-colors flex items-center justify-center gap-2" > <PlusIcon size={14} strokeWidth={3} /> {ta.addFirstArticle} </button> )} </div> </div> {/* Media */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.media}</p> <div className="space-y-3"> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.cover}</label> <div className="flex gap-2"> <input type="text" placeholder="https://..." className="flex-1 bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.coverUrl ||''} onChange={e => setEditingItem({...editingItem, coverUrl: e.target.value})} />
                       <button type="button"
                         onClick={() => coverInputRef.current?.click()}
-                        disabled={uploadState?.field === 'cover' || !!stagedCoverFile}
-                        title={ta.chooseFile}
-                        className="px-3 bg-slate-100 rounded-2xl text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
-                        <Upload size={16} />
-                      </button>
-                    </div>
-                    {stagedCoverFile && !uploadState && (
-                      <div className="mt-2 flex items-center gap-2 p-2 bg-blue-50 rounded-xl border border-blue-100">
-                        <span className="text-[9px] font-bold text-blue-700 flex-1 truncate">{stagedCoverFile.name} ({formatFileSize(stagedCoverFile.size)})</span>
-                        <button type="button" onClick={() => editingItem?.id && uploadCover(editingItem.id)} className="px-3 py-1 bg-blue-600 text-white text-[9px] font-black rounded-lg shrink-0">{ta.uploadBtn}</button>
-                        <button type="button" onClick={() => { setStagedCoverFile(null); if (coverInputRef.current) coverInputRef.current.value = ''; }} className="p-1 text-blue-400 hover:text-red-500 shrink-0"><X size={12} /></button>
+                        disabled={uploadState?.field === 'cover'|| !!stagedCoverFile} title={ta.chooseFile} className="px-3 bg-slate-100 dark:bg-white/[0.06] rounded-2xl text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"> <Upload size={16} /> </button> </div> {stagedCoverFile && !uploadState && ( <div className="mt-2 flex items-center gap-2 p-2 bg-blue-50 rounded-xl border border-blue-100"> <span className="text-[9px] font-bold text-blue-700 flex-1 truncate">{stagedCoverFile.name} ({formatFileSize(stagedCoverFile.size)})</span> <button type="button" onClick={() => editingItem?.id && uploadCover(editingItem.id)} className="px-3 py-1 bg-blue-600 text-white text-[9px] font-black rounded-lg shrink-0">{ta.uploadBtn}</button> <button type="button" onClick={() => { setStagedCoverFile(null); if (coverInputRef.current) coverInputRef.current.value =''; }} className="p-1 text-blue-400 hover:text-red-500 shrink-0"><X size={12} /></button>
                       </div>
                     )}
                     {uploadState?.field === 'cover' && (
@@ -2138,63 +1638,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                     </div>
                     <div className="space-y-2">
                       {(editingItem.videos || []).map(v => {
-                        const presets = ['YouTube', 'RuTube', 'Twitch', 'VK'];
-                        const isCustom = !presets.includes(v.source);
-                        return (
-                          <div key={v.id} className="relative p-2.5 pl-9 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
-                            <button type="button" onClick={() => handleRemoveVideo(v.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 hover:text-red-500"><X size={14} /></button>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="relative">
-                                <select
-                                  value={isCustom ? '__custom__' : v.source}
-                                  onChange={e => handleUpdateVideo(v.id, 'source', e.target.value === '__custom__' ? '' : e.target.value)}
-                                  className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
-                                  {presets.map(p => <option key={p} value={p}>{p}</option>)}
-                                  <option value="__custom__">{ta.customSource}</option>
-                                </select>
-                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
-                              </div>
-                              <div className="relative">
-                                <select
-                                  value={v.language || 'ru'}
-                                  onChange={e => handleUpdateVideo(v.id, 'language', e.target.value)}
-                                  className="appearance-none bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none">
-                                  <option value="ru">RU</option>
-                                  <option value="en">EN</option>
-                                  <option value="es">ES</option>
-                                  <option value="it">IT</option>
-                                  <option value="fr">FR</option>
-                                  <option value="de">DE</option>
-                                </select>
-                                <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
-                              </div>
-                              {isCustom && (
-                                <input type="text" placeholder={ta.sourceName} className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
-                                  value={v.source} onChange={e => handleUpdateVideo(v.id, 'source', e.target.value)} />
-                              )}
-                            </div>
-                            <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
-                              value={v.url} onChange={e => handleUpdateVideo(v.id, 'url', e.target.value)} />
-                          </div>
-                        );
-                      })}
-                      {(!editingItem.videos || editingItem.videos.length === 0) && (
-                        <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest text-center py-3">{ta.noVideo}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Content Languages */}
-              <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.contentLangs}</p>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['ru', 'en', 'es', 'it', 'fr', 'de'] as const).map(l => {
+                        const presets = ['YouTube', 'RuTube', 'Twitch', 'VK']; const isCustom = !presets.includes(v.source); return ( <div key={v.id} className="relative p-2.5 pl-9 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08] space-y-2"> <button type="button" onClick={() => handleRemoveVideo(v.id)} className="absolute top-2.5 left-2 p-1 text-slate-300 dark:text-slate-600 hover:text-red-500"><X size={14} /></button> <div className="flex flex-wrap items-center gap-2"> <div className="relative"> <select value={isCustom ?'__custom__' : v.source}
+                                  onChange={e => handleUpdateVideo(v.id, 'source', e.target.value === '__custom__' ? '': e.target.value)} className="appearance-none bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none"> {presets.map(p => <option key={p} value={p}>{p}</option>)} <option value="__custom__">{ta.customSource}</option> </select> <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" /> </div> <div className="relative"> <select value={v.language ||'ru'}
+                                  onChange={e => handleUpdateVideo(v.id, 'language', e.target.value)} className="appearance-none bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl pl-3 pr-8 py-2 text-[11px] font-bold focus:border-red-600 outline-none"> <option value="ru">RU</option> <option value="en">EN</option> <option value="es">ES</option> <option value="it">IT</option> <option value="fr">FR</option> <option value="de">DE</option> </select> <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" /> </div> {isCustom && ( <input type="text" placeholder={ta.sourceName} className="flex-1 min-w-0 bg-white border border-slate-200 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none" value={v.source} onChange={e => handleUpdateVideo(v.id,'source', e.target.value)} /> )} </div> <input type="text" placeholder="https://youtube.com/watch?v=..." className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none" value={v.url} onChange={e => handleUpdateVideo(v.id,'url', e.target.value)} /> </div> ); })} {(!editingItem.videos || editingItem.videos.length === 0) && ( <p className="text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase tracking-widest text-center py-3">{ta.noVideo}</p> )} </div> </div> </div> </div> {/* Content Languages */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.contentLangs}</p> <div className="grid grid-cols-3 gap-2"> {(['ru', 'en', 'es', 'it', 'fr', 'de'] as const).map(l => {
                     const active = (editingItem.contentLanguages || []).includes(l);
                     return (
                       <button key={l} type="button" onClick={() => handleToggleContentLang(l)}
-                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-400 border-slate-100 hover:border-slate-300'}`}>
+                        className={`py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${active ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 dark:bg-black/40 text-slate-400 dark:text-slate-500 border-slate-100 dark:border-white/[0.08] hover:border-slate-300'}`}>
                         {l}
                       </button>
                     );
@@ -2209,15 +1659,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   {([
                     { key: 'isPrivate' as const,      label: ta.whitelistOnly },
                     { key: 'allowDownload' as const,  label: ta.allowDownloadLabel },
-                    { key: 'allowReading' as const,   label: ta.allowReadingLabel },
-                  ]).map(({ key, label }) => (
-                    <label key={key} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer hover:border-red-100 transition-all">
-                      <span className="text-xs font-bold text-slate-700">{label}</span>
-                      <div className="relative">
-                        <input type="checkbox" className="sr-only peer"
-                          checked={!!(editingItem as any)[key]}
-                          onChange={e => setEditingItem({...editingItem, [key]: e.target.checked})} />
-                        <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
+                    { key: 'allowReading'as const, label: ta.allowReadingLabel }, ]).map(({ key, label }) => ( <label key={key} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08] cursor-pointer hover:border-red-100 transition-all"> <span className="text-xs font-bold text-slate-700">{label}</span> <div className="relative"> <input type="checkbox" className="sr-only peer" checked={!!(editingItem as any)[key]} onChange={e => setEditingItem({...editingItem, [key]: e.target.checked})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
                       </div>
                     </label>
                   ))}
@@ -2238,44 +1680,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         onClick={() => { if (!f.url) handleRemoveFormat(f.id); }}
                         disabled={!!f.url}
                         title={f.url ? ta.fileUploadedHint : ta.removeBlock}
-                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 hover:text-red-500'}`}>
-                        <X size={14} />
-                      </button>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.nameLabel}</label>
-                          <input placeholder="PDF / EPUB / …" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
-                            value={f.name} onChange={e => handleUpdateFormat(f.id, 'name', e.target.value)} />
-                        </div>
-                        <div>
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.langLabel}</label>
-                          <select className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
-                            value={f.language || 'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}>
-                            <option value="ru">RU</option>
-                            <option value="en">EN</option>
-                            <option value="es">ES</option>
-                            <option value="it">IT</option>
-                            <option value="fr">FR</option>
-                            <option value="de">DE</option>
-                          </select>
-                        </div>
-                        <div className="col-span-2">
-                          <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.fileUrl}</label>
-                          <div className="flex gap-1">
-                            <input placeholder="https://..." className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
-                              value={f.url} onChange={e => handleUpdateFormat(f.id, 'url', e.target.value)} />
-                            <button type="button"
-                              onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }}
-                              disabled={uploadState !== null || !!stagedContentFile}
-                              title={ta.chooseFile}
-                              className="px-2 bg-slate-100 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0">
-                              <Upload size={12} />
-                            </button>
-                          </div>
-                          {stagedContentFile?.formatId === f.id && !uploadState && (
-                            <div className="mt-1 flex items-center gap-1.5 p-1.5 bg-blue-50 rounded-lg border border-blue-100">
-                              <span className="text-[8px] font-bold text-blue-700 flex-1 truncate">{stagedContentFile.file.name} ({formatFileSize(stagedContentFile.file.size)})</span>
-                              <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language || 'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">{ta.uploadBtn}</button>
+                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 dark:text-slate-600 hover:text-red-500'}`}> <X size={14} /> </button> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.nameLabel}</label> <input placeholder="PDF / EPUB / …" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.name} onChange={e => handleUpdateFormat(f.id,'name', e.target.value)} /> </div> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.langLabel}</label> <select className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.language ||'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}> <option value="ru">RU</option> <option value="en">EN</option> <option value="es">ES</option> <option value="it">IT</option> <option value="fr">FR</option> <option value="de">DE</option> </select> </div> <div className="col-span-2"> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.fileUrl}</label> <div className="flex gap-1"> <input placeholder="https://..." className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.url} onChange={e => handleUpdateFormat(f.id,'url', e.target.value)} /> <button type="button" onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }} disabled={uploadState !== null || !!stagedContentFile} title={ta.chooseFile} className="px-2 bg-slate-100 dark:bg-white/[0.06] rounded-lg text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"> <Upload size={12} /> </button> </div> {stagedContentFile?.formatId === f.id && !uploadState && ( <div className="mt-1 flex items-center gap-1.5 p-1.5 bg-blue-50 rounded-lg border border-blue-100"> <span className="text-[8px] font-bold text-blue-700 flex-1 truncate">{stagedContentFile.file.name} ({formatFileSize(stagedContentFile.file.size)})</span> <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language ||'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">{ta.uploadBtn}</button>
                               <button type="button" onClick={() => { setStagedContentFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="text-blue-400 hover:text-red-500 shrink-0"><X size={10} /></button>
                             </div>
                           )}
@@ -2294,263 +1699,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                         <div>
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.sizeLabel}</label>
                           <input placeholder="2.4 MB" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400"
-                            value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} />
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteFormat(f)}
-                        className="mt-2 w-full py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <Trash2 size={11} /> {ta.deleteFileServer}
-                      </button>
-                    </div>
-                  ))}
-                  {(!editingItem.formats || editingItem.formats.length === 0) && (
-                    <p className="text-center text-[9px] text-slate-300 font-bold uppercase py-3">{ta.noFiles}</p>
-                  )}
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf,.epub,.fb2,.djvu,.djv,.mp4,.webm,.mkv,.mp3"
-                    className="hidden"
-                    onChange={e => {
-                      const file = e.target.files?.[0];
-                      const id = uploadingFormatId.current;
-                      if (file && id) setStagedContentFile({ file, formatId: id });
-                    }}
-                  />
-                </div>
-              </div>
-
-            </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100">
-               <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">{ta.saveAsset}</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Restore confirmation modal ─────────────────────────────────────── */}
-      {restoreTarget && (
-        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6">
-            <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-4">
-              <RotateCcw size={22} className="text-amber-600" />
-            </div>
-            <h3 className="text-base font-black text-slate-900 mb-1">{ta.backupRestoreConfirm}</h3>
-            <p className="text-xs text-slate-500 leading-relaxed mb-2">{ta.backupRestoreDesc}</p>
-            <p className="text-xs font-mono font-bold text-slate-700 truncate mb-4 bg-slate-50 p-2 rounded-lg">{restoreTarget}</p>
-            <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2 block">{ta.backupRestoreConfirmType}</label>
-            <input
-              autoFocus
-              value={restoreConfirm}
-              onChange={e => setRestoreConfirm(e.target.value)}
-              placeholder="RESTORE"
-              className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold focus:border-amber-500 outline-none mb-4"
-            />
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setRestoreTarget(null); setRestoreConfirm(''); }}
-                className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-              >
-                {ta.cancel}
-              </button>
-              <button
-                onClick={() => triggerRestore(restoreTarget)}
-                disabled={restoreConfirm.trim().toUpperCase() !== 'RESTORE' || backupBusy}
-                className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition-colors"
-              >
-                {ta.backupRestore}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Backup config modal ────────────────────────────────────────────── */}
-      {showBackupConfig && backupCfgDraft && (
-        <div className="fixed inset-0 z-[600] bg-slate-900/40 backdrop-blur-xl flex items-end md:items-center justify-center p-0 md:p-5">
-          <div className="bg-white w-full md:max-w-2xl rounded-t-[2rem] md:rounded-[3rem] border border-white shadow-2xl overflow-hidden h-[90vh] md:max-h-[85vh] flex flex-col">
-            <div className="p-5 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10 shrink-0">
-              <h3 className="text-base font-black uppercase tracking-tighter">{ta.backupConfigure}</h3>
-              <button onClick={() => setShowBackupConfig(false)} className="p-2 bg-slate-50 rounded-full hover:bg-red-50 hover:text-red-600"><X size={20} /></button>
-            </div>
-
-            <div className="p-5 overflow-y-auto space-y-6 flex-1">
-              {/* Schedule */}
-              <div>
-                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.backupSchedule}</p>
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3">
-                  <label className="flex items-center justify-between cursor-pointer">
-                    <span className="text-xs font-bold text-slate-700">{ta.backupAutomaticBackups}</span>
-                    <div className="relative">
-                      <input type="checkbox" className="sr-only peer"
-                        checked={!!backupCfgDraft.schedule?.enabled}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), enabled: e.target.checked}})} />
-                      <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
-                    </div>
-                  </label>
-                  <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupIntervalHours}</label>
-                    <input type="number" min="1" max="168" className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
-                      value={backupCfgDraft.schedule?.intervalHours ?? 6}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), intervalHours: parseInt(e.target.value) || 6}})} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Target #1 — Local (active by default) */}
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2">
-                    <HardDrive size={11} /> {ta.backupTargetLocal} <span className="text-green-600">●</span>
-                  </p>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer"
-                      checked={!!backupCfgDraft.targets?.local?.enabled}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, local: {...(backupCfgDraft.targets?.local || {}), enabled: e.target.checked}}})} />
-                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
-                  </label>
-                </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">{ta.backupLocalDesc}</p>
-              </div>
-
-              {/* Target #2 — Remote VPS (disabled by default) */}
-              <div className="opacity-90">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2">
-                    <Server size={11} /> {ta.backupTargetRemote} <span className="text-slate-300">●</span>
-                  </p>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer"
-                      checked={!!backupCfgDraft.targets?.remote?.enabled}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), enabled: e.target.checked}}})} />
-                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
-                  </label>
-                </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">{ta.backupRemoteDesc}</p>
-                <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteHost}</label>
-                      <input type="text" placeholder="backup.example.com" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.remote?.host || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), host: e.target.value}}})} />
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteUser}</label>
-                      <input type="text" placeholder="backup" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.remote?.user || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), user: e.target.value}}})} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemotePath}</label>
-                    <input type="text" placeholder="/var/backups/library" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                      value={backupCfgDraft.targets?.remote?.path || ''}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), path: e.target.value}}})} />
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className="col-span-2">
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteKeyPath}</label>
-                      <input type="text" placeholder="/root/.ssh/id_ed25519" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.remote?.sshKeyPath || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), sshKeyPath: e.target.value}}})} />
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemotePort}</label>
-                      <input type="number" placeholder="22" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.remote?.port ?? 22}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), port: parseInt(e.target.value) || 22}}})} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Target #3 — S3 (disabled by default) */}
-              <div className="opacity-90">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2">
-                    <Cloud size={11} /> {ta.backupTargetS3} <span className="text-slate-300">●</span>
-                  </p>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" className="sr-only peer"
-                      checked={!!backupCfgDraft.targets?.s3?.enabled}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), enabled: e.target.checked}}})} />
-                    <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
-                  </label>
-                </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed mb-3">{ta.backupS3Desc}</p>
-                <div className="space-y-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Endpoint}</label>
-                      <input type="text" placeholder="https://storage.yandexcloud.net" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.s3?.endpoint || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), endpoint: e.target.value}}})} />
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Region}</label>
-                      <input type="text" placeholder="ru-central1" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.s3?.region || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), region: e.target.value}}})} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Bucket}</label>
-                      <input type="text" placeholder="library-backups" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.s3?.bucket || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), bucket: e.target.value}}})} />
-                    </div>
-                    <div>
-                      <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Prefix}</label>
-                      <input type="text" placeholder="prod/" className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
-                        value={backupCfgDraft.targets?.s3?.prefix || ''}
-                        onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), prefix: e.target.value}}})} />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3AccessKey}</label>
-                    <input type="text" placeholder={backupCfgDraft.targets?.s3?.accessKey === '***' ? ta.backupS3SecretSet : 'AKIA...'} className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none"
-                      value={backupCfgDraft.targets?.s3?.accessKey === '***' ? '' : (backupCfgDraft.targets?.s3?.accessKey || '')}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), accessKey: e.target.value}}})} />
-                  </div>
-                  <div>
-                    <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3SecretKey}</label>
-                    <input type="password" placeholder={backupCfgDraft.targets?.s3?.secretKey === '***' ? ta.backupS3SecretSet : '••••••••'} className="w-full bg-white border border-slate-200 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none"
-                      value={backupCfgDraft.targets?.s3?.secretKey === '***' ? '' : (backupCfgDraft.targets?.s3?.secretKey || '')}
-                      onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), secretKey: e.target.value}}})} />
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-[9px] text-slate-400 italic leading-relaxed">{ta.backupSecretsNotice}</p>
-            </div>
-
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex gap-3">
-              <button onClick={() => setShowBackupConfig(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 transition-colors">
-                {ta.cancel}
-              </button>
-              <button onClick={saveBackupConfig} disabled={backupBusy} className="flex-1 py-3 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-red-700 disabled:opacity-40 transition-colors">
-                {ta.save}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Delete confirmation modal ──────────────────────────────────────── */}
-      {itemToDelete && (
-        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-sm bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
-            <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-600/10 flex items-center justify-center mb-4">
-              <Trash2 size={22} className="text-red-600" />
-            </div>
-            <h3 className="text-base font-black text-slate-900 dark:text-white mb-1">{ta.confirmDeleteItem}</h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-2">{ta.confirmDeleteItemDesc}</p>
-            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-6">«{typeof itemToDelete.title === 'object' ? (itemToDelete.title[lang] || itemToDelete.title.en || itemToDelete.title.ru) : itemToDelete.title}»</p>
+                            value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} /> </div> </div> <button type="button" onClick={() => handleDeleteFormat(f)} className="mt-2 w-full py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-colors flex items-center justify-center gap-1.5" > <Trash2 size={11} /> {ta.deleteFileServer} </button> </div> ))} {(!editingItem.formats || editingItem.formats.length === 0) && ( <p className="text-center text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase py-3">{ta.noFiles}</p> )} <input ref={fileInputRef} type="file" accept=".pdf,.epub,.fb2,.djvu,.djv,.mp4,.webm,.mkv,.mp3" className="hidden" onChange={e => { const file = e.target.files?.[0]; const id = uploadingFormatId.current; if (file && id) setStagedContentFile({ file, formatId: id }); }} /> </div> </div> </div> <div className="p-4 bg-slate-50 dark:bg-black/40 border-t border-slate-100"> <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">{ta.saveAsset}</button> </div> </div> </div> )} {/* ── Restore confirmation modal ─────────────────────────────────────── */} {restoreTarget && ( <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm"> <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6"> <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-4"> <RotateCcw size={22} className="text-amber-600" /> </div> <h3 className="text-base font-black text-slate-900 mb-1">{ta.backupRestoreConfirm}</h3> <p className="text-xs text-slate-500 leading-relaxed mb-2">{ta.backupRestoreDesc}</p> <p className="text-xs font-mono font-bold text-slate-700 truncate mb-4 bg-slate-50 p-2 rounded-lg">{restoreTarget}</p> <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2 block">{ta.backupRestoreConfirmType}</label> <input autoFocus value={restoreConfirm} onChange={e => setRestoreConfirm(e.target.value)} placeholder="RESTORE" className="w-full bg-slate-50 border-2 border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold focus:border-amber-500 outline-none mb-4" /> <div className="flex gap-3"> <button onClick={() => { setRestoreTarget(null); setRestoreConfirm(''); }} className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors" > {ta.cancel} </button> <button onClick={() => triggerRestore(restoreTarget)} disabled={restoreConfirm.trim().toUpperCase() !=='RESTORE'|| backupBusy} className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition-colors" > {ta.backupRestore} </button> </div> </div> </div> )} {/* ── Backup config modal ────────────────────────────────────────────── */} {showBackupConfig && backupCfgDraft && ( <div className="fixed inset-0 z-[600] bg-slate-900/40 backdrop-blur-xl flex items-end md:items-center justify-center p-0 md:p-5"> <div className="bg-white w-full md:max-w-2xl rounded-t-[2rem] md:rounded-[3rem] border border-white shadow-2xl overflow-hidden h-[90vh] md:max-h-[85vh] flex flex-col"> <div className="p-5 border-b border-slate-100 dark:border-white/[0.08] flex justify-between items-center sticky top-0 bg-white dark:bg-[#1c1c1e] z-10 shrink-0"> <h3 className="text-base font-black uppercase tracking-tighter">{ta.backupConfigure}</h3> <button onClick={() => setShowBackupConfig(false)} className="p-2 bg-slate-50 rounded-full hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><X size={20} /></button> </div> <div className="p-5 overflow-y-auto space-y-6 flex-1"> {/* Schedule */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.backupSchedule}</p> <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3"> <label className="flex items-center justify-between cursor-pointer"> <span className="text-xs font-bold text-slate-700">{ta.backupAutomaticBackups}</span> <div className="relative"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.schedule?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), enabled: e.target.checked}})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </div> </label> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupIntervalHours}</label> <input type="number" min="1" max="168" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none" value={backupCfgDraft.schedule?.intervalHours ?? 6} onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), intervalHours: parseInt(e.target.value) || 6}})} /> </div> </div> </div> {/* Target #1 — Local (active by default) */} <div> <div className="flex items-center justify-between mb-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2"> <HardDrive size={11} /> {ta.backupTargetLocal} <span className="text-green-600">●</span> </p> <label className="relative inline-flex items-center cursor-pointer"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.targets?.local?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, local: {...(backupCfgDraft.targets?.local || {}), enabled: e.target.checked}}})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </label> </div> <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">{ta.backupLocalDesc}</p> </div> {/* Target #2 — Remote VPS (disabled by default) */} <div className="opacity-90"> <div className="flex items-center justify-between mb-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2"> <Server size={11} /> {ta.backupTargetRemote} <span className="text-slate-300">●</span> </p> <label className="relative inline-flex items-center cursor-pointer"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.targets?.remote?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), enabled: e.target.checked}}})} /> <div className="w-10 h-6 bg-slate-200 dark:bg-white/10 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </label> </div> <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed mb-3">{ta.backupRemoteDesc}</p> <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100"> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteHost}</label> <input type="text" placeholder="backup.example.com" className="w-full bg-white border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.host ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), host: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemoteUser}</label> <input type="text" placeholder="backup" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.user ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), user: e.target.value}}})} /> </div> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemotePath}</label> <input type="text" placeholder="/var/backups/library" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.path ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), path: e.target.value}}})} /> </div> <div className="grid grid-cols-3 gap-2"> <div className="col-span-2"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemoteKeyPath}</label> <input type="text" placeholder="/root/.ssh/id_ed25519" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.sshKeyPath ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), sshKeyPath: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemotePort}</label> <input type="number" placeholder="22" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.port ?? 22} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), port: parseInt(e.target.value) || 22}}})} /> </div> </div> </div> </div> {/* Target #3 — S3 (disabled by default) */} <div className="opacity-90"> <div className="flex items-center justify-between mb-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2"> <Cloud size={11} /> {ta.backupTargetS3} <span className="text-slate-300">●</span> </p> <label className="relative inline-flex items-center cursor-pointer"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.targets?.s3?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), enabled: e.target.checked}}})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </label> </div> <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed mb-3">{ta.backupS3Desc}</p> <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100"> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Endpoint}</label> <input type="text" placeholder="https://storage.yandexcloud.net" className="w-full bg-white border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.endpoint ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), endpoint: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3Region}</label> <input type="text" placeholder="ru-central1" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.region ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), region: e.target.value}}})} /> </div> </div> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3Bucket}</label> <input type="text" placeholder="library-backups" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.bucket ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), bucket: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3Prefix}</label> <input type="text" placeholder="prod/" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.prefix ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), prefix: e.target.value}}})} /> </div> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3AccessKey}</label> <input type="text" placeholder={backupCfgDraft.targets?.s3?.accessKey ==='***' ? ta.backupS3SecretSet : 'AKIA...'} className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.accessKey ==='***' ? '' : (backupCfgDraft.targets?.s3?.accessKey || '')} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), accessKey: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3SecretKey}</label> <input type="password" placeholder={backupCfgDraft.targets?.s3?.secretKey ==='***' ? ta.backupS3SecretSet : '••••••••'} className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.secretKey ==='***' ? '' : (backupCfgDraft.targets?.s3?.secretKey || '')} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), secretKey: e.target.value}}})} /> </div> </div> </div> <p className="text-[9px] text-slate-400 italic leading-relaxed">{ta.backupSecretsNotice}</p> </div> <div className="p-4 bg-slate-50 border-t border-slate-100 dark:border-white/[0.08] flex gap-3"> <button onClick={() => setShowBackupConfig(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"> {ta.cancel} </button> <button onClick={saveBackupConfig} disabled={backupBusy} className="flex-1 py-3 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-red-700 disabled:opacity-40 transition-colors"> {ta.save} </button> </div> </div> </div> )} {/* ── Delete confirmation modal ──────────────────────────────────────── */} {itemToDelete && ( <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"> <div className="w-full max-w-sm bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 duration-200"> <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-600/10 flex items-center justify-center mb-4"> <Trash2 size={22} className="text-red-600" /> </div> <h3 className="text-base font-black text-slate-900 dark:text-white mb-1">{ta.confirmDeleteItem}</h3> <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-2">{ta.confirmDeleteItemDesc}</p> <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-6">«{typeof itemToDelete.title ==='object' ? (itemToDelete.title[lang] || itemToDelete.title.en || itemToDelete.title.ru) : itemToDelete.title}»</p>
             <div className="flex gap-3">
               <button
                 onClick={() => setItemToDelete(null)}

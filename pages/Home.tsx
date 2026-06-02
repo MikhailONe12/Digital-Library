@@ -244,6 +244,66 @@ const Home: React.FC<HomeProps> = ({
         )}
       </div>
 
+      {/* Active filter chips — visible representation of every filter that's
+          currently constraining the result list, with an X on each so the
+          user can drop them individually (or all at once). Replaces the
+          previous "invisible filter" UX where landing here from a tag chip
+          gave no clue what was filtering and no way to clear it.
+          Each chip type:
+            • searchField !== 'all' → "Поиск по: Автор/Название"
+            • tagFilter[]           → one chip per tag (#tag)
+            • contentLangFilter[]   → one chip per lang code
+          searchQuery already lives inside the search input above, with its
+          own X — so it's not duplicated here. */}
+      {(tagFilter.length > 0 || contentLangFilter.length > 0 || searchField !== 'all') && (
+        <div className="flex flex-wrap items-center gap-2 mb-6 -mt-2">
+          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mr-1">{t.activeFilters}:</span>
+
+          {searchField !== 'all' && (
+            <button
+              onClick={() => setSearchField('all')}
+              className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 rounded-lg text-[11px] font-bold border border-red-100 dark:border-red-500/20 hover:bg-red-100 dark:hover:bg-red-500/25 active:scale-95 transition-all"
+            >
+              {searchField === 'author' ? t.searchAuthor : t.searchTitle}
+              <X size={11} strokeWidth={3} />
+            </button>
+          )}
+
+          {tagFilter.map(tag => (
+            <button
+              key={`tag-${tag}`}
+              onClick={() => setTagFilter(tagFilter.filter(x => x !== tag))}
+              className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 rounded-lg text-[11px] font-bold border border-red-100 dark:border-red-500/20 hover:bg-red-100 dark:hover:bg-red-500/25 active:scale-95 transition-all"
+            >
+              #{tag}
+              <X size={11} strokeWidth={3} />
+            </button>
+          ))}
+
+          {contentLangFilter.map(l => (
+            <button
+              key={`lang-${l}`}
+              onClick={() => setContentLangFilter(contentLangFilter.filter(x => x !== l))}
+              className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 bg-red-50 dark:bg-red-500/15 text-red-700 dark:text-red-300 rounded-lg text-[11px] font-bold border border-red-100 dark:border-red-500/20 hover:bg-red-100 dark:hover:bg-red-500/25 active:scale-95 transition-all uppercase"
+            >
+              {l}
+              <X size={11} strokeWidth={3} />
+            </button>
+          ))}
+
+          {/* "Clear all" only when there are 2+ filters — for a single chip the
+              X on the chip itself is enough, the extra button would be noise. */}
+          {(tagFilter.length + contentLangFilter.length + (searchField !== 'all' ? 1 : 0)) > 1 && (
+            <button
+              onClick={() => { setTagFilter([]); setContentLangFilter([]); setSearchField('all'); }}
+              className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-colors ml-1 underline underline-offset-2"
+            >
+              {t.clearFilters}
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="flex gap-2.5 overflow-x-auto pb-8 mt-4 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
         {/* Favorites Button */}
         <button

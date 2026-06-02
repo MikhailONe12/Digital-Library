@@ -1313,14 +1313,30 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
            ${exI.length > 0 ? `AND (ip IS NULL OR ip NOT IN (${exI.map((_, i) => `$${exU.length + i + 1}`).join(',')}))` : ''}`
       : '';
 
+    // Left-join the events against a generated 30-day calendar so the chart
+    // always shows a continuous timeline even when activity is sparse —
+    // without this, a single active day rendered as one isolated dot in
+    // the middle of the chart, indistinguishable from a broken chart. The
+    // userNotIn filter has to sit inside the LEFT JOIN's ON clause (not in
+    // a WHERE) so excluded users can't cause whole days to be dropped from
+    // the calendar.
     const statsRes = await pool.query(
-      `SELECT to_char(timestamp, 'YYYY-MM-DD') AS date,
-              count(*) FILTER (WHERE event_type = 'view')::int     AS views,
-              count(*) FILTER (WHERE event_type = 'download')::int AS downloads
-         FROM item_events
-        WHERE 1=1 ${userNotIn}
-        GROUP BY 1
-        ORDER BY 1`,
+      `WITH days AS (
+         SELECT generate_series(
+           (CURRENT_DATE - INTERVAL '29 days')::date,
+           CURRENT_DATE::date,
+           '1 day'::interval
+         )::date AS day
+       )
+       SELECT to_char(d.day, 'YYYY-MM-DD') AS date,
+              COALESCE(SUM(CASE WHEN e.event_type = 'view' THEN 1 ELSE 0 END), 0)::int     AS views,
+              COALESCE(SUM(CASE WHEN e.event_type = 'download' THEN 1 ELSE 0 END), 0)::int AS downloads
+         FROM days d
+         LEFT JOIN item_events e
+           ON e.timestamp::date = d.day
+              ${userNotIn}
+        GROUP BY d.day
+        ORDER BY d.day`,
       exU,
     );
 

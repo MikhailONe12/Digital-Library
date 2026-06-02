@@ -1325,12 +1325,17 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
     );
 
     const eventsRes = await pool.query(
-      `SELECT username, item_id, event_type,
+      // NULL usernames are coerced into the synthetic 'anonymous' bucket so
+      // legacy events (recorded before the id_<N> fallback landed) still
+      // surface in the leaderboard as one aggregated row instead of being
+      // silently dropped.
+      `SELECT COALESCE(username, 'anonymous') AS username,
+              item_id, event_type,
               count(*)::int AS cnt,
               to_char(max(timestamp), 'YYYY-MM-DD') AS last_active
          FROM item_events
-        WHERE username IS NOT NULL ${userNotIn}
-        GROUP BY username, item_id, event_type`,
+        WHERE 1=1 ${userNotIn}
+        GROUP BY COALESCE(username, 'anonymous'), item_id, event_type`,
       exU,
     );
 

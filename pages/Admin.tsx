@@ -212,6 +212,16 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
     }
   }, [isAdmin]);
 
+  // Refresh analytics every time the Stats tab is opened. The dep array on
+  // the previous effect only includes isAdmin, so without this the timeline
+  // and leaderboard would stay frozen on the snapshot from initial login —
+  // even hours of traffic later they'd look unchanged.
+  useEffect(() => {
+    if (activeTab === 'stats' && isAdmin) {
+      loadAnalytics().then(() => onUpdate());
+    }
+  }, [activeTab, isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Analytics Computations
   const analytics = useMemo(() => {
     const totalViews = db.items.reduce((acc, i) => acc + i.views, 0);
@@ -1170,10 +1180,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                           // Identifier shape from /api/items/:itemId/track:
                                           //   real @handles  → plain string (lowercased)
                                           //   no-handle Telegram users → `id_<numericId>`
+                                          //   pre-fallback / non-Telegram traffic → 'anonymous'
                                           // Display them differently so admins can tell which is which at a glance.
-                                          const isId = user.username.startsWith('id_');
-                                          const labelMain = isId ? `ID ${user.username.slice(3)}` : `@${user.username}`;
-                                          const avatar = isId ? '#' : user.username.slice(0, 2);
+                                          const isAnon = user.username === 'anonymous';
+                                          const isId = !isAnon && user.username.startsWith('id_');
+                                          const labelMain = isAnon ? ta.anonymousVisitors : isId ? `ID ${user.username.slice(3)}` : `@${user.username}`;
+                                          const avatar = isAnon ? '?' : isId ? '#' : user.username.slice(0, 2);
                                           return (
                                             <div className="flex items-center gap-2">
                                                 <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold uppercase text-[8px]">{avatar}</div>

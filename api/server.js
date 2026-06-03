@@ -79,7 +79,13 @@ const allowedOrigins = (process.env.CORS_ORIGIN || 'https://library.optionsdata.
 
 // Don't advertise the framework — one less hint for an attacker.
 app.disable('x-powered-by');
-app.set('trust proxy', true); // nginx sets X-Forwarded-For / X-Real-IP
+// 'loopback' (not true) — Express only honours X-Forwarded-For when the
+// immediate TCP peer is on 127.0.0.0/8 or ::1, i.e. the local nginx that
+// terminates TLS and proxies to us on the same host. With the previous
+// `true`, ANY internet client could send X-Real-IP/X-Forwarded-For: 1.2.3.4
+// and bypass the IP blacklist, rate limiter and analytics excludes simply
+// by rotating those headers.
+app.set('trust proxy', 'loopback');
 
 app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST', 'PUT', 'DELETE'] }));
 app.use(express.json({ limit: '10mb' }));
@@ -105,11 +111,11 @@ app.use((req, res, next) => {
 // real client IP (nginx forwards it via X-Real-IP / X-Forwarded-For).
 const rateBuckets = new Map(); // key -> { count, resetAt }
 
-const clientIp = (req) =>
-  (req.headers['x-real-ip']
-    || (req.headers['x-forwarded-for'] || '').split(',')[0]
-    || req.ip
-    || 'unknown').toString().trim();
+// req.ip already respects `trust proxy: 'loopback'` — Express only believes
+// X-Forwarded-For when the immediate connection came from a loopback address
+// (the local nginx). Reading the raw headers ourselves would re-introduce the
+// spoofing vector that #20 closed.
+const clientIp = (req) => (req.ip || req.socket?.remoteAddress || 'unknown').toString().trim();
 
 // Returns an Express middleware enforcing `max` requests per `windowMs` for the
 // given `name` (name keeps independent routes from sharing a counter).
@@ -217,7 +223,7 @@ const invalidateSettingsCache = () => { _settingsCacheAt = 0; };
 const checkUserAccess = async (req, res, next) => {
   const botToken = process.env.BOT_TOKEN;
   const initDataRaw = req.headers['x-telegram-init-data'];
-  const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+  const ip = clientIp(req);
 
   let telegramUser = null;
   if (botToken && initDataRaw) telegramUser = validateTelegramInitData(initDataRaw, botToken);
@@ -453,15 +459,29 @@ app.post('/api/admin/login', limitLogin, (req, res) => {
 // attached when present.
 app.post('/api/errors', limitErrors, async (req, res) => {
   const b = req.body || {};
+  // Strip query strings from the reported URL — they often contain short-lived
+  // download tokens (?t=...), session traces and admin gate flags (?admin=true)
+  // that have no place in a long-lived log row exposed to anyone with admin
+  // access. Hash and fragment are dropped too.
+  let cleanUrl = null;
+  if (typeof b.url === 'string') {
+    try {
+      const u = new URL(b.url, 'https://x.invalid');
+      cleanUrl = u.origin + u.pathname;
+    } catch { cleanUrl = b.url.split('?')[0].split('#')[0]; }
+  }
+  // NEVER trust body-supplied identity. Only the HMAC-verified Telegram user
+  // can be associated with the report — otherwise an unauthenticated client
+  // can frame any @username for any error.
   const tgUser = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
   await recordError({
     source: 'client',
     kind: b.kind,
     message: b.message,
     stack: b.stack,
-    url: b.url,
-    userId: tgUser?.id || b.userId,
-    username: tgUser?.username || b.username,
+    url: cleanUrl,
+    userId: tgUser?.id || null,
+    username: tgUser?.username || null,
     userAgent: req.headers['user-agent'],
   });
   res.json({ ok: true });
@@ -1090,7 +1110,7 @@ app.get('/api/article-extract', limitArticle, async (req, res) => {
 
 // Lightweight auth check for Nginx auth_request on /content/ (IP blacklist only)
 app.get('/api/check-access', async (req, res) => {
-  const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+  const ip = clientIp(req);
   try {
     const settings = await getSettingsCached();
     const bl = (settings.blacklist || []).map(s => s.toLowerCase().replace(/^@/, ''));
@@ -1106,7 +1126,7 @@ const canAccessItemFiles = async (item, req) => {
   if (!item?.isPrivate) return true;
   const botToken = process.env.BOT_TOKEN;
   const initDataRaw = req.headers['x-telegram-init-data'];
-  const ip = (req.headers['x-real-ip'] || req.ip || '').split(',')[0].trim();
+  const ip = clientIp(req);
   let telegramUser = null;
   if (botToken && initDataRaw) telegramUser = validateTelegramInitData(initDataRaw, botToken);
 
@@ -1325,7 +1345,7 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
   }
   const field = type === 'view' ? 'views' : 'downloads';
   const username = clip(req.body?.username, 64);
-  const ip = (req.headers['x-real-ip'] || req.ip || '').toString().split(',')[0].trim();
+  const ip = clientIp(req);
   const tgUser  = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
   const userId  = tgUser?.id || null;
   const browserToken = clip(req.headers['x-skip-analytics'], 80);
@@ -1362,15 +1382,76 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
 });
 
 // Save settings (whitelist, blacklist, custom types, bot config…)
+// Strict settings sanitiser. Without this, an admin (or anyone post-API-key
+// theft) could PUT { __proto__: ... } for prototype pollution, drop a huge
+// `blacklist: [...100k items]` for cache DoS, or sneak in unknown keys that
+// downstream code happens to read. Returns a clean settings object built
+// only from the known-shape keys. Throws ValidationError on hard violations.
+class ValidationError extends Error {}
+const MAX_LIST = 10000;
+const STR = (v, max = 256) => {
+  if (typeof v !== 'string') throw new ValidationError('Expected string');
+  if (v.length > max) throw new ValidationError(`String exceeds ${max} chars`);
+  return v;
+};
+const arrOfStr = (v, maxItems = MAX_LIST, maxLen = 256) => {
+  if (!Array.isArray(v)) throw new ValidationError('Expected array');
+  if (v.length > maxItems) throw new ValidationError(`Array exceeds ${maxItems} items`);
+  return v.map(x => STR(x, maxLen));
+};
+const sanitiseSettings = (raw) => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new ValidationError('Settings must be an object');
+  const out = {};
+  if ('allowedUsers' in raw)   out.allowedUsers   = arrOfStr(raw.allowedUsers, 10000, 64);
+  if ('blacklist'    in raw)   out.blacklist      = arrOfStr(raw.blacklist,    10000, 64);
+  if ('customTypes'  in raw) {
+    if (!Array.isArray(raw.customTypes)) throw new ValidationError('customTypes must be array');
+    if (raw.customTypes.length > 100) throw new ValidationError('Too many customTypes');
+    out.customTypes = raw.customTypes.map(ct => {
+      if (typeof ct === 'string') return STR(ct, 64);
+      if (!ct || typeof ct !== 'object') throw new ValidationError('customType entry must be object');
+      return { id: STR(ct.id, 64), en: STR(ct.en, 128), ru: STR(ct.ru, 128), es: STR(ct.es, 128) };
+    });
+  }
+  if ('defaultLanguage' in raw) {
+    const lang = STR(raw.defaultLanguage, 8);
+    if (!['en', 'ru', 'es'].includes(lang)) throw new ValidationError('defaultLanguage must be en/ru/es');
+    out.defaultLanguage = lang;
+  }
+  if ('globalAccess' in raw) {
+    if (typeof raw.globalAccess !== 'boolean') throw new ValidationError('globalAccess must be boolean');
+    out.globalAccess = raw.globalAccess;
+  }
+  if ('analyticsExcludes' in raw) {
+    const a = raw.analyticsExcludes;
+    if (!a || typeof a !== 'object' || Array.isArray(a)) throw new ValidationError('analyticsExcludes must be object');
+    out.analyticsExcludes = {
+      usernames: 'usernames' in a ? arrOfStr(a.usernames, 1000, 64) : [],
+      ips:       'ips'       in a ? arrOfStr(a.ips,       1000, 64) : [],
+      userIds:   'userIds'   in a ? arrOfStr(a.userIds,   1000, 64) : [],
+      browsers:  Array.isArray(a.browsers)
+        ? (a.browsers.length > 1000 ? (() => { throw new ValidationError('Too many browsers'); })() : a.browsers.map(b => {
+            if (!b || typeof b !== 'object') throw new ValidationError('browser entry must be object');
+            return { token: STR(b.token, 80), label: STR(b.label || '', 128), addedAt: STR(b.addedAt || '', 64) };
+          }))
+        : [],
+    };
+  }
+  return out;
+};
+
 app.put('/api/settings', requireApiKey, async (req, res) => {
-  if (!req.body || typeof req.body !== 'object') {
+  let clean;
+  try { clean = sanitiseSettings(req.body); }
+  catch (e) {
+    if (e instanceof ValidationError) return res.status(400).json({ error: e.message });
     return res.status(400).json({ error: 'Invalid settings' });
   }
   try {
     await pool.query(
       `INSERT INTO app_settings (id, data) VALUES (1, $1)
        ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
-      [JSON.stringify(req.body)],
+      [JSON.stringify(clean)],
     );
     invalidateSettingsCache(); // blacklist/whitelist changed — clear cache immediately
     res.json({ ok: true });

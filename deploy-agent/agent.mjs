@@ -24,10 +24,36 @@
 
 import fs from 'fs';
 import path from 'path';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
+import { createHmac } from 'crypto';
 
 const execAsync = promisify(exec);
+
+// ── Input validators for everything that ends up on a shell argv ─────────────
+// Anything reaching the agent from disk (env vars, mailbox JSON) could be
+// admin- or attacker-controlled (post-API-key compromise). Strict regexes
+// prevent shell-metacharacter injection, even though we now use execFile
+// (no shell), because the same fields end up in scp/aws URIs that the remote
+// processes parse.
+const RE_HOSTNAME    = /^[a-zA-Z0-9.-]{1,253}$/;        // DNS hostname or IPv4
+const RE_USERNAME    = /^[a-zA-Z0-9_.-]{1,64}$/;        // POSIX-ish username
+const RE_PATH        = /^\/[a-zA-Z0-9_./-]{0,255}$/;    // absolute path, no shell metas
+const RE_KEY_PATH    = /^[a-zA-Z0-9_./-]{1,255}$/;      // file path (allow relative)
+const RE_S3_BUCKET   = /^[a-zA-Z0-9.-]{3,63}$/;
+const RE_S3_PREFIX   = /^[a-zA-Z0-9_./-]{0,255}$/;
+const RE_S3_REGION   = /^[a-zA-Z0-9-]{1,32}$/;
+const RE_S3_KEY      = /^[A-Za-z0-9/+=_-]{1,128}$/;     // access/secret keys
+const RE_ENDPOINT    = /^https:\/\/[a-zA-Z0-9.\-:]{1,253}(\/[a-zA-Z0-9_./-]{0,255})?$/;
+const RE_DB_IDENT    = /^[a-zA-Z][a-zA-Z0-9_-]{0,62}$/;
+const RE_CONTAINER   = /^[a-zA-Z0-9_.-]{1,128}$/;
+const RE_FILENAME    = /^[a-zA-Z0-9._-]{1,128}$/;       // matches FILENAME_RE in API
+
+const assertValid = (name, value, re) => {
+  if (typeof value !== 'string' || !re.test(value)) {
+    throw new Error(`Invalid ${name}: refusing to pass to subprocess`);
+  }
+};
 
 const CONTROL_DIR = process.env.DEPLOY_CONTROL_DIR || '/mnt/library/app/deploy-control';
 const REPO_DIR    = process.env.REPO_DIR    || '/mnt/library/app/repo';
@@ -65,11 +91,44 @@ let state = {
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
-const ensureDir = () => { try { fs.mkdirSync(CONTROL_DIR, { recursive: true }); fs.chmodSync(CONTROL_DIR, 0o777); } catch { /* noop */ } };
+// Control dir 0o770 (was 0o777) — only owner-root and the docker group can
+// scribble. Combined with HMAC verification below, a stray local user can no
+// longer plant request/restore files that the agent would act on as root.
+const ensureDir = () => { try { fs.mkdirSync(CONTROL_DIR, { recursive: true }); fs.chmodSync(CONTROL_DIR, 0o770); } catch { /* noop */ } };
+
+// Shared HMAC secret with the API. Same fallback chain as on the API side so
+// out-of-the-box installs don't need extra env vars: DEPLOY_AGENT_SECRET, then
+// BOT_TOKEN. If both are empty the verifier degrades to "accept anything" with
+// a one-time warning — matches old behaviour and lets dev installs work.
+const DEPLOY_AGENT_SECRET = process.env.DEPLOY_AGENT_SECRET || process.env.BOT_TOKEN || '';
+let warnedMissingSecret = false;
+
+// Validates that a mailbox payload was signed by the API. Returns the parsed
+// body on success, null on signature mismatch / missing fields. Files that
+// fail verification are LEFT in place and re-checked next tick — so a transient
+// race (agent reads before the API finishes writing) doesn't drop the file.
+const readSignedMailbox = (filePath) => {
+  let parsed;
+  try { parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return null; }
+  if (!parsed || typeof parsed !== 'object') return null;
+  if (!DEPLOY_AGENT_SECRET) {
+    if (!warnedMissingSecret) { log('WARN: DEPLOY_AGENT_SECRET/BOT_TOKEN not set — mailbox signature verification disabled'); warnedMissingSecret = true; }
+    return parsed;
+  }
+  const { sig, ...body } = parsed;
+  if (typeof sig !== 'string' || sig.length !== 64) return null;
+  const expected = createHmac('sha256', DEPLOY_AGENT_SECRET).update(JSON.stringify(body)).digest('hex');
+  // Length-equal constant-time compare
+  if (expected.length !== sig.length) return null;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= expected.charCodeAt(i) ^ sig.charCodeAt(i);
+  return diff === 0 ? body : null;
+};
 
 const readMode = () => {
   try {
-    const m = JSON.parse(fs.readFileSync(MODE_FILE, 'utf8'))?.mode;
+    const body = readSignedMailbox(MODE_FILE);
+    const m = body?.mode;
     if (m === 'auto' || m === 'manual') state.mode = m;
   } catch { /* no file yet → keep current */ }
 };
@@ -79,7 +138,7 @@ const writeStatus = () => {
   state.updatedAt = new Date().toISOString();
   try {
     fs.writeFileSync(STATUS_FILE, JSON.stringify(state, null, 2));
-    fs.chmodSync(STATUS_FILE, 0o666);
+    fs.chmodSync(STATUS_FILE, 0o640);
   } catch (e) { log('status write failed', e?.message); }
 };
 
@@ -127,8 +186,15 @@ const consumeRequests = () => {
   let entries = [];
   try { entries = fs.readdirSync(CONTROL_DIR).filter(f => /^request-.*\.json$/.test(f)); } catch { return false; }
   if (entries.length === 0) return false;
-  for (const f of entries) { try { fs.unlinkSync(path.join(CONTROL_DIR, f)); } catch { /* noop */ } }
-  return true;
+  let any = false;
+  for (const f of entries) {
+    const full = path.join(CONTROL_DIR, f);
+    const body = readSignedMailbox(full);
+    if (body) any = true;
+    else log(`rejected unsigned/forged deploy request ${f}`);
+    try { fs.unlinkSync(full); } catch { /* noop */ }
+  }
+  return any;
 };
 
 // ── Backup subsystem ────────────────────────────────────────────────────────
@@ -187,17 +253,17 @@ const mergeConfig = (override) => {
 };
 
 const readBackupConfig = () => {
-  try {
-    const raw = fs.readFileSync(BACKUP_CONFIG_FILE, 'utf8');
-    backupConfig = mergeConfig(JSON.parse(raw));
-  } catch { /* no file or invalid → keep current */ }
+  // Signature check rejects any config the API didn't write — e.g. a hostile
+  // local user dropping {accessKey: '; rm -rf /'} into the mailbox.
+  const body = readSignedMailbox(BACKUP_CONFIG_FILE);
+  if (body) backupConfig = mergeConfig(body);
 };
 
 const writeBackupStatus = () => {
   backupStatus.updatedAt = new Date().toISOString();
   try {
     fs.writeFileSync(BACKUP_STATUS_FILE, JSON.stringify(backupStatus, null, 2));
-    fs.chmodSync(BACKUP_STATUS_FILE, 0o666);
+    fs.chmodSync(BACKUP_STATUS_FILE, 0o640);
   } catch (e) { log('backup status write failed', e?.message); }
 };
 
@@ -263,44 +329,81 @@ const applyRetention = () => {
   }
 };
 
+// Spawn `bin` with an argv list (NO shell), pipe stdout/stderr, optional file
+// destination for stdout, optional env. Resolves on exit-0, rejects on non-zero
+// or timeout. Replaces the previous `exec` calls so untrusted strings can't
+// inject shell metacharacters.
+const spawnArgv = (bin, args, opts = {}) => new Promise((resolve, reject) => {
+  const child = spawn(bin, args, { env: opts.env, stdio: ['ignore', opts.stdoutTo ? 'pipe' : 'ignore', 'pipe'] });
+  let stderr = '';
+  let writer = null;
+  if (opts.stdoutTo) {
+    writer = fs.createWriteStream(opts.stdoutTo);
+    child.stdout.pipe(writer);
+  }
+  child.stderr.on('data', d => { stderr += d.toString(); if (stderr.length > 8192) stderr = stderr.slice(-8192); });
+  const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* noop */ } reject(new Error(`${bin} timed out`)); }, opts.timeout || 30 * 60 * 1000);
+  child.on('error', e => { clearTimeout(timer); reject(e); });
+  child.on('close', code => {
+    clearTimeout(timer);
+    const done = () => code === 0 ? resolve() : reject(new Error(`${bin} exited ${code}: ${stderr.trim().slice(0, 500)}`));
+    if (writer) writer.on('close', done); else done();
+  });
+});
+
 // Stream the dump straight from the database container to a host file.
 // pg_dump -Fc (custom format) gives the smallest size and works with pg_restore.
 const runPgDump = async (outPath) => {
-  const cmd = `docker exec ${DB_CONTAINER} pg_dump -Fc -U ${DB_USER} ${DB_NAME} > "${outPath}"`;
-  await execAsync(cmd, {
+  assertValid('DB_CONTAINER', DB_CONTAINER, RE_CONTAINER);
+  assertValid('DB_USER',      DB_USER,      RE_DB_IDENT);
+  assertValid('DB_NAME',      DB_NAME,      RE_DB_IDENT);
+  // outPath comes from BACKUP_DIR (env) + generated filename — both validated.
+  await spawnArgv('docker', ['exec', DB_CONTAINER, 'pg_dump', '-Fc', '-U', DB_USER, DB_NAME], {
+    stdoutTo: outPath,
     timeout: 30 * 60 * 1000,
-    maxBuffer: 8 * 1024 * 1024,
-    shell: '/bin/bash',
   });
 };
 
-// Target #2: copy the dump to a second VPS via scp. Requires a working SSH key
-// path on the host (typically /root/.ssh/id_ed25519) and the destination host
-// in known_hosts. We exec scp directly so there's no Node SSH dependency.
+// Target #2: copy the dump to a second VPS via scp. All config fields are
+// regex-validated so a malicious settings PUT can't inject shell metas — even
+// though we now use execFile (no shell), scp's own argument parser is the
+// last line of defence and `-i` / `-P` are positional so shape matters.
 const uploadRemote = async (localFile, filename, cfg) => {
   if (!cfg.host || !cfg.user || !cfg.path) throw new Error('remote target missing host/user/path');
+  assertValid('remote.host', cfg.host, RE_HOSTNAME);
+  assertValid('remote.user', cfg.user, RE_USERNAME);
+  assertValid('remote.path', cfg.path, RE_PATH);
+  assertValid('remote.filename', filename, RE_FILENAME);
+  if (cfg.sshKeyPath) assertValid('remote.sshKeyPath', cfg.sshKeyPath, RE_KEY_PATH);
+  const port = cfg.port == null ? 22 : Number(cfg.port);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid remote.port');
   const dest = `${cfg.user}@${cfg.host}:${cfg.path.replace(/\/+$/, '')}/${filename}`;
-  const keyArg = cfg.sshKeyPath ? `-i "${cfg.sshKeyPath}"` : '';
-  const portArg = cfg.port && cfg.port !== 22 ? `-P ${cfg.port}` : '';
-  const sshOpts = '-o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=15';
-  const cmd = `scp ${keyArg} ${portArg} ${sshOpts} "${localFile}" "${dest}"`;
-  await execAsync(cmd, { timeout: 30 * 60 * 1000, shell: '/bin/bash' });
+  const args = [];
+  if (cfg.sshKeyPath) args.push('-i', cfg.sshKeyPath);
+  if (port !== 22) args.push('-P', String(port));
+  args.push('-o', 'StrictHostKeyChecking=accept-new', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15');
+  args.push(localFile, dest);
+  await spawnArgv('scp', args, { timeout: 30 * 60 * 1000 });
 };
 
-// Target #3: upload to an S3-compatible bucket. We shell out to the `aws` CLI
-// (apt install awscli) so there's no npm dependency on the host. The endpoint
-// override lets this work with Yandex Object Storage, Selectel, Backblaze B2,
-// MinIO, etc. — anything S3-compatible. Credentials are passed via env vars
-// scoped to the child process so they never leak into other commands.
+// Target #3: upload to an S3-compatible bucket via the `aws` CLI. Endpoint,
+// region, bucket, prefix all validated. Access/secret keys still flow through
+// env (never argv) so they never appear in /proc or ps output.
 const uploadS3 = async (localFile, filename, cfg) => {
   if (!cfg.bucket || !cfg.accessKey || !cfg.secretKey) throw new Error('s3 target missing bucket/access/secret');
+  assertValid('s3.bucket', cfg.bucket, RE_S3_BUCKET);
+  assertValid('s3.accessKey', cfg.accessKey, RE_S3_KEY);
+  assertValid('s3.secretKey', cfg.secretKey, RE_S3_KEY);
+  assertValid('s3.filename', filename, RE_FILENAME);
+  if (cfg.prefix)   assertValid('s3.prefix',   cfg.prefix,   RE_S3_PREFIX);
+  if (cfg.region)   assertValid('s3.region',   cfg.region,   RE_S3_REGION);
+  if (cfg.endpoint) assertValid('s3.endpoint', cfg.endpoint, RE_ENDPOINT);
   const key = `${(cfg.prefix || '').replace(/^\/+|\/+$/g, '')}${cfg.prefix ? '/' : ''}${filename}`;
-  const endpointArg = cfg.endpoint ? `--endpoint-url "${cfg.endpoint}"` : '';
-  const regionArg   = cfg.region ? `--region "${cfg.region}"` : '';
-  const cmd = `aws s3 cp "${localFile}" "s3://${cfg.bucket}/${key}" ${endpointArg} ${regionArg}`;
-  await execAsync(cmd, {
+  const args = ['s3', 'cp', localFile, `s3://${cfg.bucket}/${key}`];
+  if (cfg.endpoint) args.push('--endpoint-url', cfg.endpoint);
+  if (cfg.region)   args.push('--region', cfg.region);
+  await spawnArgv('aws', args, {
     timeout: 30 * 60 * 1000,
-    shell: '/bin/bash',
     env: {
       ...process.env,
       AWS_ACCESS_KEY_ID: cfg.accessKey,
@@ -404,17 +507,22 @@ const runBackup = async (trigger) => {
 // pg_restore --clean --if-exists drops + recreates each object before loading.
 const runRestore = async (filename) => {
   if (!/^[a-zA-Z0-9._-]+\.dump$/.test(filename)) throw new Error('Invalid backup filename');
+  assertValid('DB_CONTAINER', DB_CONTAINER, RE_CONTAINER);
+  assertValid('DB_USER',      DB_USER,      RE_DB_IDENT);
+  assertValid('DB_NAME',      DB_NAME,      RE_DB_IDENT);
   const src = path.join(BACKUP_DIR, filename);
   if (!fs.existsSync(src)) throw new Error('Backup file not found');
   log(`restore started: ${filename}`);
   // Copy the dump into the DB container (avoids host->container shell pipe issues
-  // with large files) and run pg_restore inside it.
-  await execAsync(`docker cp "${src}" ${DB_CONTAINER}:/tmp/restore.dump`, { timeout: 10 * 60 * 1000 });
-  await execAsync(
-    `docker exec ${DB_CONTAINER} pg_restore --clean --if-exists --no-owner --no-privileges -U ${DB_USER} -d ${DB_NAME} /tmp/restore.dump`,
-    { timeout: 30 * 60 * 1000 },
-  );
-  await execAsync(`docker exec ${DB_CONTAINER} rm -f /tmp/restore.dump`, { timeout: 30000 }).catch(() => {});
+  // with large files) and run pg_restore inside it. All via execFile-equivalent
+  // spawn so the validated DB_* identifiers are passed as argv, never shell.
+  await spawnArgv('docker', ['cp', src, `${DB_CONTAINER}:/tmp/restore.dump`], { timeout: 10 * 60 * 1000 });
+  await spawnArgv('docker', [
+    'exec', DB_CONTAINER, 'pg_restore', '--clean', '--if-exists', '--no-owner', '--no-privileges',
+    '-U', DB_USER, '-d', DB_NAME, '/tmp/restore.dump',
+  ], { timeout: 30 * 60 * 1000 });
+  // best-effort cleanup
+  spawnArgv('docker', ['exec', DB_CONTAINER, 'rm', '-f', '/tmp/restore.dump'], { timeout: 30000 }).catch(() => {});
   log('restore ok');
 };
 
@@ -423,10 +531,13 @@ const consumeBackupRequests = async () => {
   let entries = [];
   try { entries = fs.readdirSync(CONTROL_DIR); } catch { return; }
 
-  // Trigger backups
+  // Trigger backups — only verified-signed requests get executed.
   const reqs = entries.filter(f => /^backup-request-.*\.json$/.test(f));
   for (const f of reqs) {
-    try { fs.unlinkSync(path.join(CONTROL_DIR, f)); } catch { /* noop */ }
+    const full = path.join(CONTROL_DIR, f);
+    const body = readSignedMailbox(full);
+    try { fs.unlinkSync(full); } catch { /* noop */ }
+    if (!body) { log(`rejected unsigned backup request ${f}`); continue; }
     if (!backingUp) await runBackup('manual');
     return; // one at a time
   }
@@ -434,10 +545,10 @@ const consumeBackupRequests = async () => {
   // Trigger restores
   const restores = entries.filter(f => /^backup-restore-.*\.json$/.test(f));
   for (const f of restores) {
-    let payload = {};
-    try { payload = JSON.parse(fs.readFileSync(path.join(CONTROL_DIR, f), 'utf8')); } catch { /* noop */ }
-    try { fs.unlinkSync(path.join(CONTROL_DIR, f)); } catch { /* noop */ }
-    if (!payload?.filename) continue;
+    const full = path.join(CONTROL_DIR, f);
+    const payload = readSignedMailbox(full) || {};
+    try { fs.unlinkSync(full); } catch { /* noop */ }
+    if (!payload?.filename) { log(`rejected unsigned/empty restore ${f}`); continue; }
     backupStatus.lastRestore = { startedAt: new Date().toISOString(), filename: payload.filename, success: null, error: null };
     writeBackupStatus();
     try {

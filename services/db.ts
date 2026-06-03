@@ -65,6 +65,15 @@ const normalizeItem = (item: any): MediaItem => ({
 
 // ── Server requests ──────────────────────────────────────────────────────────
 
+// Telegram initData header — sent on every write to /api/users/:userId/* so
+// the server can prove the caller is who they claim to be (server-side check
+// in requireUserMatch middleware). Without this header, the server rejects
+// writes targeting any userId other than the shared 'guest_user' bucket.
+const tgInitDataHeader = (): Record<string, string> => {
+  const initData = (window as any).Telegram?.WebApp?.initData || '';
+  return initData ? { 'x-telegram-init-data': initData } : {};
+};
+
 const authHeaders = (): Record<string, string> => {
   const key = getServerApiKey();
   return key ? { 'x-api-key': key } : {};
@@ -286,6 +295,7 @@ export const toggleFavorite = (userId: string, itemId: string) => {
 
   fetch(`/api/users/${userId}/favorites/${itemId}`, {
     method: has ? 'DELETE' : 'PUT',
+    headers: tgInitDataHeader(),
   }).then(warnIfFailed('favorite')).catch(e => console.warn('favorite failed:', e));
 };
 
@@ -303,7 +313,7 @@ export const setUserRating = async (
   try {
     const res = await fetch(`/api/users/${userId}/ratings/${itemId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tgInitDataHeader() },
       body: JSON.stringify({ rating }),
     });
     if (res.ok) {
@@ -646,7 +656,7 @@ export const addBookmark = async (userId: string, itemId: string, position: stri
   try {
     await fetch(`/api/users/${userId}/bookmarks/${itemId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tgInitDataHeader() },
       body: JSON.stringify({ position, label }),
     });
   } catch {/* best effort */}
@@ -654,7 +664,7 @@ export const addBookmark = async (userId: string, itemId: string, position: stri
 
 export const deleteBookmark = async (userId: string, bookmarkId: string): Promise<void> => {
   try {
-    await fetch(`/api/users/${userId}/bookmarks/${bookmarkId}`, { method: 'DELETE' });
+    await fetch(`/api/users/${userId}/bookmarks/${bookmarkId}`, { method: 'DELETE', headers: tgInitDataHeader() });
   } catch {/* best effort */}
 };
 
@@ -682,7 +692,7 @@ export const addAnnotation = async (
   try {
     const res = await fetch(`/api/users/${userId}/annotations/${itemId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tgInitDataHeader() },
       body: JSON.stringify({ formatUrl, cfiRange, page, selectedText, note, color }),
     });
     const data = await res.json();
@@ -694,7 +704,7 @@ export const addAnnotation = async (
 
 export const deleteAnnotation = async (userId: string, annotationId: string): Promise<void> => {
   try {
-    await fetch(`/api/users/${userId}/annotations/${annotationId}`, { method: 'DELETE' });
+    await fetch(`/api/users/${userId}/annotations/${annotationId}`, { method: 'DELETE', headers: tgInitDataHeader() });
   } catch { /* best effort */ }
 };
 
@@ -748,7 +758,7 @@ export const saveReadingProgress = (
   progressCache[itemId][formatUrl] = { position, position_total: positionTotal, format_url: formatUrl };
   fetch(`/api/users/${userId}/progress/${itemId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...tgInitDataHeader() },
     body: JSON.stringify({ position, positionTotal, formatUrl }),
   }).catch(() => {/* best effort */});
 };
@@ -792,7 +802,7 @@ export const markItemFinished = async (userId: string, itemId: string): Promise<
   try {
     await fetch(`/api/users/${userId}/progress/${itemId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...tgInitDataHeader() },
       body: JSON.stringify({ position: '100', positionTotal: 100, formatUrl: '__finished__' }),
     });
   } catch { /* best effort */ }
@@ -803,6 +813,6 @@ export const markItemFinished = async (userId: string, itemId: string): Promise<
 export const resetItemProgress = async (userId: string, itemId: string): Promise<void> => {
   delete progressCache[itemId];
   try {
-    await fetch(`/api/users/${userId}/progress/${itemId}`, { method: 'DELETE' });
+    await fetch(`/api/users/${userId}/progress/${itemId}`, { method: 'DELETE', headers: tgInitDataHeader() });
   } catch { /* best effort */ }
 };

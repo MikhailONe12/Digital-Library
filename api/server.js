@@ -3,10 +3,12 @@ import multer from 'multer';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import dns from 'dns/promises';
+import net from 'net';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 import pkg from 'pg';
@@ -159,6 +161,10 @@ const requireApiKey = (req, res, next) => {
 
 // Validates the Telegram WebApp initData signature with HMAC-SHA256.
 // Returns { id, username } on success, null if invalid or BOT_TOKEN not set.
+// Rejects initData older than INITDATA_TTL_SECONDS so a leaked initData
+// (e.g. via error_log.url or referrer) can't be replayed forever — Telegram
+// includes a server-set auth_date and recommends rejecting stale tokens.
+const INITDATA_TTL_SECONDS = 24 * 60 * 60; // 24 hours, Telegram's own guidance
 const validateTelegramInitData = (initDataRaw, botToken) => {
   if (!botToken || !initDataRaw) return null;
   try {
@@ -173,6 +179,11 @@ const validateTelegramInitData = (initDataRaw, botToken) => {
     const secret = createHmac('sha256', 'WebAppData').update(botToken).digest();
     const expected = createHmac('sha256', secret).update(dataCheck).digest('hex');
     if (expected !== hash) return null;
+    // Freshness check — auth_date is a Unix timestamp Telegram stamps on the
+    // initData when the WebApp is opened. Without this check a token captured
+    // hours/days ago is still a valid identity proof.
+    const authDate = parseInt(params.get('auth_date') || '0', 10);
+    if (!authDate || (Date.now() / 1000 - authDate) > INITDATA_TTL_SECONDS) return null;
     const user = JSON.parse(params.get('user') || 'null');
     return user
       ? { id: String(user.id), username: (user.username || '').toLowerCase() }
@@ -241,7 +252,40 @@ const validateUserId = (req, res, next) => {
   if (!/^[a-zA-Z0-9_-]+$/.test(req.params.userId)) {
     return res.status(400).json({ error: 'Invalid user ID' });
   }
+  // Hard cap so a hostile client can't pile a 100 KB string into a TEXT column.
+  if (req.params.userId.length > 64) {
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
   next();
+};
+
+// Guard against IDOR / CSRF on /api/users/:userId/* — previously any client
+// could vandalise another user's data just by guessing their numeric Telegram
+// ID in the URL. Now:
+//   • If x-telegram-init-data is present, it must be valid AND the URL's
+//     userId must match tgUser.id.
+//   • If absent, only the special 'guest_user' id is allowed — non-Telegram
+//     browsers share one bucket, can't impersonate a specific Telegram user.
+// READ endpoints (favorites, ratings, bookmarks listing) stay open: those
+// only return the requested user's own data, which they could see anyway on
+// their own device, and the catalog UI relies on them. WRITE endpoints
+// (PUT/POST/DELETE) get this guard.
+const GUEST_USER_ID = 'guest_user';
+const requireUserMatch = (req, res, next) => {
+  const claimedId = req.params.userId;
+  const initData = req.headers['x-telegram-init-data'];
+  if (initData) {
+    const tgUser = validateTelegramInitData(initData, process.env.BOT_TOKEN);
+    if (!tgUser) return res.status(401).json({ error: 'Invalid Telegram session' });
+    if (tgUser.id !== claimedId) return res.status(403).json({ error: 'User ID mismatch' });
+    req.telegramUser = tgUser;
+    return next();
+  }
+  // No Telegram identity → only the shared guest bucket is writeable.
+  // This blocks the trivial "POST /api/users/12345/ratings/X with rating 5"
+  // attack from anonymous browsers.
+  if (claimedId === GUEST_USER_ID) return next();
+  return res.status(401).json({ error: 'Authentication required' });
 };
 
 // ── Multer: cover ────────────────────────────────────────────────────────────
@@ -453,6 +497,23 @@ app.post('/api/admin/errors/clear', requireApiKey, async (req, res) => {
 // to toggle auto/manual.
 const DEPLOY_CONTROL_DIR = process.env.DEPLOY_CONTROL_DIR || '/deploy-control';
 
+// Shared HMAC secret with the deploy-agent so it can prove a mailbox file
+// came from the API (and not from any other local process that managed to
+// write into the shared directory). Falls back to BOT_TOKEN — the agent
+// applies the same fallback so out-of-the-box installs keep working.
+const DEPLOY_AGENT_SECRET = process.env.DEPLOY_AGENT_SECRET || process.env.BOT_TOKEN || '';
+
+// Serialise + sign a mailbox payload. The agent rejects any *.json in the
+// control dir whose top-level "sig" field doesn't HMAC-match the rest.
+const writeSignedMailbox = (filePath, payload) => {
+  const body = { ...payload, ts: Date.now() };
+  const canonical = JSON.stringify(body);
+  const sig = DEPLOY_AGENT_SECRET
+    ? createHmac('sha256', DEPLOY_AGENT_SECRET).update(canonical).digest('hex')
+    : '';
+  fs.writeFileSync(filePath, JSON.stringify({ ...body, sig }), { mode: 0o600 });
+};
+
 // Current deploy status as reported by the host agent.
 app.get('/api/admin/deploy/status', requireApiKey, (req, res) => {
   try {
@@ -469,7 +530,7 @@ app.post('/api/admin/deploy', requireApiKey, (req, res) => {
   try {
     fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
     const file = path.join(DEPLOY_CONTROL_DIR, `request-${Date.now()}.json`);
-    fs.writeFileSync(file, JSON.stringify({ requestedAt: new Date().toISOString() }));
+    writeSignedMailbox(file, { requestedAt: new Date().toISOString() });
     res.json({ queued: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not queue deploy: ' + (e?.message || String(e)) });
@@ -484,7 +545,7 @@ app.post('/api/admin/deploy/mode', requireApiKey, (req, res) => {
   }
   try {
     fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
-    fs.writeFileSync(path.join(DEPLOY_CONTROL_DIR, 'mode.json'), JSON.stringify({ mode }));
+    writeSignedMailbox(path.join(DEPLOY_CONTROL_DIR, 'mode.json'), { mode });
     res.json({ mode });
   } catch (e) {
     res.status(500).json({ error: 'Could not set mode: ' + (e?.message || String(e)) });
@@ -578,7 +639,7 @@ app.post('/api/admin/backup/run', limitBackup, requireApiKey, (req, res) => {
   try {
     fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
     const file = path.join(DEPLOY_CONTROL_DIR, `backup-request-${Date.now()}.json`);
-    fs.writeFileSync(file, JSON.stringify({ requestedAt: new Date().toISOString() }));
+    writeSignedMailbox(file, { requestedAt: new Date().toISOString() });
     res.json({ queued: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not queue backup: ' + (e?.message || String(e)) });
@@ -595,7 +656,7 @@ app.post('/api/admin/backup/restore', requireApiKey, (req, res) => {
   try {
     fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
     const file = path.join(DEPLOY_CONTROL_DIR, `backup-restore-${Date.now()}.json`);
-    fs.writeFileSync(file, JSON.stringify({ filename, requestedAt: new Date().toISOString() }));
+    writeSignedMailbox(file, { filename, requestedAt: new Date().toISOString() });
     res.json({ queued: true });
   } catch (e) {
     res.status(500).json({ error: 'Could not queue restore: ' + (e?.message || String(e)) });
@@ -611,8 +672,7 @@ app.put('/api/admin/backup/config', requireApiKey, (req, res) => {
     fs.mkdirSync(DEPLOY_CONTROL_DIR, { recursive: true });
     const existing = readBackupConfigSafe() || {};
     const next = mergeBackupConfig(existing, req.body);
-    fs.writeFileSync(BACKUP_CONFIG_FILE, JSON.stringify(next, null, 2));
-    try { fs.chmodSync(BACKUP_CONFIG_FILE, 0o600); } catch { /* host fs */ }
+    writeSignedMailbox(BACKUP_CONFIG_FILE, next);
     res.json({ config: maskBackupConfig(next) });
   } catch (e) {
     res.status(500).json({ error: 'Could not save config: ' + (e?.message || String(e)) });
@@ -865,6 +925,92 @@ const sanitiseHtml = (html) => {
     .replace(/href\s*=\s*'\s*javascript:[^']*'/gi, "href='#'");
 };
 
+// ── SSRF defence for /api/article-extract ────────────────────────────────────
+// Any unauthenticated visitor can pass a URL — without these guards an
+// attacker would probe internal services (library-db, deploy-control mailbox,
+// cloud metadata at 169.254.169.254) by fetching them through the server's
+// network position. Rules:
+//   1. Hostname must resolve only to public unicast IPs (no RFC1918, loopback,
+//      link-local, multicast, broadcast, unspecified, CGNAT, IPv6 ULA).
+//   2. Port restricted to 80/443 — blocks targeting Redis (6379), Postgres
+//      (5432), SSH (22), random Docker-internal services.
+//   3. Redirects are handled manually — every hop is re-validated against the
+//      same rules, so an attacker can't bounce through a public 302 to a
+//      private 200.
+
+const isPrivateOrReservedIp = (ip) => {
+  if (!ip) return true;
+  if (net.isIPv4(ip)) {
+    const o = ip.split('.').map(Number);
+    if (o[0] === 0) return true;            // 0.0.0.0/8 unspecified
+    if (o[0] === 10) return true;           // 10.0.0.0/8 private
+    if (o[0] === 127) return true;          // 127.0.0.0/8 loopback
+    if (o[0] === 169 && o[1] === 254) return true;       // 169.254/16 link-local incl. AWS metadata
+    if (o[0] === 172 && o[1] >= 16 && o[1] <= 31) return true; // 172.16/12 private
+    if (o[0] === 192 && o[1] === 168) return true;       // 192.168/16 private
+    if (o[0] === 192 && o[1] === 0 && o[2] === 0) return true;  // 192.0.0/24 reserved
+    if (o[0] === 100 && o[1] >= 64 && o[1] <= 127) return true; // 100.64/10 CGNAT
+    if (o[0] >= 224) return true;           // 224+ multicast / reserved / broadcast
+    return false;
+  }
+  if (net.isIPv6(ip)) {
+    const v = ip.toLowerCase();
+    if (v === '::' || v === '::1') return true;
+    if (v.startsWith('fc') || v.startsWith('fd')) return true; // fc00::/7 ULA
+    if (v.startsWith('fe80:') || v.startsWith('fe8') || v.startsWith('fe9') || v.startsWith('fea') || v.startsWith('feb')) return true; // fe80::/10 link-local
+    if (v.startsWith('ff')) return true;    // ff00::/8 multicast
+    if (v.startsWith('::ffff:')) {          // IPv4-mapped
+      const v4 = v.slice(7);
+      return isPrivateOrReservedIp(v4);
+    }
+    return false;
+  }
+  return true; // unknown family → reject
+};
+
+// Validates a URL against SSRF policy. Returns { ok: true } or { ok: false, error }.
+// Resolves DNS and checks every returned address.
+const validateExternalUrl = async (raw) => {
+  let u;
+  try { u = new URL(raw); } catch { return { ok: false, error: 'Invalid URL' }; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, error: 'Only http/https' };
+  // Restrict to standard web ports — nothing legitimate needs to fetch articles from :22 or :6379.
+  const port = u.port ? parseInt(u.port, 10) : (u.protocol === 'https:' ? 443 : 80);
+  if (port !== 80 && port !== 443) return { ok: false, error: 'Port not allowed' };
+  // Block raw IP hostnames that are themselves private (skip DNS).
+  const host = u.hostname;
+  if (net.isIP(host) && isPrivateOrReservedIp(host)) return { ok: false, error: 'Private IP' };
+  // Resolve and reject if any answer is private — protects against DNS rebinding
+  // at the moment of the check (we don't re-resolve on the actual fetch though,
+  // so a TOCTOU window remains; documented limitation).
+  try {
+    const addrs = await dns.lookup(host, { all: true });
+    if (addrs.length === 0) return { ok: false, error: 'DNS lookup failed' };
+    for (const a of addrs) {
+      if (isPrivateOrReservedIp(a.address)) return { ok: false, error: 'Resolves to private IP' };
+    }
+  } catch { return { ok: false, error: 'DNS lookup failed' }; }
+  return { ok: true, url: u.toString() };
+};
+
+// Fetch with manual redirect handling so every Location hop is re-validated.
+const fetchWithSsrfGuard = async (initialUrl, signal, headers, maxHops = 5) => {
+  let current = initialUrl;
+  for (let hop = 0; hop <= maxHops; hop++) {
+    const check = await validateExternalUrl(current);
+    if (!check.ok) return { error: check.error, status: 400 };
+    const r = await fetch(check.url, { signal, redirect: 'manual', headers });
+    if (r.status >= 300 && r.status < 400) {
+      const loc = r.headers.get('location');
+      if (!loc) return { response: r };
+      current = new URL(loc, check.url).toString();
+      continue;
+    }
+    return { response: r };
+  }
+  return { error: 'Too many redirects', status: 508 };
+};
+
 app.get('/api/article-extract', limitArticle, async (req, res) => {
   const url = req.query.url;
   if (typeof url !== 'string' || !/^https?:\/\//i.test(url) || url.length > 2000) {
@@ -880,16 +1026,14 @@ app.get('/api/article-extract', limitArticle, async (req, res) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ARTICLE_FETCH_TIMEOUT);
   try {
-    const upstream = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; OptionsDataLibrary/1.0; +https://library.optionsdata.ru)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'ru,en;q=0.8,es;q=0.5',
-      },
+    const fetched = await fetchWithSsrfGuard(url, controller.signal, {
+      'User-Agent': 'Mozilla/5.0 (compatible; OptionsDataLibrary/1.0; +https://library.optionsdata.ru)',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'ru,en;q=0.8,es;q=0.5',
     });
     clearTimeout(timer);
+    if (fetched.error) return res.status(fetched.status || 400).json({ error: fetched.error });
+    const upstream = fetched.response;
 
     if (!upstream.ok) return res.status(502).json({ error: `Upstream ${upstream.status}` });
     const ct = (upstream.headers.get('content-type') || '').toLowerCase();
@@ -1411,7 +1555,7 @@ app.get('/api/users/:userId/favorites', validateUserId, async (req, res) => {
 });
 
 app.put('/api/users/:userId/favorites/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     try {
       await pool.query(
@@ -1427,7 +1571,7 @@ app.put('/api/users/:userId/favorites/:itemId',
 );
 
 app.delete('/api/users/:userId/favorites/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     try {
       await pool.query(
@@ -1458,7 +1602,7 @@ app.get('/api/users/:userId/ratings', validateUserId, async (req, res) => {
 });
 
 app.put('/api/users/:userId/ratings/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     const rating = parseInt(req.body?.rating, 10);
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
@@ -1503,7 +1647,7 @@ app.get('/api/users/:userId/bookmarks/:itemId',
 );
 
 app.post('/api/users/:userId/bookmarks/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     const position = clip(req.body?.position, 512);
     const label    = clip(req.body?.label, 100) || 'Закладка';
@@ -1523,7 +1667,7 @@ app.post('/api/users/:userId/bookmarks/:itemId',
 );
 
 app.delete('/api/users/:userId/bookmarks/:bookmarkId',
-  validateUserId,
+  validateUserId, requireUserMatch,
   async (req, res) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(req.params.bookmarkId))
       return res.status(400).json({ error: 'Invalid bookmark ID' });
@@ -1560,7 +1704,7 @@ app.get('/api/users/:userId/annotations/:itemId',
 );
 
 app.post('/api/users/:userId/annotations/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     const formatUrl    = clip(req.body?.formatUrl, 512) || '';
     const cfiRange     = clip(req.body?.cfiRange, 1024);
@@ -1585,7 +1729,7 @@ app.post('/api/users/:userId/annotations/:itemId',
 );
 
 app.delete('/api/users/:userId/annotations/:annotationId',
-  validateUserId,
+  validateUserId, requireUserMatch,
   async (req, res) => {
     if (!/^[a-zA-Z0-9_-]+$/.test(req.params.annotationId))
       return res.status(400).json({ error: 'Invalid annotation ID' });
@@ -1636,7 +1780,7 @@ app.get('/api/users/:userId/progress/:itemId',
 // in Item Details). Removes both per-file rows and the synthetic "finished"
 // marker, so the book becomes fresh again on the next open.
 app.delete('/api/users/:userId/progress/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     try {
       await pool.query(
@@ -1652,7 +1796,7 @@ app.delete('/api/users/:userId/progress/:itemId',
 
 // PUT (upsert) single-item+format progress
 app.put('/api/users/:userId/progress/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     const position = clip(req.body?.position, 512);
     const positionTotal = parseInt(req.body?.positionTotal ?? 0, 10) || 0;

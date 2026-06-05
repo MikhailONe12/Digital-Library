@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor, ArticleLink } from '../types';
 import CardCover from '../components/CardCover';
 import {
-  ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
+  ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart, BookmarkPlus,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
   Search, Newspaper, ExternalLink, Layers, Tag as TagIcon, Layers3,
@@ -16,7 +16,7 @@ import ePub from 'epubjs';
 // worker — see services/pdfWorker.ts.
 import workerSrc from '../services/pdfWorker?worker&url';
 import {
-  trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating,
+  trackActivity, toggleFavorite, isFavorited, toggleWishlist, isInWishlist, getUserRating, setUserRating,
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,
   getReadingProgress, saveReadingProgress,
   getAnnotations, addAnnotation, deleteAnnotation,
@@ -168,6 +168,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const [userRating, setUserRatingState] = useState(0);
   const [avgRating, setAvgRating]        = useState(item.rating);
   const [isFav, setIsFav]                = useState(false);
+  const [isWish, setIsWish]              = useState(false);
   // Reading-progress display state. Refreshed on mount and whenever the user
   // explicitly marks finished / resets so the UI flips without a page reload.
   const [progressPct, setProgressPct]    = useState<number>(0);
@@ -325,6 +326,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   useEffect(() => {
     trackActivity('view', item.id);
     setIsFav(isFavorited(userId, item.id));
+    setIsWish(isInWishlist(userId, item.id));
     setUserRatingState(getUserRating(userId, item.id));
     setAvgRating(getAverageRating(item.id));
     setProgressPct(getProgressPercent(item.id));
@@ -1041,6 +1043,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     refreshBookmarks();
   };
 
+  const handleToggleWish = () => {
+    toggleWishlist(userId, item.id);
+    setIsWish(!isWish);
+    onRefresh();
+  };
+
   const handleToggleFav = () => {
     toggleFavorite(userId, item.id);
     setIsFav(!isFav);
@@ -1518,6 +1526,16 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
         <div className="flex gap-6 items-start">
           <div className="relative">
             <img src={coverSrc} onError={handleCoverError} className="w-36 aspect-[3/4] object-cover rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border-4 border-white dark:border-[#1c1c1e]" alt="" />
+            {/* Wishlist toggle (#35) — mirror image to the heart so favourites
+                and wishlist can be managed independently. */}
+            <button
+              onClick={handleToggleWish}
+              title={t.wishlist}
+              className={`absolute -bottom-3 -left-3 ${isWish ? 'bg-red-600 text-white' : 'bg-white dark:bg-[#1c1c1e] text-red-600 border-2 border-red-600'} p-2.5 rounded-2xl shadow-xl active:scale-90 transition-all hover:bg-red-700 hover:text-white focus:outline-none`}
+              aria-label={t.wishlist}
+            >
+              <BookmarkPlus size={20} fill={isWish ? 'currentColor' : 'none'} strokeWidth={isWish ? 0 : 3} />
+            </button>
             <button onClick={handleToggleFav} className="absolute -bottom-3 -right-3 bg-red-600 text-white p-2.5 rounded-2xl shadow-xl active:scale-90 transition-all hover:bg-red-700 focus:outline-none" aria-label="Toggle Favorite">
               <Heart size={20} fill={isFav ? "white" : "none"} strokeWidth={isFav ? 0 : 3} />
             </button>

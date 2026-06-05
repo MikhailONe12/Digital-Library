@@ -2,7 +2,7 @@ import { MediaItem, Locale, ContentLang } from '../types';
 import { pickText } from '../utils';
 
 export type SortBy = 'recent' | 'rating' | 'views' | 'alpha';
-export type SpecialCategory = 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY' | 'FINISHED';
+export type SpecialCategory = 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED';
 
 export interface CatalogQuery {
   searchQuery: string;
@@ -18,6 +18,7 @@ export interface CatalogQuery {
   allowedUsers: string[];
   user?: { id: number | string; username?: string } | null;
   isFavorite: (itemId: string) => boolean;
+  isWishlisted?: (itemId: string) => boolean;
   ratingOf: (itemId: string) => number;
   /** Reading-progress lookup (0-100). Used by the FINISHED category. */
   progressOf?: (itemId: string) => number;
@@ -126,6 +127,9 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
   // 4. Category (NEW and HISTORY have their own ordering and return early)
   if (q.activeCategory === 'FAVORITES') {
     available = available.filter(item => q.isFavorite(item.id));
+  } else if (q.activeCategory === 'WISHLIST') {
+    const wish = q.isWishlisted || (() => false);
+    available = available.filter(item => wish(item.id));
   } else if (q.activeCategory === 'FINISHED') {
     const pct = q.progressOf || (() => 0);
     available = available.filter(item => pct(item.id) >= 95);

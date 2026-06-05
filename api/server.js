@@ -371,6 +371,32 @@ const baseUrl = () =>
 // Coerce a value to a trimmed string of at most n chars, or null.
 const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
 
+// #37 — IP anonymisation for long-lived rows. Zero the last octet of IPv4 and
+// truncate IPv6 to the first 48 bits — matches the standard used by Plausible
+// and GA. Real-time blacklist / rate-limit checks still see the full IP via
+// clientIp(); only what gets persisted into visit_logs goes through here.
+const anonymizeIp = (raw) => {
+  if (!raw || typeof raw !== 'string') return null;
+  const ip = raw.trim();
+  if (!ip || ip === 'unknown') return ip;
+  const v4 = ip.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
+  if (v4) return `${v4[1]}.0`;
+  if (ip.includes(':')) {
+    const sides = ip.split('::');
+    let hextets;
+    if (sides.length === 2) {
+      const left = sides[0] ? sides[0].split(':') : [];
+      const right = sides[1] ? sides[1].split(':') : [];
+      const missing = 8 - (left.length + right.length);
+      hextets = [...left, ...new Array(Math.max(0, missing)).fill('0'), ...right];
+    } else {
+      hextets = ip.split(':');
+    }
+    if (hextets.length >= 3) return `${hextets[0]}:${hextets[1]}:${hextets[2]}::`;
+  }
+  return ip;
+};
+
 // ── Error logging (built-in monitoring) ──────────────────────────────────────
 
 // Persist one error row. Best-effort: never throws (we don't want logging to
@@ -1488,7 +1514,7 @@ app.post('/api/visits', async (req, res) => {
       `INSERT INTO visit_logs (id, username, ip, platform, device)
        VALUES ($1, $2, $3, $4, $5)`,
       [
-        id, loggedUser, ip,
+        id, loggedUser, anonymizeIp(ip),
         clip(req.body?.platform, 32),
         clip(req.body?.device, 256),
       ],
@@ -1665,6 +1691,90 @@ app.delete('/api/users/:userId/favorites/:itemId',
     }
   },
 );
+
+// ── #35 Wishlist ("Хочу прочитать") ─────────────────────────────────────────
+// Mirrors favourites: read returns the user's list, PUT adds, DELETE removes.
+// Separate from favourites so the catalogue can filter on either independently.
+app.get('/api/users/:userId/wishlist', validateUserId, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT item_id FROM user_wishlist WHERE user_id = $1',
+      [req.params.userId],
+    );
+    res.json({ wishlist: rows.map(r => r.item_id) });
+  } catch {
+    res.json({ wishlist: [] });
+  }
+});
+
+app.put('/api/users/:userId/wishlist/:itemId',
+  validateUserId, validateItemId, requireUserMatch,
+  async (req, res) => {
+    try {
+      await pool.query(
+        `INSERT INTO user_wishlist (user_id, item_id) VALUES ($1, $2)
+         ON CONFLICT (user_id, item_id) DO NOTHING`,
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+app.delete('/api/users/:userId/wishlist/:itemId',
+  validateUserId, validateItemId, requireUserMatch,
+  async (req, res) => {
+    try {
+      await pool.query(
+        'DELETE FROM user_wishlist WHERE user_id = $1 AND item_id = $2',
+        [req.params.userId, req.params.itemId],
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  },
+);
+
+// ── #36 Right to erasure ────────────────────────────────────────────────────
+// DELETE /api/users/:userId wipes every per-user row across the schema —
+// implements GDPR Art. 17 and the analogous 152-ФЗ right. Authorised via the
+// admin API key (operator-erase on user request) OR a verified Telegram session
+// matching the URL's userId (self-erase). Best-effort per-statement so a single
+// failing sweep doesn't block the rest.
+app.delete('/api/users/:userId', validateUserId, async (req, res) => {
+  const { userId } = req.params;
+  const adminOk = process.env.API_KEY && req.headers['x-api-key'] === process.env.API_KEY;
+  if (!adminOk) {
+    const tgUser = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
+    if (!tgUser || tgUser.id !== userId) {
+      return res.status(403).json({ error: 'Authentication required to erase user data' });
+    }
+  }
+  const wipes = [
+    'DELETE FROM user_favorites        WHERE user_id = $1',
+    'DELETE FROM user_wishlist         WHERE user_id = $1',
+    'DELETE FROM user_ratings          WHERE user_id = $1',
+    'DELETE FROM user_bookmarks        WHERE user_id = $1',
+    'DELETE FROM user_reading_progress WHERE user_id = $1',
+    'DELETE FROM user_annotations      WHERE user_id = $1',
+  ];
+  const tgUser = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
+  const username = tgUser?.username || null;
+  const idMarker = `id_${userId}`;
+  const sweep = async (sql, params) => {
+    try { await pool.query(sql, params); }
+    catch (e) { console.warn('erasure', sql.split(' ')[2], e.message); }
+  };
+  for (const sql of wipes) await sweep(sql, [userId]);
+  // Un-attribute analytics rows — UPDATE-to-NULL keeps aggregate counters
+  // intact while individual visits can no longer be tied to the deleted user.
+  await sweep('UPDATE item_events SET username = NULL WHERE username = $1 OR username = $2', [idMarker, username]);
+  await sweep('UPDATE visit_logs  SET username = NULL WHERE username = $1 OR username = $2', [idMarker, username]);
+  res.json({ ok: true });
+});
 
 // ── Step 5: per-user ratings (public — visitor action) ──────────────────────
 

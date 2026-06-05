@@ -3,8 +3,8 @@ import React, { useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X } from 'lucide-react';
-import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus } from 'lucide-react';
+import { isFavorited, isInWishlist, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText } from '../utils';
 
 interface HomeProps {
@@ -13,8 +13,8 @@ interface HomeProps {
   onOpenItem: (item: MediaItem) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  activeCategory: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY' | 'FINISHED';
-  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY' | 'FINISHED') => void;
+  activeCategory: string | 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED';
+  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED') => void;
   contentLangFilter: ContentLang[];
   setContentLangFilter: (langs: ContentLang[]) => void;
   tagFilter: string[];
@@ -319,6 +319,21 @@ const Home: React.FC<HomeProps> = ({
           <Heart size={19} fill={activeCategory === 'FAVORITES' ? 'currentColor' : 'none'} strokeWidth={2.25} />
         </button>
 
+        {/* Wishlist Button — #35 "Хочу прочитать" */}
+        <button
+          onClick={() => setActiveCategory('WISHLIST')}
+          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
+            activeCategory === 'WISHLIST'
+            ? 'bg-red-600 text-white'
+            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
+          }`}
+          aria-label={t.wishlist}
+          aria-pressed={activeCategory === 'WISHLIST'}
+          title={t.wishlist}
+        >
+          <BookmarkPlus size={19} strokeWidth={2.25} fill={activeCategory === 'WISHLIST' ? 'currentColor' : 'none'} />
+        </button>
+
         {/* History Button */}
         <button
           onClick={() => setActiveCategory('HISTORY')}
@@ -441,10 +456,10 @@ const Home: React.FC<HomeProps> = ({
       {items.length === 0 && (
           <div className="py-24 text-center">
               <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
-                  {activeCategory === 'FAVORITES' ? <Heart size={36} /> : activeCategory === 'NEW' ? <Sparkles size={36} /> : activeCategory === 'HISTORY' ? <Clock size={36} /> : activeCategory === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
+                  {activeCategory === 'FAVORITES' ? <Heart size={36} /> : activeCategory === 'WISHLIST' ? <BookmarkPlus size={36} /> : activeCategory === 'NEW' ? <Sparkles size={36} /> : activeCategory === 'HISTORY' ? <Clock size={36} /> : activeCategory === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
               </div>
               <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
-                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : activeCategory === 'FINISHED' ? t.noFinishedYet : t.noResults}
+                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'WISHLIST' ? t.noWishlistYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : activeCategory === 'FINISHED' ? t.noFinishedYet : t.noResults}
               </p>
           </div>
       )}

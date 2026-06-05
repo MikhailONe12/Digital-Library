@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense, lazy } from 'react';
-import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
+import { getDb, loadDb, isFavorited, isInWishlist, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { filterAndSortItems } from './services/catalog';
@@ -35,7 +35,7 @@ const App: React.FC = () => {
   })();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'NEW' | 'HISTORY'>(
+  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED'>(
     _savedFilters.activeCategory || 'ALL',
   );
   const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>(
@@ -176,6 +176,7 @@ const App: React.FC = () => {
     allowedUsers: db.allowedUsers,
     user,
     isFavorite: (id) => isFavorited(userId, id),
+    isWishlisted: (id) => isInWishlist(userId, id),
     ratingOf: getAverageRating,
     progressOf: getProgressPercent,
     viewHistory,

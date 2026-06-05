@@ -66,6 +66,18 @@ CREATE TABLE IF NOT EXISTS user_favorites (
 
 CREATE INDEX IF NOT EXISTS idx_favs_user ON user_favorites(user_id);
 
+-- Per-user wishlist ("Хочу прочитать") — mirrors user_favorites; separate
+-- table so users can keep favorites and wishlist independently and filter
+-- the catalog by either.
+CREATE TABLE IF NOT EXISTS user_wishlist (
+  user_id    TEXT        NOT NULL,
+  item_id    TEXT        NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (user_id, item_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wishlist_user ON user_wishlist(user_id);
+
 -- Per-user ratings, 1–5 (Step 5) — shared across all devices
 CREATE TABLE IF NOT EXISTS user_ratings (
   user_id    TEXT        NOT NULL,

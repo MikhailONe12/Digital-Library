@@ -1,4 +1,4 @@
-import { Locale, MultilingualText } from './types';
+import { Locale, MediaItem, MultilingualText } from './types';
 
 export const pickText = (
   text: MultilingualText | undefined,
@@ -41,4 +41,22 @@ export const getVideoPoster = (videoUrl?: string | null): string | null => {
   const yt = getYouTubeId(videoUrl || '');
   if (yt) return `https://img.youtube.com/vi/${yt}/maxresdefault.jpg`;
   return null;
+};
+
+export const hasVideo = (item: MediaItem): boolean =>
+  !!(item.videoUrl || (item.videos && item.videos.length > 0));
+
+export const getFirstVideoUrl = (item: MediaItem): string | null =>
+  item.videos?.[0]?.url || item.videoUrl || null;
+
+// MM:SS for sub-hour durations, H:MM:SS otherwise. Matches the YouTube badge.
+export const formatDuration = (sec: number): string => {
+  if (!Number.isFinite(sec) || sec <= 0) return '';
+  const total = Math.round(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = String(m).padStart(h > 0 ? 2 : 1, '0');
+  const ss = String(s).padStart(2, '0');
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 };

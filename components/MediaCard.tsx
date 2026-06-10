@@ -1,8 +1,10 @@
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MediaItem, Locale, ContentLang } from '../types';
-import { Star, ShieldCheck, Heart, BookOpen, CheckCircle2 } from 'lucide-react';
-import { pickText } from '../utils';
+import { Star, ShieldCheck, Heart, BookOpen, CheckCircle2, Play, Film } from 'lucide-react';
+import { pickText, hasVideo, getFirstVideoUrl, formatDuration } from '../utils';
+import { isDirectVideo } from '../services/videoThumb';
+import { getVideoDuration } from '../services/videoDuration';
 import CardCover from './CardCover';
 
 interface MediaCardProps {
@@ -21,6 +23,21 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
     return Array.from(new Set([...globalLanguages, ...fileLanguages]));
   }, [item]);
 
+  // Video cues (#1 play overlay, #2 duration badge, #3 Film chip) — visual
+  // signal that this item plays instead of reading. Duration is only known
+  // for direct files (mp4/webm/…); YouTube would need the Data API, so we
+  // gracefully skip the badge there and rely on overlay+chip alone.
+  const isVideo = hasVideo(item);
+  const firstVideoUrl = getFirstVideoUrl(item);
+  const directVideoUrl = isVideo && isDirectVideo(firstVideoUrl) ? firstVideoUrl : null;
+  const [duration, setDuration] = useState<number | null>(null);
+  useEffect(() => {
+    if (!directVideoUrl) return;
+    let cancelled = false;
+    getVideoDuration(directVideoUrl).then(d => { if (!cancelled) setDuration(d); });
+    return () => { cancelled = true; };
+  }, [directVideoUrl]);
+
   return (
     <div
         onClick={onClick}
@@ -34,9 +51,14 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
         <CardCover item={item} lang={lang} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
 
-        {isFavorited && (
-          <div className="absolute bottom-3 right-3 bg-red-600 text-white p-1.5 rounded-full shadow-md animate-in zoom-in duration-300">
-            <Heart size={11} fill="currentColor" />
+        {/* #1 — Centered play-circle overlay. Universal "this is video" signal
+            (YouTube / Vimeo / Netflix). pointer-events:none so the parent's
+            click target keeps working. */}
+        {isVideo && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="w-12 h-12 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-lg ring-1 ring-white/10 transition-transform duration-300 group-hover:scale-110">
+              <Play size={20} className="text-white ml-0.5" fill="currentColor" strokeWidth={0} />
+            </div>
           </div>
         )}
 
@@ -44,6 +66,15 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
           <div className="bg-black/35 backdrop-blur-md text-white text-[10px] font-medium capitalize px-2 py-0.5 rounded-md">
               {item.type}
           </div>
+          {/* #3 — Video format chip. Red so it visually pops against the type
+              chip even when both are stacked at small sizes; Film icon makes
+              it readable as a glance without language dependency. */}
+          {isVideo && (
+            <div className="bg-red-600 text-white text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
+              <Film size={11} strokeWidth={2.5} />
+              Video
+            </div>
+          )}
           <div className="flex flex-wrap gap-1 max-w-[100px]">
             {displayedLanguages.map(l => (
               <div key={l} className="bg-white/85 backdrop-blur-md text-slate-700 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded">
@@ -71,6 +102,22 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
                 {Math.round(progress)}%
               </div>
             )
+          )}
+        </div>
+
+        {/* Bottom-right stack: favourite heart on top, #2 duration badge below.
+            Shared flex-col so the two never overlap when a video item is also
+            favourited. */}
+        <div className="absolute bottom-3 right-3 flex flex-col items-end gap-1.5">
+          {isFavorited && (
+            <div className="bg-red-600 text-white p-1.5 rounded-full shadow-md animate-in zoom-in duration-300">
+              <Heart size={11} fill="currentColor" />
+            </div>
+          )}
+          {duration != null && (
+            <div className="bg-black/70 backdrop-blur-md text-white text-[10px] font-semibold px-1.5 py-0.5 rounded tabular-nums shadow-sm">
+              {formatDuration(duration)}
+            </div>
           )}
         </div>
 

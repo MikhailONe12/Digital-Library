@@ -23,11 +23,12 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
     return Array.from(new Set([...globalLanguages, ...fileLanguages]));
   }, [item]);
 
-  // Video cues (#1 play overlay, #2 duration badge, #3 Film chip) — visual
+  // Video cues (#1 play overlay, #2 duration badge, #3 red type chip) — visual
   // signal that this item plays instead of reading. Duration is only known
   // for direct files (mp4/webm/…); YouTube would need the Data API, so we
-  // gracefully skip the badge there and rely on overlay+chip alone.
+  // gracefully skip the badge there and rely on overlay + red chip alone.
   const isVideo = hasVideo(item);
+  const isVideoType = (item.type || '').toLowerCase() === 'video';
   const firstVideoUrl = getFirstVideoUrl(item);
   const directVideoUrl = isVideo && isDirectVideo(firstVideoUrl) ? firstVideoUrl : null;
   const [duration, setDuration] = useState<number | null>(null);
@@ -63,18 +64,21 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
         )}
 
         <div className="absolute top-2.5 left-2.5 flex flex-col gap-1.5 items-start">
-          <div className="bg-black/35 backdrop-blur-md text-white text-[10px] font-medium capitalize px-2 py-0.5 rounded-md">
-              {item.type}
+          {/* #3 — Type chip. When admin set this item's type to "video" the
+              normally-grey chip turns red and grows a Film icon, so the slot
+              that already says "Video" is the one that pops, instead of
+              stacking a second chip with the same word next to it. Admin's
+              type picker is untouched: detection is purely on the saved id. */}
+          <div
+            className={`text-white text-[10px] font-medium capitalize px-2 py-0.5 rounded-md flex items-center gap-1 ${
+              isVideoType
+                ? 'bg-red-600 font-semibold shadow-sm'
+                : 'bg-black/35 backdrop-blur-md'
+            }`}
+          >
+            {isVideoType && <Film size={11} strokeWidth={2.5} />}
+            {item.type}
           </div>
-          {/* #3 — Video format chip. Red so it visually pops against the type
-              chip even when both are stacked at small sizes; Film icon makes
-              it readable as a glance without language dependency. */}
-          {isVideo && (
-            <div className="bg-red-600 text-white text-[10px] font-semibold uppercase px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-              <Film size={11} strokeWidth={2.5} />
-              Video
-            </div>
-          )}
           <div className="flex flex-wrap gap-1 max-w-[100px]">
             {displayedLanguages.map(l => (
               <div key={l} className="bg-white/85 backdrop-blur-md text-slate-700 text-[10px] font-medium uppercase px-1.5 py-0.5 rounded">

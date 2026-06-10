@@ -52,6 +52,9 @@ const App: React.FC = () => {
   
   const [isLangMenuOpen, setIsLangMenuOpen] = useState(false);
   const langMenuRef = useRef<HTMLDivElement>(null);
+  // #30 — Deep-link target captured before the catalogue is loaded; resolved
+  // by an effect once db.items is populated. Avoids racing the loadDb fetch.
+  const pendingDeepLinkRef = useRef<{ kind: 'item'; id: string } | null>(null);
 
   const t = translations[lang];
 
@@ -134,10 +137,31 @@ const App: React.FC = () => {
       } catch { /* event unsupported on this Telegram client */ }
     }
 
-    // Секретный вход через URL: ?admin=true
+    // #30 — Deep-link routing. Pre-existing URL → state on first paint, then
+    // a popstate listener keeps the back/forward buttons honest. Routes are
+    // intentionally simple so we don't pull in react-router:
+    //   /                  → home
+    //   /admin             → admin (also legacy ?admin=true)
+    //   /item/:id          → details for the given catalogue id
+    //   /?tag=X / ?author=X / ?q=X → home with filter pre-applied
     const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true' || params.get('admin') === '1') {
+    const path = window.location.pathname;
+    if (path === '/admin' || params.get('admin') === 'true' || params.get('admin') === '1') {
       setCurrentPage('admin');
+    } else {
+      const m = path.match(/^\/item\/([a-zA-Z0-9_-]+)\/?$/);
+      if (m) {
+        // selectedItem gets resolved once the catalogue loads — see effect below.
+        pendingDeepLinkRef.current = { kind: 'item', id: m[1] };
+      } else {
+        // Apply home-page filter pre-fills.
+        const tag    = params.get('tag');
+        const author = params.get('author');
+        const q      = params.get('q');
+        if (tag)    { setTagFilter([tag]); }
+        if (author) { setSearchField('author'); setSearchQuery(author); }
+        if (q)      { setSearchQuery(q); }
+      }
     }
 
     loadData();
@@ -200,6 +224,56 @@ const App: React.FC = () => {
 
   // Reflect the UI locale on <html lang> for assistive tech and the browser.
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
+
+  // #30 — Resolve a deep-link captured before the catalogue was loaded.
+  // Runs once items appear in cache; if the id matches an item we navigate
+  // into it, otherwise we silently drop the request.
+  useEffect(() => {
+    if (!pendingDeepLinkRef.current || db.items.length === 0) return;
+    const target = pendingDeepLinkRef.current;
+    pendingDeepLinkRef.current = null;
+    if (target.kind === 'item') {
+      const it = db.items.find(i => i.id === target.id);
+      if (it) {
+        setViewHistory(recordView(it.id));
+        setSelectedItem(it);
+        setCurrentPage('details');
+      }
+    }
+  }, [db.items]);
+
+  // #30 — Sync browser URL to the current page so deep links can be copied
+  // and shared. Replace, not push, on first state setup; subsequent
+  // navigations push a new history entry so the back button is meaningful.
+  useEffect(() => {
+    let path = '/';
+    if (currentPage === 'admin') path = '/admin';
+    else if (currentPage === 'details' && selectedItem) path = `/item/${encodeURIComponent(selectedItem.id)}`;
+    if (window.location.pathname !== path) {
+      window.history.pushState({ page: currentPage, id: selectedItem?.id || null }, '', path);
+    }
+  }, [currentPage, selectedItem]);
+
+  // Back / forward button: read the URL and apply the matching page state.
+  useEffect(() => {
+    const onPop = () => {
+      const path = window.location.pathname;
+      if (path === '/admin') {
+        setCurrentPage('admin');
+        setSelectedItem(null);
+      } else {
+        const m = path.match(/^\/item\/([a-zA-Z0-9_-]+)\/?$/);
+        if (m) {
+          const it = db.items.find(i => i.id === m[1]);
+          if (it) { setSelectedItem(it); setCurrentPage('details'); return; }
+        }
+        setCurrentPage('home');
+        setSelectedItem(null);
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [db.items]);
 
   const selectLang = (l: Locale) => {
     setLang(l);

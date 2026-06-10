@@ -4,11 +4,12 @@ import { createPortal } from 'react-dom';
 import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor, ArticleLink } from '../types';
 import CardCover from '../components/CardCover';
 import {
-  ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart, BookmarkPlus,
+  ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
   Search, Newspaper, ExternalLink, Layers, Tag as TagIcon, Layers3,
   CheckCircle2, RotateCcw,
+  Headphones, Play, Pause, SkipBack, SkipForward, Volume2,
 } from 'lucide-react';
 // @ts-ignore
 import ePub from 'epubjs';
@@ -111,9 +112,184 @@ interface ParsedArticle {
 
 const PDF_SPREAD_KEY = 'reader_pdf_spread';
 
+// #29 — Audiobook / podcast / lecture player. Renders a full-screen overlay
+// with cover, scrubber, play/pause and ±15s skip; persists position via the
+// shared user_reading_progress table (re-used so the home shelf "Continue
+// reading" picks audio up automatically).
+interface AudioOverlayProps {
+  url: string;
+  itemId: string;
+  userId: string;
+  title: string;
+  author: string;
+  coverSrc: string;
+  themeChrome: { bg: string; border: string; btn: string; text: string; sub: string };
+  onClose: () => void;
+}
+
+const formatTime = (s: number): string => {
+  if (!isFinite(s) || s < 0) s = 0;
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+    : `${m}:${String(sec).padStart(2, '0')}`;
+};
+
+const AudioPlayerOverlay: React.FC<AudioOverlayProps> = ({ url, itemId, userId, title, author, coverSrc, themeChrome, onClose }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [current, setCurrent] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [rate, setRate] = useState(1);
+  const [restored, setRestored] = useState(false);
+
+  // Restore last position on mount.
+  useEffect(() => {
+    let cancelled = false;
+    getReadingProgress(userId, itemId, url).then(p => {
+      if (cancelled || !p?.position) { setRestored(true); return; }
+      const sec = parseFloat(p.position);
+      if (audioRef.current && Number.isFinite(sec) && sec > 0) {
+        const tryApply = () => {
+          if (cancelled || !audioRef.current) return;
+          if (audioRef.current.readyState >= 1) {
+            audioRef.current.currentTime = sec;
+            setCurrent(sec);
+            setRestored(true);
+          } else {
+            audioRef.current.addEventListener('loadedmetadata', tryApply, { once: true });
+          }
+        };
+        tryApply();
+      } else {
+        setRestored(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [url, itemId, userId]);
+
+  // Save progress every 5s while playing — same cadence as the reader effects.
+  useEffect(() => {
+    if (!restored || duration <= 0) return;
+    const id = setInterval(() => {
+      const t = audioRef.current?.currentTime;
+      if (t != null && t > 0) saveReadingProgress(userId, itemId, String(Math.floor(t)), Math.floor(duration), url);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [restored, duration, userId, itemId, url]);
+
+  // Lock body scroll while the overlay is open — same as the other readers.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  const togglePlay = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) a.play().catch(() => {}); else a.pause();
+  };
+  const skip = (delta: number) => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.currentTime = Math.max(0, Math.min((duration || a.duration || 0), a.currentTime + delta));
+  };
+  const seek = (pct: number) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    a.currentTime = Math.max(0, Math.min(duration, duration * pct));
+  };
+  const cycleRate = () => {
+    const next = rate === 1 ? 1.25 : rate === 1.25 ? 1.5 : rate === 1.5 ? 2 : rate === 2 ? 0.75 : 1;
+    setRate(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  };
+
+  return (
+    <div className={`fixed inset-0 z-[500] ${themeChrome.bg} flex flex-col animate-in fade-in duration-300`}>
+      <header className={`px-4 pb-4 flex items-center justify-between ${themeChrome.bg} border-b ${themeChrome.border} shrink-0`}
+        style={{ paddingTop: 'calc(1rem + var(--safe-top))' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="p-2 bg-red-600 rounded-lg text-white shrink-0"><Headphones size={16} /></div>
+          <div className="min-w-0">
+            <p className={`text-[10px] font-black uppercase ${themeChrome.sub} tracking-widest leading-none mb-1`}>Audio</p>
+            <p className={`text-xs font-black ${themeChrome.text} truncate max-w-[180px]`}>{title}</p>
+          </div>
+        </div>
+        <button onClick={onClose} className={`p-2.5 ${themeChrome.btn} rounded-xl transition-all shrink-0`}><X size={20} /></button>
+      </header>
+
+      <div className="flex-1 flex flex-col items-center justify-center px-8 py-10 gap-8">
+        {coverSrc && (
+          <img src={coverSrc} alt="" className="w-56 aspect-[3/4] object-cover rounded-3xl shadow-2xl" />
+        )}
+        <div className="text-center max-w-md">
+          <h1 className={`text-xl font-black ${themeChrome.text} leading-tight mb-2`}>{title}</h1>
+          {author && <p className={`text-sm ${themeChrome.sub}`}>{author}</p>}
+        </div>
+
+        <div className="w-full max-w-md space-y-3">
+          {/* Scrubber */}
+          <div className="relative h-2 bg-slate-300/30 rounded-full overflow-hidden cursor-pointer"
+               onClick={e => {
+                 const r = e.currentTarget.getBoundingClientRect();
+                 seek((e.clientX - r.left) / r.width);
+               }}>
+            <div className="absolute inset-y-0 left-0 bg-red-600 rounded-full transition-[width] duration-200"
+                 style={{ width: duration ? `${(current / duration) * 100}%` : '0%' }} />
+          </div>
+          <div className={`flex justify-between text-[10px] font-bold ${themeChrome.sub} tabular-nums`}>
+            <span>{formatTime(current)}</span>
+            <span>−{formatTime(Math.max(0, duration - current))}</span>
+          </div>
+
+          {/* Transport */}
+          <div className="flex items-center justify-center gap-4 mt-4">
+            <button onClick={cycleRate} className={`px-3 py-2 ${themeChrome.btn} rounded-xl text-[10px] font-black uppercase tracking-widest`} title="Speed">
+              {rate === 1 ? '1×' : `${rate}×`}
+            </button>
+            <button onClick={() => skip(-15)} className={`p-3 ${themeChrome.btn} rounded-2xl`} title="−15s">
+              <SkipBack size={20} />
+            </button>
+            <button onClick={togglePlay} className="p-5 bg-red-600 text-white rounded-3xl shadow-xl active:scale-95 transition-all hover:bg-red-700" title={playing ? 'Pause' : 'Play'}>
+              {playing ? <Pause size={28} fill="currentColor" /> : <Play size={28} fill="currentColor" />}
+            </button>
+            <button onClick={() => skip(15)} className={`p-3 ${themeChrome.btn} rounded-2xl`} title="+15s">
+              <SkipForward size={20} />
+            </button>
+            <div className={`px-3 py-2 ${themeChrome.btn} rounded-xl flex items-center gap-1.5 opacity-60`} title="Volume (use device controls)">
+              <Volume2 size={14} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <audio
+        ref={audioRef}
+        src={url}
+        preload="metadata"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onLoadedMetadata={e => setDuration(e.currentTarget.duration || 0)}
+        onTimeUpdate={e => setCurrent(e.currentTarget.currentTime || 0)}
+        onEnded={() => {
+          // Mark as complete (100%) when the file finishes.
+          if (duration > 0) saveReadingProgress(userId, itemId, String(Math.floor(duration)), Math.floor(duration), url);
+        }}
+        className="hidden"
+      />
+    </div>
+  );
+};
+
 const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, onOpenTag, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
+  // #29 — Audio player overlay (mp3/m4b/etc).
+  const [activeAudioUrl, setActiveAudioUrl]   = useState<string | null>(null);
 
   // PDF
   const [pdfPage, setPdfPage]             = useState(1);
@@ -1207,10 +1383,21 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     ? item.coverUrl!
     : (youtubePoster || autoThumb || '');
 
+  // #29 — Built-in audio player for mp3/m4a/m4b/ogg/oga/opus/wav.
+  // Audiobook files (often `.m4b`) used to fall through to `window.open`
+  // which downloads in Telegram WebView instead of playing; now they open
+  // an in-app player with progress save/resume using the existing
+  // reading-progress storage (position stored as seconds, position_total
+  // as duration).
+  const AUDIO_EXT = /\.(mp3|m4a|m4b|ogg|oga|opus|wav)(\?|#|$)/i;
+  const isAudioFormat = (f: FileFormat) => AUDIO_EXT.test(f.url || '');
+
   const handleRead = (format: FileFormat) => {
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;
     const url = format.url.toLowerCase();
-    if (url.endsWith('.pdf') || format.name.toLowerCase().includes('pdf')) {
+    if (isAudioFormat(format)) {
+      setActiveAudioUrl(fileUrl);
+    } else if (url.endsWith('.pdf') || format.name.toLowerCase().includes('pdf')) {
       setActiveReaderUrl(fileUrl);
     } else if (url.endsWith('.epub')) {
       setActiveEpubUrl(fileUrl);
@@ -1802,7 +1989,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                 <div key={f.id} className="p-3 bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/10 rounded-[2.5rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
                   {isFileReadAllowed ? (
                     <button onClick={() => handleRead(f)} className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4">
-                      <BookOpen size={16} strokeWidth={3} />{t.readOnline}
+                      {isAudioFormat(f)
+                        ? <><Headphones size={16} strokeWidth={3} />{t.listen}</>
+                        : <><BookOpen size={16} strokeWidth={3} />{t.readOnline}</>
+                      }
                     </button>
                   ) : (
                     isFileDownloadAllowed && (
@@ -2153,6 +2343,21 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             <button onClick={() => setPdfPage(p => Math.min(pdfTotalPages, p + pdfStep()))} disabled={pdfPage >= pdfTotalPages} className={`flex-1 max-w-[150px] py-4 flex items-center justify-center ${READER_CHROME[readerTheme].btn} disabled:opacity-30 rounded-2xl transition-all active:scale-95`}><ChevronRight size={26} /></button>
           </footer>
         </div>,
+        document.body
+      )}
+
+      {/* ── Audio Player (#29) ─────────────────────────────────────────────── */}
+      {activeAudioUrl && createPortal(
+        <AudioPlayerOverlay
+          url={activeAudioUrl}
+          itemId={item.id}
+          userId={userId}
+          title={pickText(item.title, lang)}
+          author={item.author}
+          coverSrc={coverSrc}
+          themeChrome={READER_CHROME[readerTheme]}
+          onClose={() => setActiveAudioUrl(null)}
+        />,
         document.body
       )}
     </div>

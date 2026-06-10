@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
+import createDOMPurify from 'dompurify';
 import pkg from 'pg';
 
 const execFileAsync = promisify(execFile);
@@ -325,12 +326,23 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'video/x-matroska',
   'audio/mpeg',
   'audio/mp3',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+  'audio/x-m4b',
+  'audio/ogg',
+  'audio/opus',
+  'audio/wav',
+  'audio/wave',
+  'audio/x-wav',
   'application/x-fictionbook+xml',
   'application/x-fictionbook',
 ]);
 
 const ALLOWED_EXTENSIONS = new Set([
-  '.pdf', '.epub', '.mp4', '.webm', '.mkv', '.mp3', '.fb2', '.djvu', '.djv',
+  '.pdf', '.epub', '.mp4', '.webm', '.mkv',
+  '.mp3', '.m4a', '.m4b', '.ogg', '.oga', '.opus', '.wav',
+  '.fb2', '.djvu', '.djv',
 ]);
 
 const fileStorage = multer.diskStorage({
@@ -468,7 +480,21 @@ app.get('/api/health', async (req, res) => {
 app.post('/api/admin/login', limitLogin, (req, res) => {
   const { password } = req.body || {};
   const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!adminPassword || password !== adminPassword) {
+  if (!adminPassword || typeof password !== 'string') {
+    return res.status(401).json({ error: 'Invalid password' });
+  }
+  // Constant-time compare so a botnet spread across many IPs can't extract
+  // the password one character at a time from response-time deltas. The
+  // length check up front is itself constant — buffers of different lengths
+  // can't be passed to timingSafeEqual, so we short-circuit with a fake
+  // compare of equal length to keep timing uniform across cases.
+  const a = Buffer.from(password);
+  const b = Buffer.from(adminPassword);
+  const lenMatch = a.length === b.length;
+  // Always run the compare to avoid leaking length via timing.
+  const padded = lenMatch ? a : Buffer.alloc(b.length);
+  const equal = timingSafeEqual(padded, b);
+  if (!lenMatch || !equal) {
     return res.status(401).json({ error: 'Invalid password' });
   }
   const apiKey = process.env.API_KEY;
@@ -955,21 +981,43 @@ const ARTICLE_CACHE_MAX = 200;
 const ARTICLE_FETCH_TIMEOUT = 12_000;
 const ARTICLE_MAX_BYTES = 4 * 1024 * 1024; // 4 MB raw HTML
 
-// Strip <script>/<style>/<iframe>/event handlers + javascript: hrefs.
-// Readability already removes most of this, but be paranoid since the HTML is
-// injected directly into the page.
-const sanitiseHtml = (html) => {
-  if (!html) return '';
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-    .replace(/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/gi, '')
-    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '')
-    .replace(/\son\w+="[^"]*"/gi, '')
-    .replace(/\son\w+='[^']*'/gi, '')
-    .replace(/href\s*=\s*"\s*javascript:[^"]*"/gi, 'href="#"')
-    .replace(/href\s*=\s*'\s*javascript:[^']*'/gi, "href='#'");
+// #24 — DOMPurify instead of regex. The previous regex sanitiser missed
+// unquoted attributes (`<img src=x onerror=alert(1)>`), SVG event handlers
+// (`<svg onload=...>` and `<animate onbegin=...>`), data: URIs hosting HTML,
+// and any nested-element variant that didn't match the exact pattern. CSP
+// blocks the resulting <script> at the browser level, but defence-in-depth
+// says don't ship known-broken sanitisation.
+// We run DOMPurify against a JSDOM window — it does the same node-walk
+// approach that browser-side DOMPurify uses, so the policy matches whatever
+// the React client would have enforced if it had run there itself.
+const purifyWindow = new JSDOM('').window;
+const DOMPurify = createDOMPurify(purifyWindow);
+// Conservative profile for article content: prose tags only, no inline
+// styles, no forms, http(s)/mailto/data:image links only.
+const PURIFY_CONFIG = {
+  ALLOWED_TAGS: [
+    'p', 'br', 'hr', 'div', 'span', 'blockquote', 'pre', 'code',
+    'a', 'strong', 'em', 'b', 'i', 'u', 's', 'sub', 'sup', 'mark',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+    'table', 'thead', 'tbody', 'tr', 'th', 'td', 'caption',
+    'img', 'figure', 'figcaption',
+  ],
+  ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'colspan', 'rowspan', 'lang'],
+  ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|data:image\/(?:png|jpe?g|gif|webp|svg\+xml);base64,)/i,
+  FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form', 'input', 'noscript'],
+  FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick', 'onmouseover'],
+  ALLOW_DATA_ATTR: false,
 };
+// Pin rel="noopener noreferrer" + target=_blank on outbound links so a
+// sanitised article opens externally without exposing window.opener.
+DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+  if (node.tagName === 'A' && node.getAttribute('href')) {
+    node.setAttribute('target', '_blank');
+    node.setAttribute('rel', 'noopener noreferrer');
+  }
+});
+const sanitiseHtml = (html) => (html ? DOMPurify.sanitize(html, PURIFY_CONFIG) : '');
 
 // ── SSRF defence for /api/article-extract ────────────────────────────────────
 // Any unauthenticated visitor can pass a URL — without these guards an
@@ -2045,6 +2093,38 @@ process.on('uncaughtException', (err) => {
 
 fs.mkdirSync(CONTENT_DIR, { recursive: true });
 
+// #23 — Retention sweep. Without this every error_log row from a hostile
+// client, every item_events INSERT and every visit_logs row lives forever:
+// disk usage grows unbounded and a single buggy month inflates the timeline
+// chart for years. Each table has a sensible retention window (default 90
+// days, tunable via env). Runs on boot + every 24h while the process is up
+// — cron-equivalent without an external scheduler.
+const RETENTION_DAYS = {
+  error_log:   parseInt(process.env.RETENTION_ERROR_LOG  || '90', 10),
+  item_events: parseInt(process.env.RETENTION_ITEM_EVENTS || '365', 10),
+  visit_logs:  parseInt(process.env.RETENTION_VISIT_LOGS  || '90',  10),
+};
+const RETENTION_COLUMN = { error_log: 'ts', item_events: 'timestamp', visit_logs: 'timestamp' };
+const runRetention = async () => {
+  for (const [table, days] of Object.entries(RETENTION_DAYS)) {
+    if (!Number.isInteger(days) || days <= 0) continue; // 0 / NaN disables the sweep
+    const col = RETENTION_COLUMN[table];
+    try {
+      const r = await pool.query(
+        `DELETE FROM ${table} WHERE ${col} < NOW() - ($1::int * INTERVAL '1 day')`,
+        [days],
+      );
+      if (r.rowCount > 0) console.log(`retention: ${table} pruned ${r.rowCount} rows older than ${days}d`);
+    } catch (e) {
+      // Table may not exist on a fresh install; logged once, swallowed.
+      console.warn(`retention: ${table}:`, e.message);
+    }
+  }
+};
+// Delay first sweep a few seconds so the DB pool is warm.
+setTimeout(() => { runRetention().catch(() => {}); }, 10_000);
+setInterval(() => { runRetention().catch(() => {}); }, 24 * 60 * 60 * 1000).unref?.();
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Library API :${PORT}  content=${CONTENT_DIR}`);
+  console.log(`Library API :${PORT}  content=${CONTENT_DIR}  retention=${JSON.stringify(RETENTION_DAYS)}`);
 });

@@ -29,6 +29,9 @@ import { getPdfThumbnail } from '../services/pdfThumb';
 import { getEpubThumbnail } from '../services/epubThumb';
 import TrackedVideoPlayer from '../components/TrackedVideoPlayer';
 import YouTubeTrackedPlayer from '../components/YouTubeTrackedPlayer';
+import RuTubeTrackedPlayer from '../components/RuTubeTrackedPlayer';
+import TwitchTrackedPlayer from '../components/TwitchTrackedPlayer';
+import VKTrackedPlayer from '../components/VKTrackedPlayer';
 
 type ReaderTheme = 'default' | 'night' | 'sepia';
 
@@ -1262,18 +1265,24 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     // duration (no Data API key required). Same row schema as books.
     const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
     if (ytMatch) return <YouTubeTrackedPlayer videoId={ytMatch[1]} url={url} userId={userId} itemId={item.id} />;
+    // RuTube: postMessage-based progress (player:currentTime / setCurrentTime).
     const rtMatch = url.match(/rutube\.ru\/video\/([a-z0-9]+)/i);
-    if (rtMatch) return <iframe width="100%" height="100%" src={`https://rutube.ru/play/embed/${rtMatch[1]}`} frameBorder="0" allowFullScreen></iframe>;
+    if (rtMatch) return <RuTubeTrackedPlayer videoId={rtMatch[1]} url={url} userId={userId} itemId={item.id} />;
+    // Twitch VODs: official JS SDK exposes getCurrentTime/getDuration/seek.
     const twVod = url.match(/twitch\.tv\/videos\/(\d+)/i);
-    if (twVod) return <iframe width="100%" height="100%" src={`https://player.twitch.tv/?video=${twVod[1]}&parent=${host}&autoplay=false`} frameBorder="0" allowFullScreen></iframe>;
+    if (twVod) return <TwitchTrackedPlayer videoId={twVod[1]} url={url} userId={userId} itemId={item.id} />;
+    // Twitch clips / live channels: no meaningful "progress" to track —
+    // keep the raw embed.
     const twClip = url.match(/clips\.twitch\.tv\/([a-zA-Z0-9_-]+)/i);
     if (twClip) return <iframe width="100%" height="100%" src={`https://clips.twitch.tv/embed?clip=${twClip[1]}&parent=${host}`} frameBorder="0" allowFullScreen></iframe>;
     const twCh = url.match(/twitch\.tv\/([a-zA-Z0-9_]+)\/?$/i);
     if (twCh) return <iframe width="100%" height="100%" src={`https://player.twitch.tv/?channel=${twCh[1]}&parent=${host}&autoplay=false`} frameBorder="0" allowFullScreen></iframe>;
+    // VK Video: best-effort postMessage listener — protocol isn't publicly
+    // documented, so we scan messages defensively for time/duration/state.
     const vkExt = url.match(/vk(?:video)?\.(?:com|ru)\/video_ext\.php/i);
-    if (vkExt) return <iframe width="100%" height="100%" src={url} frameBorder="0" allowFullScreen></iframe>;
+    if (vkExt) return <VKTrackedPlayer src={url} url={url} userId={userId} itemId={item.id} />;
     const vkMatch = url.match(/vk(?:video)?\.(?:com|ru)\/(?:.*?)video(-?\d+)_(\d+)/i);
-    if (vkMatch) return <iframe width="100%" height="100%" src={`https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2`} frameBorder="0" allowFullScreen></iframe>;
+    if (vkMatch) return <VKTrackedPlayer src={`https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2`} url={url} userId={userId} itemId={item.id} />;
     // Direct files: tracked <video> that saves currentTime every 5s and seeds
     // the duration cache on loadedmetadata.
     if (/\.(mp4|webm|ogg|mov)$/i.test(url)) return <TrackedVideoPlayer url={url} userId={userId} itemId={item.id} poster={item.coverUrl} />;

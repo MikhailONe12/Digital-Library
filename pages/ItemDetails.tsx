@@ -1305,18 +1305,24 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const nextInSeries = currentSeriesIdx >= 0 && currentSeriesIdx < seriesSiblings.length - 1
     ? seriesSiblings[currentSeriesIdx + 1] : null;
 
-  // Other books by the same author — case-insensitive, trimmed. Capped at 12
-  // since this is a horizontal strip; user always has the full list via the
-  // clickable author name → home page with the author filter pre-applied.
+  // Other books by the same author — case-insensitive, trimmed. Capped at
+  // 12 since this is a horizontal strip; user always has the full list via
+  // the clickable author name → home page with the author filter pre-applied.
+  // With co-authors the test is "do the two items share ANY author" so a
+  // collaborator's solo work also surfaces in the strip.
   const authorSiblings = useMemo<MediaItem[]>(() => {
-    const a = (item.author || '').trim().toLowerCase();
-    if (!a) return [];
+    const authorsOf = (i: MediaItem): string[] => {
+      const list = (i.authors && i.authors.length) ? i.authors : [i.author];
+      return list.map(s => (s || '').trim().toLowerCase()).filter(Boolean);
+    };
+    const mine = new Set(authorsOf(item));
+    if (mine.size === 0) return [];
     const all = getDb().items || [];
     return all
-      .filter(i => i.id !== item.id && (i.author || '').trim().toLowerCase() === a)
+      .filter(i => i.id !== item.id && authorsOf(i).some(a => mine.has(a)))
       .sort((x, y) => new Date(y.publishedDate || 0).getTime() - new Date(x.publishedDate || 0).getTime())
       .slice(0, 12);
-  }, [item.id, item.author]);
+  }, [item.id, item.author, item.authors]);
 
   // Article extraction — fetch when activeArticle becomes non-null.
   useEffect(() => {
@@ -1759,21 +1765,33 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
         <div className="grid grid-cols-2 gap-4 mt-6">
           <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">
             <div className="flex items-center gap-3 mb-1"><User size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.author}</p></div>
-            {item.author?.trim() && onOpenAuthor ? (
-              <button
-                type="button"
-                onClick={() => onOpenAuthor(item.author.trim())}
-                className="group w-full text-left flex items-start gap-1.5 active:scale-[0.98] transition-transform"
-                title={t.viewAllByAuthor}
-              >
-                <span className="text-sm font-black break-words leading-tight text-red-600 dark:text-red-400 tracking-tight underline decoration-red-300/60 dark:decoration-red-500/40 underline-offset-2 decoration-2 group-active:decoration-red-600">
-                  {item.author}
-                </span>
-                <ChevronRight size={14} strokeWidth={3} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5 transition-transform group-active:translate-x-0.5" />
-              </button>
-            ) : (
-              <p className="text-sm font-black break-words leading-tight text-slate-900 dark:text-white tracking-tight">{item.author || '—'}</p>
-            )}
+            {(() => {
+              // Prefer the multi-author array when present; fall back to the
+              // single-string field for legacy items. Each author renders as
+              // its own deep link so tapping any co-author drills into "more
+              // by this person", not just the primary.
+              const list = (item.authors && item.authors.length) ? item.authors : (item.author ? [item.author] : []);
+              if (list.length === 0) return <p className="text-sm font-black break-words leading-tight text-slate-900 dark:text-white tracking-tight">—</p>;
+              if (!onOpenAuthor) return <p className="text-sm font-black break-words leading-tight text-slate-900 dark:text-white tracking-tight">{list.join(', ')}</p>;
+              return (
+                <div className="flex flex-col gap-1.5">
+                  {list.map((a, i) => (
+                    <button
+                      key={`${a}-${i}`}
+                      type="button"
+                      onClick={() => onOpenAuthor(a.trim())}
+                      className="group w-full text-left flex items-start gap-1.5 active:scale-[0.98] transition-transform"
+                      title={t.viewAllByAuthor}
+                    >
+                      <span className="text-sm font-black break-words leading-tight text-red-600 dark:text-red-400 tracking-tight underline decoration-red-300/60 dark:decoration-red-500/40 underline-offset-2 decoration-2 group-active:decoration-red-600">
+                        {a}
+                      </span>
+                      <ChevronRight size={14} strokeWidth={3} className="text-red-600 dark:text-red-400 shrink-0 mt-0.5 transition-transform group-active:translate-x-0.5" />
+                    </button>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
           <div className="bg-white/60 dark:bg-[#1c1c1e] backdrop-blur-md p-5 rounded-3xl border border-white dark:border-white/10 shadow-sm">
             <div className="flex items-center gap-3 mb-1"><Calendar size={14} className="text-red-600" /><p className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest">{t.published}</p></div>

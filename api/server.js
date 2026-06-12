@@ -905,7 +905,7 @@ app.delete('/api/upload/:itemId',
 const DEFAULT_SETTINGS = {
   allowedUsers: [],
   blacklist: [],
-  customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'COURSE'],
+  customTypes: ['BOOK', 'ARTICLE', 'JOURNAL', 'VIDEO', 'AUDIO', 'COURSE'],
   defaultLanguage: 'ru',
   globalAccess: false,
   // Identifiers whose visits / item events should NOT be counted in

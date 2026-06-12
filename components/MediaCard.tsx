@@ -142,14 +142,27 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
         )}
       </div>
 
-      <div className="px-3.5 py-2.5 bg-white dark:bg-[#1c1c1e] flex items-center justify-between">
-        <div className="flex items-center gap-1">
+      <div className="px-3.5 py-2.5 bg-white dark:bg-[#1c1c1e] flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1 shrink-0">
           <Star size={12} className="text-amber-400" fill="currentColor" />
           <span className="text-xs text-slate-900 dark:text-slate-100 font-semibold tracking-tight">{item.rating}</span>
         </div>
-        <span className="text-xs text-slate-400 dark:text-slate-500 font-normal truncate max-w-[90px]">
-            {item.author.split(' ')[0]}
-        </span>
+        {/* Primary author, full name. When the item has co-authors we append
+            "+N" so the card signals "this isn't the only author" without
+            stealing space from the title row above. */}
+        <div className="flex items-center gap-1 min-w-0 justify-end">
+          <span className="text-xs text-slate-400 dark:text-slate-500 font-normal truncate">
+            {item.authors && item.authors.length ? item.authors[0] : item.author}
+          </span>
+          {item.authors && item.authors.length > 1 && (
+            <span
+              className="shrink-0 text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-white/[0.08] px-1.5 py-0.5 rounded-md"
+              title={item.authors.slice(1).join(', ')}
+            >
+              +{item.authors.length - 1}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

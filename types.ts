@@ -52,7 +52,19 @@ export interface MediaItem {
   coverUrl: string;
   type: string; // Dynamic type
   rating: number;
+  /**
+   * Primary author name (free text). Kept as a non-optional string for
+   * backward compatibility with all the existing read sites (search,
+   * deep-link, item cards). `author === authors[0]` is maintained as an
+   * invariant by `normalizeItem`.
+   */
   author: string;
+  /**
+   * Full ordered list of co-authors. Optional because legacy items only had
+   * the single `author` string; `normalizeItem` synthesises a one-element
+   * array when missing so downstream code can rely on its presence.
+   */
+  authors?: string[];
   publishedDate: string; // When the content was originally released (e.g. book release year)
   addedDate: string;     // When the content was added to THIS library (ISO String)
   formats: FileFormat[];

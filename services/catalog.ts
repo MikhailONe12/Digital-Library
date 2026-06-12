@@ -69,7 +69,11 @@ export const scoreItem = (
   if (!cleanNeedle) return 0;
 
   const title = normalizeText(pickText(item.title, lang));
-  const author = normalizeText(item.author || '');
+  // Search across every co-author, not just the primary one — typing a
+  // second author's name should still surface the item.
+  const author = normalizeText(
+    (item.authors && item.authors.length ? item.authors.join(' ') : item.author) || '',
+  );
   const desc = normalizeText(pickText(item.description, lang, ''));
   const tagsText = (item.tags || []).map(t => normalizeText(t)).join(' ');
 

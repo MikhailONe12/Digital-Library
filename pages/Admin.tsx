@@ -17,7 +17,9 @@ import {
 } from 'recharts';
 import { pickText } from '../utils';
 import CardCover from '../components/CardCover';
+import AuthorsEditor from '../components/AuthorsEditor';
 import { toast } from '../services/toast';
+import { Search as SearchIcon } from 'lucide-react';
 
 interface AdminProps {
   onBack: () => void;
@@ -40,6 +42,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   // ("2021"). The mode is derived from the stored value whenever a different
   // item is opened, then toggled manually by the admin.
   const [pubDateMode, setPubDateMode] = useState<'date' | 'year'>('date');
+  // Items-list controls on the admin "Add content" tab: text search across
+  // localized title + author list, and a type chip filter. Both compose so
+  // the admin can locate an item without scrolling a 300-row list.
+  const [adminItemSearch, setAdminItemSearch] = useState('');
+  const [adminItemTypeFilter, setAdminItemTypeFilter] = useState<string>('ALL');
   useEffect(() => {
     if (!editingItem) return;
     setPubDateMode(/^\d{4}$/.test(editingItem.publishedDate || '') ? 'year' : 'date');
@@ -237,6 +244,29 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   }, [db]);
 
   // Traffic & Security Analytics
+  // Items-list filter for the "Add content" tab. Search matches localized
+  // title + every co-author, diacritics-insensitive. Default sort is newest-
+  // added first so freshly imported items surface at the top.
+  const adminFilteredItems = useMemo(() => {
+    const norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const q = norm(adminItemSearch.trim());
+    let list = db.items.slice();
+    if (adminItemTypeFilter !== 'ALL') list = list.filter(i => i.type === adminItemTypeFilter);
+    if (q) {
+      list = list.filter(i => {
+        const title = norm(pickText(i.title, lang));
+        const authors = norm((i.authors && i.authors.length ? i.authors.join(' ') : i.author) || '');
+        return title.includes(q) || authors.includes(q);
+      });
+    }
+    list.sort((a, b) => {
+      const ta = a.addedDate ? new Date(a.addedDate).getTime() : 0;
+      const tb = b.addedDate ? new Date(b.addedDate).getTime() : 0;
+      return tb - ta;
+    });
+    return list;
+  }, [db.items, adminItemSearch, adminItemTypeFilter, lang]);
+
   const trafficStats = useMemo(() => {
     const now = new Date();
     const oneDay = 24 * 60 * 60 * 1000;
@@ -330,11 +360,21 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
         return;
       }
 
+      // Authors handling: `authors[]` is canonical, `author` is the
+      // derived primary used by every legacy read site (search, card,
+      // deep-link). Keep both in sync at save time so a downgrade still
+      // finds the primary name on the flat field.
+      const rawAuthors = (editingItem.authors && editingItem.authors.length)
+        ? editingItem.authors
+        : (editingItem.author ? [editingItem.author] : []);
+      const cleanedAuthors = rawAuthors.map(a => (a || '').trim()).filter(Boolean);
+      const primaryAuthor = cleanedAuthors[0] || 'Anonymous';
       const itemToSave = {
         ...editingItem,
         id: editingItem.id || Date.now().toString(),
         rating: editingItem.rating || 0,
-        author: editingItem.author || 'Anonymous',
+        author: primaryAuthor,
+        authors: cleanedAuthors.length ? cleanedAuthors : [primaryAuthor],
         publishedDate: editingItem.publishedDate || new Date().toISOString().split('T')[0],
         addedDate: editingItem.addedDate || new Date().toISOString(),
         views: editingItem.views || 0,
@@ -1555,7 +1595,88 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                                                   {e.username ? ` · @${e.username}` : ''} </p> </div> </button> {expandedError === e.id && ( <div className="px-3 pb-3 space-y-2 border-t border-slate-100 dark:border-white/[0.08] pt-2"> {e.url && <p className="text-[9px] text-slate-500 dark:text-slate-400 break-all"><b>URL:</b> {e.url}</p>} {e.user_agent && <p className="text-[9px] text-slate-400 break-all">{e.user_agent}</p>} {e.stack && ( <pre className="text-[8px] text-slate-600 bg-slate-50 dark:bg-black/40 rounded-lg p-2 overflow-x-auto whitespace-pre-wrap break-words max-h-48">{e.stack}</pre> )} </div> )} </div> ))} </div> )} </div> {/* Export */} <div className="p-5 md:p-6 bg-amber-50 rounded-3xl border border-amber-200"> <h4 className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-2"> <Database size={14} /> {ta.exportTitle} </h4> <p className="text-[9px] text-amber-600 font-bold mb-4"> {ta.exportDesc} </p> <label className="text-[8px] font-black uppercase text-amber-700 tracking-widest ml-1"> {ta.exportConfirmLabel} </label> <div className="flex gap-2 mt-1"> <input className="flex-1 min-w-0 bg-white border border-amber-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-amber-500 outline-none" placeholder={ta.exportWord} value={exportConfirm} onChange={e => setExportConfirm(e.target.value)} /> <button onClick={handleExportJson} disabled={exportConfirm !== ta.exportWord} className="px-5 bg-amber-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95" > {ta.exportButton} </button> </div> </div> {/* Import */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-200"> <h4 className="text-[10px] font-black text-red-700 uppercase tracking-widest mb-1 flex items-center gap-2"> <Upload size={14} /> {ta.importTitle} </h4> <p className="text-[9px] text-red-600 font-bold mb-4"> {ta.importDesc} </p> <textarea className="w-full h-28 bg-white border border-red-200 rounded-2xl p-4 text-[10px] font-mono mb-3 focus:border-red-600 outline-none" placeholder={ta.importPlaceholder} value={importJson} onChange={e => setImportJson(e.target.value)} /> <label className="text-[8px] font-black uppercase text-red-700 tracking-widest ml-1"> {ta.importConfirmLabel} </label> <div className="flex gap-2 mt-1"> <input className="flex-1 min-w-0 bg-white border border-red-200 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" placeholder={ta.rewriteWord} value={importConfirm} onChange={e => setImportConfirm(e.target.value)} /> <button onClick={handleImportJson} disabled={importConfirm !== ta.rewriteWord || !importJson.trim()} className="px-5 bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 transition-all active:scale-95" > {ta.importButton} </button> </div> </div> </div> </div> </div> )} {activeTab ==='items' && (
            <div className="space-y-6">
                <button 
-                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0]?.id || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })} className="w-full py-4 bg-red-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-xs shadow-xl shadow-red-200 flex items-center justify-center gap-2" > <Plus size={18} /> {t.addContent} </button> <div className="space-y-3"> {db.items.map(i => ( <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] flex items-center justify-between shadow-sm"> <div className="flex items-center gap-4 overflow-hidden"> <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 dark:bg-black/40 shrink-0 group"> <CardCover item={i} lang={lang} /> </div> <div className="min-w-0"> <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">{pickText(i.title, lang)}</h4> <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{i.type}</span> </div> </div> <div className="flex gap-2"> <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><Edit2 size={16}/></button> <button onClick={() => setItemToDelete(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button> </div> </div> ))} </div> </div> )} {activeTab ==='types'&& ( <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm"> <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3> {/* Add new category */} <div className="p-4 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 mb-6 space-y-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{t.addCategory}</p> <div className="grid grid-cols-3 gap-2"> {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{l.toUpperCase()}</label> <input type="text" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/[0.08] rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none" value={newTypeLabels[l]} onChange={e => { const val = e.target.value; typedLangsRef.current.add(l); setNewTypeLabels(prev => { const next = { ...prev, [l]: val }; (['en', 'ru', 'es'] as const).forEach(other => {
+                  onClick={() => setEditingItem({ id: Date.now().toString(), type: db.customTypes[0]?.id || 'BOOK', isPrivate: false, formats: [], title: {en:'',ru:'',es:''}, description: {en:'',ru:'',es:''}, author: '', publishedDate: new Date().toISOString().split('T')[0], contentLanguages: ['en'], allowDownload: true, allowReading: true })} className="w-full py-4 bg-red-600 text-white rounded-[2rem] font-black uppercase tracking-[0.3em] text-xs shadow-xl shadow-red-200 flex items-center justify-center gap-2" > <Plus size={18} /> {t.addContent} </button>
+
+              {/* Search + type filter — with hundreds of items the unfiltered
+                  list was a haystack. Search scans the localized title plus
+                  the primary/secondary authors; the type chip row narrows
+                  by content kind. Both compose with the visible row count
+                  shown next to the type label. */}
+              <div className="space-y-3">
+                <div className="relative">
+                  <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={15} aria-hidden="true" />
+                  <input
+                    type="text"
+                    value={adminItemSearch}
+                    onChange={(e) => setAdminItemSearch(e.target.value)}
+                    placeholder={ta.itemSearchPh}
+                    className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] rounded-2xl py-3 pl-11 pr-10 text-xs font-bold focus:outline-none focus:border-red-500 transition-colors"
+                  />
+                  {adminItemSearch && (
+                    <button
+                      onClick={() => setAdminItemSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-slate-100 dark:hover:bg-white/10"
+                      aria-label={t.clearSearch || 'Clear'}
+                    >
+                      <X size={13} strokeWidth={2.5} />
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                  <button
+                    onClick={() => setAdminItemTypeFilter('ALL')}
+                    className={`shrink-0 px-4 h-8 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${adminItemTypeFilter === 'ALL' ? 'bg-red-600 text-white' : 'bg-white dark:bg-[#1c1c1e] text-slate-500 border border-slate-200 dark:border-white/[0.08]'}`}
+                  >
+                    {t.all} · {db.items.length}
+                  </button>
+                  {db.customTypes.map(tp => {
+                    const n = db.items.filter(it => it.type === tp.id).length;
+                    if (n === 0) return null;
+                    const active = adminItemTypeFilter === tp.id;
+                    return (
+                      <button
+                        key={tp.id}
+                        onClick={() => setAdminItemTypeFilter(tp.id)}
+                        className={`shrink-0 px-4 h-8 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-red-600 text-white' : 'bg-white dark:bg-[#1c1c1e] text-slate-500 border border-slate-200 dark:border-white/[0.08]'}`}
+                      >
+                        {tp[lang] || tp.en || tp.id} · {n}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {adminFilteredItems.length === 0 && (
+                  <p className="text-center py-12 text-[10px] font-black uppercase text-slate-300 dark:text-slate-600 tracking-widest">{t.noResults || 'No results'}</p>
+                )}
+                {adminFilteredItems.map((i, idx) => (
+                  <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] flex items-center justify-between shadow-sm">
+                    <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                      <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 tabular-nums w-7 text-right shrink-0">{idx + 1}.</span>
+                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 dark:bg-black/40 shrink-0 group">
+                        <CardCover item={i} lang={lang} />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">{pickText(i.title, lang)}</h4>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          <span className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">{i.type}</span>
+                          {i.addedDate && (
+                            <span className="text-[8px] font-bold text-slate-300 dark:text-slate-600 tabular-nums">
+                              {new Date(i.addedDate).toLocaleDateString(lang === 'en' ? 'en-US' : lang === 'es' ? 'es-ES' : 'ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><Edit2 size={16}/></button>
+                      <button onClick={() => setItemToDelete(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div> )} {activeTab ==='types'&& ( <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm"> <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3> {/* Add new category */} <div className="p-4 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 mb-6 space-y-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{t.addCategory}</p> <div className="grid grid-cols-3 gap-2"> {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{l.toUpperCase()}</label> <input type="text" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/[0.08] rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none" value={newTypeLabels[l]} onChange={e => { const val = e.target.value; typedLangsRef.current.add(l); setNewTypeLabels(prev => { const next = { ...prev, [l]: val }; (['en', 'ru', 'es'] as const).forEach(other => {
                             if (other !== l && !typedLangsRef.current.has(other)) next[other] = val;
                           });
                           return next;
@@ -1589,7 +1710,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                 <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.descriptionsLabel}</p>
                 <div className="space-y-3">
                   {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{l} {ta.descriptionWord}</label> <textarea rows={3} className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-medium focus:border-red-600 outline-none resize-none" value={editingItem.description?.[l] ||''}
-                        onChange={e => setEditingItem({...editingItem, description: {...(editingItem.description || {en:'',ru:'',es:''}), [l]: e.target.value}})} /> </div> ))} </div> </div> {/* Info */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.basics}</p> <div className="space-y-3"> <div className="flex gap-3"> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.typeLabel}</label> <select className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.type ||''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}> {db.customTypes.map(tp => <option key={tp.id} value={tp.id}>{tp[lang] || tp.ru || tp.en}</option>)} </select> </div> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.authorLabel}</label> <input type="text" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.author ||''} onChange={e => setEditingItem({...editingItem, author: e.target.value})} /> </div> </div> <div className="flex flex-col sm:flex-row gap-3"> <div className="flex-1"> <div className="flex items-center justify-between ml-2 mb-1"> <label className="text-[8px] font-black uppercase text-slate-400">{ta.pubDate}</label> <div className="flex gap-0.5 bg-slate-100 dark:bg-white/[0.06] rounded-lg p-0.5"> <button type="button" onClick={() => { setPubDateMode('date');
+                        onChange={e => setEditingItem({...editingItem, description: {...(editingItem.description || {en:'',ru:'',es:''}), [l]: e.target.value}})} /> </div> ))} </div> </div> {/* Info */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.basics}</p> <div className="space-y-3"> <div className="flex gap-3"> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.typeLabel}</label> <select className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.type ||''} onChange={e => setEditingItem({...editingItem, type: e.target.value})}> {db.customTypes.map(tp => <option key={tp.id} value={tp.id}>{tp[lang] || tp.ru || tp.en}</option>)} </select> </div> <div className="flex-1"> <AuthorsEditor label={ta.authorLabel} placeholder={ta.authorPlaceholder} authors={editingItem.authors && editingItem.authors.length ? editingItem.authors : (editingItem.author ? [editingItem.author] : [])} onChange={(authors) => setEditingItem({ ...editingItem, authors, author: authors[0] || '' })} /> </div> </div> <div className="flex flex-col sm:flex-row gap-3"> <div className="flex-1"> <div className="flex items-center justify-between ml-2 mb-1"> <label className="text-[8px] font-black uppercase text-slate-400">{ta.pubDate}</label> <div className="flex gap-0.5 bg-slate-100 dark:bg-white/[0.06] rounded-lg p-0.5"> <button type="button" onClick={() => { setPubDateMode('date');
                               const v = editingItem.publishedDate || '';
                               const next = /^\d{4}$/.test(v) ? `${v}-01-01` : (v || new Date().toISOString().split('T')[0]);
                               setEditingItem({ ...editingItem, publishedDate: next });

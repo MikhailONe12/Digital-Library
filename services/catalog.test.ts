@@ -82,6 +82,18 @@ describe('search', () => {
     expect(filterAndSortItems(all, baseQuery({ searchQuery: 'herbert', searchField: 'title' }))).toHaveLength(0);
     expect(filterAndSortItems(all, baseQuery({ searchQuery: 'herbert', searchField: 'author' })).map(i => i.id)).toEqual(['dune']);
   });
+
+  it('matches any co-author, not just the primary one', () => {
+    const collab = item({
+      id: 'collab',
+      title: { en: 'Foundation', ru: '', es: '' },
+      author: 'Asimov',
+      authors: ['Asimov', 'Silverberg'],
+    });
+    const solo = item({ id: 'solo', title: { en: 'Hyperion', ru: '', es: '' }, author: 'Simmons' });
+    const res = filterAndSortItems([collab, solo], baseQuery({ searchQuery: 'silverberg' }));
+    expect(res.map(i => i.id)).toEqual(['collab']);
+  });
 });
 
 describe('smart search', () => {

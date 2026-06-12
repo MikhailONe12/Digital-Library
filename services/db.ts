@@ -30,6 +30,7 @@ const emptyState = (): AppState => ({
     { id: 'ARTICLE', en: 'Article', ru: 'Статья',  es: 'Artículo' },
     { id: 'JOURNAL', en: 'Journal', ru: 'Журнал',  es: 'Журнал' },
     { id: 'VIDEO',   en: 'Video',   ru: 'Видео',   es: 'Vídeo' },
+    { id: 'AUDIO',   en: 'Audio',   ru: 'Аудио',   es: 'Audio' },
     { id: 'COURSE',  en: 'Course',  ru: 'Курс',    es: 'Curso' },
   ],
   defaultLanguage: 'ru',
@@ -48,6 +49,23 @@ let progressCache: Record<string, Record<string, ReadingProgress>> = {};
 
 // ── Item normalization (backward compatibility) ──────────────────────────────
 
+// Keep `author` (string) and `authors` (string[]) consistent. Old items
+// only carry `author`; new ones can store either. We treat `authors` as the
+// canonical full list and `author === authors[0]` as a derived display
+// field — every site that reads `item.author` (search, deep-link, badges)
+// keeps working unchanged.
+const reconcileAuthors = (item: any): { author: string; authors: string[] } => {
+  const fromArray = Array.isArray(item.authors)
+    ? item.authors.map((s: any) => String(s || '').trim()).filter(Boolean)
+    : null;
+  if (fromArray && fromArray.length > 0) {
+    return { author: fromArray[0], authors: fromArray };
+  }
+  const single = String(item.author || '').trim();
+  if (single) return { author: single, authors: [single] };
+  return { author: '', authors: [] };
+};
+
 const normalizeItem = (item: any): MediaItem => ({
   ...item,
   contentLanguages: item.contentLanguages || ['en'],
@@ -57,6 +75,7 @@ const normalizeItem = (item: any): MediaItem => ({
   views: item.views || 0,
   downloads: item.downloads || 0,
   rating: item.rating || 0,
+  ...reconcileAuthors(item),
   formats: (item.formats || []).map((f: any) => ({
     ...f,
     allowDownload: f.allowDownload !== undefined ? f.allowDownload : true,

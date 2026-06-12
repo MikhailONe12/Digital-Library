@@ -483,20 +483,22 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={continueScrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-proximity"
+            className="flex gap-3 overflow-x-auto pb-7 no-scrollbar snap-x snap-proximity"
           >
             {continueItems.map(({ item, pct }) => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                /* Soft, *contained* shadow: the negative spread (-8px) keeps
-                   it narrower than the card so neighbours' shadows never touch
-                   — that's what stops a row of equal-height tiles from fusing
-                   into one continuous dark band along the bottom (the "framed
-                   block" look). No 1px border, which was the crisp edge that
-                   made them read as separated panels. Hover lifts the shadow
-                   and the image zooms (group-hover on CardCover). */
-                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_8px_18px_-8px_rgba(0,0,0,0.22)] hover:shadow-[0_16px_30px_-10px_rgba(0,0,0,0.30)] active:scale-[0.97] transition-all duration-300"
+                /* Apple-style two-layer drop shadow. Layer 1 is a 1px contact
+                   shadow directly under the card (gives the "press" sense
+                   without a visible band). Layer 2 is the lift: large blur
+                   (32px), strong negative spread (-16px) and modest opacity,
+                   so the shadow's bottom doesn't end at a defined cutoff —
+                   the Gaussian tail fades into the page background. The
+                   parent scroll container's pb-7 gives the tail breathing
+                   room so it doesn't read as a horizontal "section floor".
+                   Hover deepens both layers. Group powers cover zoom. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_32px_-16px_rgba(0,0,0,0.18)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_28px_48px_-18px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   {/* CardCover lazily derives a thumbnail from the first PDF/EPUB
@@ -559,16 +561,17 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={newScrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-proximity"
+            className="flex gap-3 overflow-x-auto pb-7 no-scrollbar snap-x snap-proximity"
           >
             {newItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                /* Same contained soft shadow + hover lift as the Continue
-                   shelf; `group` here restores the cover zoom on hover that
-                   the New cards had lost. */
-                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_8px_18px_-8px_rgba(0,0,0,0.22)] hover:shadow-[0_16px_30px_-10px_rgba(0,0,0,0.30)] active:scale-[0.97] transition-all duration-300"
+                /* Same two-layer Apple-style shadow as Continue — see comment
+                   there. `group` restores the cover zoom on hover, `pb-7`
+                   on the scroll container gives the Gaussian tail room to
+                   fade so there's no defined "floor" under the row. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_32px_-16px_rgba(0,0,0,0.18)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_28px_48px_-18px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>

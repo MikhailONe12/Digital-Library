@@ -1,5 +1,5 @@
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
@@ -33,6 +33,64 @@ interface HomeProps {
   t: any;
   onSecretAdminTrigger?: () => void;
 }
+
+// Click-and-drag horizontal scrolling for the Home shelves. Touch already
+// works via native swipe; without this, desktop / mouse users have no way to
+// move the strip (no-scrollbar hides the scrollbar). Suppresses the
+// following click event when the pointer actually moved, so dragging across
+// a card doesn't accidentally open it.
+const useDragScroll = () => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let isDown = false;
+    let startX = 0;
+    let scrollLeft = 0;
+    let moved = false;
+    const onDown = (e: MouseEvent) => {
+      if (e.button !== 0) return;
+      isDown = true;
+      moved = false;
+      startX = e.pageX - el.offsetLeft;
+      scrollLeft = el.scrollLeft;
+      el.style.cursor = 'grabbing';
+    };
+    const stop = () => {
+      isDown = false;
+      el.style.cursor = 'grab';
+    };
+    const onMove = (e: MouseEvent) => {
+      if (!isDown) return;
+      e.preventDefault();
+      const x = e.pageX - el.offsetLeft;
+      const walk = x - startX;
+      if (Math.abs(walk) > 4) moved = true;
+      el.scrollLeft = scrollLeft - walk;
+    };
+    const onClickCapture = (e: MouseEvent) => {
+      if (moved) {
+        e.stopPropagation();
+        e.preventDefault();
+        moved = false;
+      }
+    };
+    el.style.cursor = 'grab';
+    el.addEventListener('mousedown', onDown);
+    el.addEventListener('mouseleave', stop);
+    el.addEventListener('mouseup', stop);
+    el.addEventListener('mousemove', onMove);
+    el.addEventListener('click', onClickCapture, true);
+    return () => {
+      el.removeEventListener('mousedown', onDown);
+      el.removeEventListener('mouseleave', stop);
+      el.removeEventListener('mouseup', stop);
+      el.removeEventListener('mousemove', onMove);
+      el.removeEventListener('click', onClickCapture, true);
+    };
+  }, []);
+  return ref;
+};
 
 const Home: React.FC<HomeProps> = ({
   items, allItems, onOpenItem, searchQuery, setSearchQuery,
@@ -68,15 +126,23 @@ const Home: React.FC<HomeProps> = ({
   // category — this is the replacement for the old "Новинки" filter chip.
   const newItems = useMemo(() => selectNewArrivals(allItems), [allItems]);
 
-  // The shelves are only meaningful on the default view — once the user is
-  // filtering or searching, the shelves would just duplicate (or contradict)
-  // the grid below. Same guard used by the empty-state message.
+  // Default Home — shelves only, no main grid. The user reaches the full
+  // catalog grid by opting in via the "Все" chip (category='ALL') or by
+  // picking a specific type / scope / filter. Empty-string category is the
+  // new "no chip selected" sentinel — same query semantics as 'ALL', but
+  // distinct in the UI so we know whether to show the grid.
   const isDefaultView =
     scope === 'LIBRARY' &&
-    category === 'ALL' &&
+    !category &&
     !searchQuery.trim() &&
     contentLangFilter.length === 0 &&
     tagFilter.length === 0;
+
+  // Refs for drag-scrolling each shelf with the mouse (touch already works
+  // via the browser's native swipe). Separate refs so dragging one shelf
+  // doesn't drag the other.
+  const continueScrollRef = useDragScroll();
+  const newScrollRef = useDragScroll();
 
   // All unique tags across the visible catalog — for the filter chip list.
   const availableTags = useMemo(() => {
@@ -361,10 +427,13 @@ const Home: React.FC<HomeProps> = ({
       </div>
 
       {/* Category row — content-type axis. Pure type filter; no personal-
-          collection chips here any more, and no NEW (that's now a shelf). */}
+          collection chips here any more, and no NEW (that's now a shelf).
+          The "Все" chip now toggles between the shelves-only Home (no chip)
+          and the full catalog grid (chip on) — the same affordance the
+          New-arrivals shelf's "Show all →" routes through. */}
       <div className="flex gap-2.5 overflow-x-auto pb-8 mt-1 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
         <button
-          onClick={() => setCategory('ALL')}
+          onClick={() => setCategory(category === 'ALL' ? '' : 'ALL')}
           className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
             category === 'ALL'
             ? 'bg-red-600 text-white'
@@ -398,7 +467,10 @@ const Home: React.FC<HomeProps> = ({
             <span className="w-6 h-[2px] bg-red-600" />
             {t.continueReading}
           </h2>
-          <div className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory">
+          <div
+            ref={continueScrollRef}
+            className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory"
+          >
             {continueItems.map(({ item, pct }) => (
               <button
                 key={item.id}
@@ -450,15 +522,24 @@ const Home: React.FC<HomeProps> = ({
             <span>{t.new}</span>
             <button
               onClick={() => {
+                // Activate the "Все" chip — that's what brings the catalog
+                // grid into view; sortBy stays at whatever the user picked
+                // (already 'recent' by default, so new arrivals lead).
+                setCategory('ALL');
                 setSortBy('recent');
-                gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                // After the chip activates and the grid mounts, scroll to it.
+                // setTimeout so the layout has run before we measure.
+                setTimeout(() => gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
               }}
               className="inline-flex items-center gap-1 text-[10px] font-bold tracking-widest text-red-600 dark:text-red-400 hover:underline normal-case"
             >
               {t.showAll} →
             </button>
           </h2>
-          <div className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory">
+          <div
+            ref={newScrollRef}
+            className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory"
+          >
             {newItems.map(item => (
               <button
                 key={item.id}
@@ -491,28 +572,37 @@ const Home: React.FC<HomeProps> = ({
         </div>
       )}
 
-      <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
-        {items.map(item => (
-          <MediaCard
-            key={item.id}
-            item={{...item, rating: getAverageRating(item.id)}}
-            onClick={() => onOpenItem(item)}
-            lang={lang}
-            isFavorited={isFavorited(userId, item.id)}
-            progress={getProgressPercent(item.id)}
-          />
-        ))}
-      </div>
+      {/* Catalog grid + empty state — only when the user has explicitly opted
+          in (picked the "Все" chip, a specific type, a non-Library scope, or
+          typed into search / filters). On the default Home the page ends at
+          the shelves above; the grid would just duplicate everything shown
+          there in a less navigable form. */}
+      {!isDefaultView && (
+        <>
+          <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
+            {items.map(item => (
+              <MediaCard
+                key={item.id}
+                item={{...item, rating: getAverageRating(item.id)}}
+                onClick={() => onOpenItem(item)}
+                lang={lang}
+                isFavorited={isFavorited(userId, item.id)}
+                progress={getProgressPercent(item.id)}
+              />
+            ))}
+          </div>
 
-      {items.length === 0 && (
-          <div className="py-24 text-center">
+          {items.length === 0 && (
+            <div className="py-24 text-center">
               <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
-                  {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'WISHLIST' ? <BookmarkPlus size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
+                {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'WISHLIST' ? <BookmarkPlus size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
               </div>
               <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
                 {scope === 'FAVORITES' ? t.noFavoritesYet : scope === 'WISHLIST' ? t.noWishlistYet : scope === 'HISTORY' ? t.noHistoryYet : scope === 'FINISHED' ? t.noFinishedYet : t.noResults}
               </p>
-          </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

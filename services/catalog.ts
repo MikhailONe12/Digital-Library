@@ -43,7 +43,7 @@ export interface CatalogQuery {
  *  appear; older ones don't. The shelf is also length-capped, so this is the
  *  outer eligibility net. */
 export const NEW_WINDOW_DAYS = 30;
-export const NEW_SHELF_LIMIT = 20;
+export const NEW_SHELF_LIMIT = 15;
 
 // Lowercase + strip diacritics so "Tolstoi" matches "Tolstói", "ё" ~ "е", etc.
 export const normalizeText = (s: string): string =>
@@ -158,8 +158,11 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
     available = available.filter(item => seen.has(item.id));
   }
 
-  // 5. Category (content type) — orthogonal to scope.
-  if (q.category !== 'ALL') {
+  // 5. Category (content type) — orthogonal to scope. Empty string and
+  // 'ALL' both mean "no type filter" — the former is the new Home default
+  // (no chip selected → shelves-only view), the latter is the user
+  // explicitly opting into the catalog grid via the "Все" chip.
+  if (q.category && q.category !== 'ALL') {
     available = available.filter(item => item.type === q.category);
   }
 

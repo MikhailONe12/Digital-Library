@@ -49,9 +49,12 @@ const App: React.FC = () => {
     return 'LIBRARY';
   })();
   const _initialCategory: string = (() => {
-    if (_savedFilters.category) return _savedFilters.category;
+    // Empty string is the new "no chip selected, show shelves only" default;
+    // 'ALL' means the user has explicitly opened the catalog grid via the
+    // "Все" chip. Custom type ids ('BOOK' etc.) flow through unchanged.
+    if (typeof _savedFilters.category === 'string') return _savedFilters.category;
     const legacy = _savedFilters.activeCategory;
-    if (!legacy || ['ALL', 'FAVORITES', 'WISHLIST', 'HISTORY', 'FINISHED', 'NEW'].includes(legacy)) return 'ALL';
+    if (!legacy || ['ALL', 'FAVORITES', 'WISHLIST', 'HISTORY', 'FINISHED', 'NEW'].includes(legacy)) return '';
     return legacy;
   })();
   const [scope, setScope] = useState<Scope>(_initialScope);

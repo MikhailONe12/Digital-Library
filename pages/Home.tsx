@@ -489,9 +489,16 @@ const Home: React.FC<HomeProps> = ({
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden active:scale-[0.97] transition-all"
+                /* Soft, *contained* shadow: the negative spread (-8px) keeps
+                   it narrower than the card so neighbours' shadows never touch
+                   — that's what stops a row of equal-height tiles from fusing
+                   into one continuous dark band along the bottom (the "framed
+                   block" look). No 1px border, which was the crisp edge that
+                   made them read as separated panels. Hover lifts the shadow
+                   and the image zooms (group-hover on CardCover). */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_8px_18px_-8px_rgba(0,0,0,0.22)] hover:shadow-[0_16px_30px_-10px_rgba(0,0,0,0.30)] active:scale-[0.97] transition-all duration-300"
               >
-                <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04] group">
+                <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   {/* CardCover lazily derives a thumbnail from the first PDF/EPUB
                       page or video frame when no coverUrl is set — same as the
                       main grid, so the shelf no longer shows blank tiles. */}
@@ -558,7 +565,10 @@ const Home: React.FC<HomeProps> = ({
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden active:scale-[0.97] transition-all"
+                /* Same contained soft shadow + hover lift as the Continue
+                   shelf; `group` here restores the cover zoom on hover that
+                   the New cards had lost. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_8px_18px_-8px_rgba(0,0,0,0.22)] hover:shadow-[0_16px_30px_-10px_rgba(0,0,0,0.30)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>

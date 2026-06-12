@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { filterAndSortItems, CatalogQuery } from './catalog';
+import { filterAndSortItems, selectNewArrivals, CatalogQuery } from './catalog';
 import { MediaItem } from '../types';
 
 const item = (over: Partial<MediaItem>): MediaItem => ({
@@ -24,7 +24,8 @@ const item = (over: Partial<MediaItem>): MediaItem => ({
 const baseQuery = (over: Partial<CatalogQuery> = {}): CatalogQuery => ({
   searchQuery: '',
   searchField: 'all',
-  activeCategory: 'ALL',
+  scope: 'LIBRARY',
+  category: 'ALL',
   contentLangFilter: [],
   sortBy: 'recent',
   lang: 'en',
@@ -109,35 +110,59 @@ describe('smart search', () => {
   });
 });
 
-describe('categories', () => {
+describe('category (content type)', () => {
   it('filters by custom type', () => {
     const b = item({ id: 'b', type: 'BOOK' });
     const v = item({ id: 'v', type: 'VIDEO' });
-    expect(filterAndSortItems([b, v], baseQuery({ activeCategory: 'VIDEO' })).map(i => i.id)).toEqual(['v']);
+    expect(filterAndSortItems([b, v], baseQuery({ category: 'VIDEO' })).map(i => i.id)).toEqual(['v']);
   });
+});
 
+describe('scope (personal collection)', () => {
   it('FAVORITES keeps only favorited items', () => {
     const a = item({ id: 'a' });
     const b = item({ id: 'b' });
-    const res = filterAndSortItems([a, b], baseQuery({ activeCategory: 'FAVORITES', isFavorite: id => id === 'b' }));
+    const res = filterAndSortItems([a, b], baseQuery({ scope: 'FAVORITES', isFavorite: id => id === 'b' }));
     expect(res.map(i => i.id)).toEqual(['b']);
-  });
-
-  it('NEW keeps items within 30 days, newest first', () => {
-    const now = Date.parse('2026-02-01T00:00:00.000Z');
-    const fresh = item({ id: 'fresh', addedDate: '2026-01-20T00:00:00.000Z' });
-    const old = item({ id: 'old', addedDate: '2025-11-01T00:00:00.000Z' });
-    const fresher = item({ id: 'fresher', addedDate: '2026-01-29T00:00:00.000Z' });
-    const res = filterAndSortItems([fresh, old, fresher], baseQuery({ activeCategory: 'NEW', now }));
-    expect(res.map(i => i.id)).toEqual(['fresher', 'fresh']);
   });
 
   it('HISTORY orders by view-history sequence', () => {
     const a = item({ id: 'a' });
     const b = item({ id: 'b' });
     const c = item({ id: 'c' });
-    const res = filterAndSortItems([a, b, c], baseQuery({ activeCategory: 'HISTORY', viewHistory: ['c', 'a'] }));
+    const res = filterAndSortItems([a, b, c], baseQuery({ scope: 'HISTORY', viewHistory: ['c', 'a'] }));
     expect(res.map(i => i.id)).toEqual(['c', 'a']);
+  });
+
+  it('combines scope with category — Favorites × Videos', () => {
+    const fb = item({ id: 'fb', type: 'BOOK' });
+    const fv = item({ id: 'fv', type: 'VIDEO' });
+    const nv = item({ id: 'nv', type: 'VIDEO' });
+    const res = filterAndSortItems([fb, fv, nv], baseQuery({
+      scope: 'FAVORITES', category: 'VIDEO',
+      isFavorite: id => id === 'fb' || id === 'fv',
+    }));
+    expect(res.map(i => i.id)).toEqual(['fv']);
+  });
+
+  it('combines HISTORY with category and preserves history order', () => {
+    const hb = item({ id: 'hb', type: 'BOOK' });
+    const hv = item({ id: 'hv', type: 'VIDEO' });
+    const hv2 = item({ id: 'hv2', type: 'VIDEO' });
+    const res = filterAndSortItems([hb, hv, hv2], baseQuery({
+      scope: 'HISTORY', category: 'VIDEO', viewHistory: ['hv2', 'hb', 'hv'],
+    }));
+    expect(res.map(i => i.id)).toEqual(['hv2', 'hv']);
+  });
+});
+
+describe('new-arrivals shelf', () => {
+  it('keeps items within 30 days, newest first', () => {
+    const now = Date.parse('2026-02-01T00:00:00.000Z');
+    const fresh = item({ id: 'fresh', addedDate: '2026-01-20T00:00:00.000Z' });
+    const old = item({ id: 'old', addedDate: '2025-11-01T00:00:00.000Z' });
+    const fresher = item({ id: 'fresher', addedDate: '2026-01-29T00:00:00.000Z' });
+    expect(selectNewArrivals([fresh, old, fresher], now).map(i => i.id)).toEqual(['fresher', 'fresh']);
   });
 });
 

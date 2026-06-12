@@ -2,12 +2,24 @@ import { MediaItem, Locale, ContentLang } from '../types';
 import { pickText } from '../utils';
 
 export type SortBy = 'recent' | 'rating' | 'views' | 'alpha';
-export type SpecialCategory = 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED';
+/**
+ * Personal-collection axis. Independent of `category` (content type) — you
+ * can ask for "Favorites × Videos" or "History × Books". `LIBRARY` is the
+ * default and applies no scope filter.
+ *
+ * Note: `NEW` is intentionally *not* a scope. New arrivals is a Home shelf,
+ * not a filter — the full "show me everything sorted by date" need is
+ * already covered by sortBy='recent'.
+ */
+export type Scope = 'LIBRARY' | 'FAVORITES' | 'WISHLIST' | 'HISTORY' | 'FINISHED';
 
 export interface CatalogQuery {
   searchQuery: string;
   searchField: 'all' | 'title' | 'author';
-  activeCategory: string | SpecialCategory;
+  /** Which personal collection to look at — see {@link Scope}. */
+  scope: Scope;
+  /** Content type id (e.g. 'BOOK', 'VIDEO', custom id) or 'ALL'. */
+  category: string | 'ALL';
   contentLangFilter: ContentLang[];
   /** AND filter — only items having every tag in this list match. */
   tagFilter?: string[];
@@ -20,15 +32,18 @@ export interface CatalogQuery {
   isFavorite: (itemId: string) => boolean;
   isWishlisted?: (itemId: string) => boolean;
   ratingOf: (itemId: string) => number;
-  /** Reading-progress lookup (0-100). Used by the FINISHED category. */
+  /** Reading-progress lookup (0-100). Used by the FINISHED scope. */
   progressOf?: (itemId: string) => number;
   viewHistory: string[];
   /** Injectable clock for deterministic tests; defaults to Date.now(). */
   now?: number;
 }
 
-const NEW_WINDOW_DAYS = 30;
-const NEW_LIMIT = 20;
+/** Window (days) for the "New arrivals" Home shelf — items younger than this
+ *  appear; older ones don't. The shelf is also length-capped, so this is the
+ *  outer eligibility net. */
+export const NEW_WINDOW_DAYS = 30;
+export const NEW_SHELF_LIMIT = 20;
 
 // Lowercase + strip diacritics so "Tolstoi" matches "Tolstói", "ё" ~ "е", etc.
 export const normalizeText = (s: string): string =>
@@ -124,32 +139,34 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
     });
   }
 
-  // 4. Category (NEW and HISTORY have their own ordering and return early)
-  if (q.activeCategory === 'FAVORITES') {
+  // 4. Scope (personal collection axis). HISTORY also dictates the sort
+  // order, but the filter is applied here so category can still narrow it.
+  if (q.scope === 'FAVORITES') {
     available = available.filter(item => q.isFavorite(item.id));
-  } else if (q.activeCategory === 'WISHLIST') {
+  } else if (q.scope === 'WISHLIST') {
     const wish = q.isWishlisted || (() => false);
     available = available.filter(item => wish(item.id));
-  } else if (q.activeCategory === 'FINISHED') {
+  } else if (q.scope === 'FINISHED') {
     const pct = q.progressOf || (() => 0);
     available = available.filter(item => pct(item.id) >= 95);
-  } else if (q.activeCategory === 'NEW') {
-    const cutoff = (q.now ?? Date.now()) - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-    return available
-      .filter(item => new Date(item.addedDate).getTime() >= cutoff)
-      .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime())
-      .slice(0, NEW_LIMIT);
-  } else if (q.activeCategory === 'HISTORY') {
-    const order = new Map(q.viewHistory.map((id, i) => [id, i]));
-    return available
-      .filter(item => order.has(item.id))
-      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-  } else if (q.activeCategory !== 'ALL') {
-    available = available.filter(item => item.type === q.activeCategory);
+  } else if (q.scope === 'HISTORY') {
+    const seen = new Set(q.viewHistory);
+    available = available.filter(item => seen.has(item.id));
   }
 
-  // 5. Sort — relevance first while searching, otherwise the chosen order
+  // 5. Category (content type) — orthogonal to scope.
+  if (q.category !== 'ALL') {
+    available = available.filter(item => item.type === q.category);
+  }
+
+  // 6. Sort — relevance first while searching, then view-order for HISTORY,
+  // otherwise the chosen order.
   const sorted = [...available];
+  if (q.scope === 'HISTORY' && !searching) {
+    const order = new Map(q.viewHistory.map((id, i) => [id, i]));
+    sorted.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+    return sorted;
+  }
   if (searching) {
     sorted.sort((a, b) => {
       const diff = (scores.get(b.id) || 0) - (scores.get(a.id) || 0);
@@ -168,4 +185,16 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
     sorted.sort((a, b) => pickText(a.title, q.lang).localeCompare(pickText(b.title, q.lang)));
   }
   return sorted;
+};
+
+/** Items added within the last {@link NEW_WINDOW_DAYS}, newest first, capped
+ *  at {@link NEW_SHELF_LIMIT}. Used by the "New arrivals" Home shelf. The
+ *  caller is responsible for any access / language / tag filtering — pass an
+ *  already-filtered list. */
+export const selectNewArrivals = (items: MediaItem[], now: number = Date.now()): MediaItem[] => {
+  const cutoff = now - NEW_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  return items
+    .filter(item => new Date(item.addedDate).getTime() >= cutoff)
+    .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime())
+    .slice(0, NEW_SHELF_LIMIT);
 };

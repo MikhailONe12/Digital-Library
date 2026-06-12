@@ -6,15 +6,20 @@ import CardCover from '../components/CardCover';
 import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus } from 'lucide-react';
 import { isFavorited, isInWishlist, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText } from '../utils';
+import { Scope, selectNewArrivals } from '../services/catalog';
 
 interface HomeProps {
   items: MediaItem[];
-  allItems: MediaItem[]; // Unfiltered — used for the "Continue reading" shelf
+  allItems: MediaItem[]; // Unfiltered — used for the Continue / New shelves
   onOpenItem: (item: MediaItem) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  activeCategory: string | 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED';
-  setActiveCategory: (cat: string | 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED') => void;
+  /** Personal collection axis: Library / Favorites / Wishlist / History / Finished. */
+  scope: Scope;
+  setScope: (s: Scope) => void;
+  /** Content type axis: 'ALL' or a custom type id. */
+  category: string;
+  setCategory: (c: string) => void;
   contentLangFilter: ContentLang[];
   setContentLangFilter: (langs: ContentLang[]) => void;
   tagFilter: string[];
@@ -30,7 +35,8 @@ interface HomeProps {
 }
 
 const Home: React.FC<HomeProps> = ({
-  items, allItems, onOpenItem, searchQuery, setSearchQuery, activeCategory, setActiveCategory,
+  items, allItems, onOpenItem, searchQuery, setSearchQuery,
+  scope, setScope, category, setCategory,
   contentLangFilter, setContentLangFilter, tagFilter, setTagFilter,
   searchField, setSearchField,
   sortBy, setSortBy,
@@ -38,6 +44,9 @@ const Home: React.FC<HomeProps> = ({
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
+  // Anchor for the "Show all →" link inside the New-arrivals shelf, so the
+  // tap lands on the grid even on long screens.
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   const tg = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
@@ -53,6 +62,21 @@ const Home: React.FC<HomeProps> = ({
       .sort((a, b) => b.pct - a.pct) // closer to finish first
       .slice(0, 12);
   }, [allItems]);
+
+  // New-arrivals shelf: same idea as Continue reading but pulled from the
+  // full accessible catalog so it's stable regardless of the current scope /
+  // category — this is the replacement for the old "Новинки" filter chip.
+  const newItems = useMemo(() => selectNewArrivals(allItems), [allItems]);
+
+  // The shelves are only meaningful on the default view — once the user is
+  // filtering or searching, the shelves would just duplicate (or contradict)
+  // the grid below. Same guard used by the empty-state message.
+  const isDefaultView =
+    scope === 'LIBRARY' &&
+    category === 'ALL' &&
+    !searchQuery.trim() &&
+    contentLangFilter.length === 0 &&
+    tagFilter.length === 0;
 
   // All unique tags across the visible catalog — for the filter chip list.
   const availableTags = useMemo(() => {
@@ -304,98 +328,59 @@ const Home: React.FC<HomeProps> = ({
         </div>
       )}
 
-      <div className="flex gap-2.5 overflow-x-auto pb-8 mt-4 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
-        {/* Favorites Button */}
-        <button
-          onClick={() => setActiveCategory('FAVORITES')}
-          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
-            activeCategory === 'FAVORITES'
-            ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-          }`}
-          aria-label="Favorites"
-          aria-pressed={activeCategory === 'FAVORITES'}
-        >
-          <Heart size={19} fill={activeCategory === 'FAVORITES' ? 'currentColor' : 'none'} strokeWidth={2.25} />
-        </button>
+      {/* Scope row — personal-collection axis (which corner of the library
+          we're looking at). One job per row: this picks the scope, the row
+          below picks the content type. Visually denser than the old icon-
+          only chips so it doesn't dominate the header. */}
+      <div className="flex gap-2 overflow-x-auto pb-3 mt-4 no-scrollbar scroll-smooth" role="tablist" aria-label={t.scopeLibrary}>
+        {([
+          { key: 'LIBRARY',   label: t.scopeLibrary, icon: BookOpen,     activeBg: 'bg-red-600',   activeText: 'text-white' },
+          { key: 'FAVORITES', label: t.favorites,    icon: Heart,        activeBg: 'bg-red-600',   activeText: 'text-white' },
+          { key: 'WISHLIST',  label: t.wishlist,     icon: BookmarkPlus, activeBg: 'bg-red-600',   activeText: 'text-white' },
+          { key: 'HISTORY',   label: t.history,      icon: Clock,        activeBg: 'bg-red-600',   activeText: 'text-white' },
+          { key: 'FINISHED',  label: t.finished,     icon: CheckCircle2, activeBg: 'bg-green-600', activeText: 'text-white' },
+        ] as const).map(({ key, label, icon: Icon, activeBg, activeText }) => {
+          const active = scope === key;
+          return (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={active}
+              onClick={() => setScope(key)}
+              className={`flex-shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[13px] font-semibold transition-all duration-200 ${
+                active
+                  ? `${activeBg} ${activeText}`
+                  : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
+              }`}
+            >
+              <Icon size={15} strokeWidth={2.25} fill={active && (key === 'FAVORITES' || key === 'WISHLIST') ? 'currentColor' : 'none'} />
+              {label}
+            </button>
+          );
+        })}
+      </div>
 
-        {/* Wishlist Button — #35 "Хочу прочитать" */}
+      {/* Category row — content-type axis. Pure type filter; no personal-
+          collection chips here any more, and no NEW (that's now a shelf). */}
+      <div className="flex gap-2.5 overflow-x-auto pb-8 mt-1 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
         <button
-          onClick={() => setActiveCategory('WISHLIST')}
-          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
-            activeCategory === 'WISHLIST'
-            ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-          }`}
-          aria-label={t.wishlist}
-          aria-pressed={activeCategory === 'WISHLIST'}
-          title={t.wishlist}
-        >
-          <BookmarkPlus size={19} strokeWidth={2.25} fill={activeCategory === 'WISHLIST' ? 'currentColor' : 'none'} />
-        </button>
-
-        {/* History Button */}
-        <button
-          onClick={() => setActiveCategory('HISTORY')}
-          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
-            activeCategory === 'HISTORY'
-            ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-          }`}
-          aria-label={t.history}
-          aria-pressed={activeCategory === 'HISTORY'}
-          title={t.history}
-        >
-          <Clock size={19} strokeWidth={2.25} />
-        </button>
-
-        {/* Finished Button — books read to >= 95% */}
-        <button
-          onClick={() => setActiveCategory('FINISHED')}
-          className={`flex-shrink-0 w-12 h-10 flex items-center justify-center rounded-xl transition-all duration-200 ${
-            activeCategory === 'FINISHED'
-            ? 'bg-green-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-green-600 dark:text-green-400 border border-slate-200 dark:border-white/[0.08]'
-          }`}
-          aria-label={t.finished}
-          aria-pressed={activeCategory === 'FINISHED'}
-          title={t.finished}
-        >
-          <CheckCircle2 size={19} strokeWidth={2.25} />
-        </button>
-
-        {/* New Arrivals Button */}
-        <button
-          onClick={() => setActiveCategory('NEW')}
-          className={`flex-shrink-0 flex items-center gap-1.5 px-5 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-            activeCategory === 'NEW'
-            ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-          }`}
-          aria-pressed={activeCategory === 'NEW'}
-        >
-          <Sparkles size={16} fill={activeCategory === 'NEW' ? 'currentColor' : 'none'} strokeWidth={2.25} />
-          {t.new}
-        </button>
-
-        <button
-          onClick={() => setActiveCategory('ALL')}
+          onClick={() => setCategory('ALL')}
           className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-            activeCategory === 'ALL'
+            category === 'ALL'
             ? 'bg-red-600 text-white'
             : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
           }`}
-          aria-pressed={activeCategory === 'ALL'}
+          aria-pressed={category === 'ALL'}
         >
           {t.all}
         </button>
         {categories.map(cat => (
           <button
             key={cat.id}
-            onClick={() => setActiveCategory(cat.id)}
-            aria-pressed={activeCategory === cat.id}
+            onClick={() => setCategory(cat.id)}
+            aria-pressed={category === cat.id}
             className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-              activeCategory === cat.id
+              category === cat.id
               ? 'bg-red-600 text-white'
               : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
             }`}
@@ -405,8 +390,8 @@ const Home: React.FC<HomeProps> = ({
         ))}
       </div>
 
-      {/* Continue reading shelf — only when not actively filtering / searching */}
-      {continueItems.length > 0 && activeCategory === 'ALL' && !searchQuery.trim() && contentLangFilter.length === 0 && tagFilter.length === 0 && (
+      {/* Continue reading shelf — default view only */}
+      {continueItems.length > 0 && isDefaultView && (
         <div className="mb-8">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
             <BookOpen size={14} className="text-red-600" />
@@ -440,7 +425,50 @@ const Home: React.FC<HomeProps> = ({
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
+      {/* New-arrivals shelf — replaces the old NEW filter chip. "Show all →"
+          flips the sort to recent and scrolls to the grid, which is the
+          deep-dive escape hatch for users with a lot of recent imports. */}
+      {newItems.length > 0 && isDefaultView && (
+        <div className="mb-8">
+          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+            <Sparkles size={14} className="text-red-600" />
+            <span className="w-6 h-[2px] bg-red-600" />
+            {t.new}
+            <button
+              onClick={() => {
+                setSortBy('recent');
+                gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold tracking-widest text-red-600 dark:text-red-400 hover:underline normal-case"
+            >
+              {t.showAll} →
+            </button>
+          </h2>
+          <div className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory">
+            {newItems.map(item => (
+              <button
+                key={item.id}
+                onClick={() => onOpenItem(item)}
+                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all hover:shadow-card-hover"
+              >
+                <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
+                  <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  <div className="absolute top-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black uppercase tracking-widest">
+                    <Sparkles size={9} fill="currentColor" strokeWidth={2.5} /> {t.new}
+                  </div>
+                  <div className="absolute bottom-2 left-2 right-2">
+                    <p className="text-white text-xs font-bold tracking-tight line-clamp-2 drop-shadow">{pickText(item.title, lang)}</p>
+                    {item.author && <p className="text-white/70 text-[10px] mt-0.5 line-clamp-1">{item.author}</p>}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
         {items.map(item => (
           <MediaCard
             key={item.id}
@@ -456,10 +484,10 @@ const Home: React.FC<HomeProps> = ({
       {items.length === 0 && (
           <div className="py-24 text-center">
               <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
-                  {activeCategory === 'FAVORITES' ? <Heart size={36} /> : activeCategory === 'WISHLIST' ? <BookmarkPlus size={36} /> : activeCategory === 'NEW' ? <Sparkles size={36} /> : activeCategory === 'HISTORY' ? <Clock size={36} /> : activeCategory === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
+                  {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'WISHLIST' ? <BookmarkPlus size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
               </div>
               <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
-                {activeCategory === 'FAVORITES' ? t.noFavoritesYet : activeCategory === 'WISHLIST' ? t.noWishlistYet : activeCategory === 'NEW' ? t.noRecentItems : activeCategory === 'HISTORY' ? t.noHistoryYet : activeCategory === 'FINISHED' ? t.noFinishedYet : t.noResults}
+                {scope === 'FAVORITES' ? t.noFavoritesYet : scope === 'WISHLIST' ? t.noWishlistYet : scope === 'HISTORY' ? t.noHistoryYet : scope === 'FINISHED' ? t.noFinishedYet : t.noResults}
               </p>
           </div>
       )}

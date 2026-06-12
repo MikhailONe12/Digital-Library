@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense
 import { getDb, loadDb, isFavorited, isInWishlist, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
-import { filterAndSortItems } from './services/catalog';
+import { filterAndSortItems, Scope } from './services/catalog';
 import Home from './pages/Home';
 import { Globe, ChevronDown, ShieldAlert, ServerCrash, RotateCcw } from 'lucide-react';
 import Toaster from './components/Toaster';
@@ -35,9 +35,27 @@ const App: React.FC = () => {
   })();
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<string | 'ALL' | 'FAVORITES' | 'WISHLIST' | 'NEW' | 'HISTORY' | 'FINISHED'>(
-    _savedFilters.activeCategory || 'ALL',
-  );
+  // Scope = personal-collection axis, category = content-type axis. They used
+  // to be a single `activeCategory` field that smuggled both ideas through
+  // one chip row; splitting lets the user pick "Favorites × Videos" naturally.
+  // Migration from the legacy LS shape: a stored 'FAVORITES'/'WISHLIST'/
+  // 'HISTORY'/'FINISHED' becomes the new scope; a stored type id becomes the
+  // category; 'NEW' silently maps to (LIBRARY, ALL) because new-arrivals is
+  // now a Home shelf, not a saved filter.
+  const _initialScope: Scope = (() => {
+    if (_savedFilters.scope) return _savedFilters.scope;
+    const legacy = _savedFilters.activeCategory;
+    if (legacy === 'FAVORITES' || legacy === 'WISHLIST' || legacy === 'HISTORY' || legacy === 'FINISHED') return legacy;
+    return 'LIBRARY';
+  })();
+  const _initialCategory: string = (() => {
+    if (_savedFilters.category) return _savedFilters.category;
+    const legacy = _savedFilters.activeCategory;
+    if (!legacy || ['ALL', 'FAVORITES', 'WISHLIST', 'HISTORY', 'FINISHED', 'NEW'].includes(legacy)) return 'ALL';
+    return legacy;
+  })();
+  const [scope, setScope] = useState<Scope>(_initialScope);
+  const [category, setCategory] = useState<string>(_initialCategory);
   const [contentLangFilter, setContentLangFilter] = useState<ContentLang[]>(
     _savedFilters.contentLangFilter || [],
   );
@@ -190,7 +208,8 @@ const App: React.FC = () => {
   const filteredItems = useMemo(() => filterAndSortItems(db.items, {
     searchQuery: deferredSearch,
     searchField,
-    activeCategory,
+    scope,
+    category,
     contentLangFilter,
     tagFilter,
     sortBy,
@@ -204,23 +223,26 @@ const App: React.FC = () => {
     ratingOf: getAverageRating,
     progressOf: getProgressPercent,
     viewHistory,
-  }), [db.items, db.globalAccess, deferredSearch, activeCategory, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, tagFilter, searchField, sortBy, viewHistory]);
+  }), [db.items, db.globalAccess, deferredSearch, scope, category, user, userId, db.allowedUsers, isAdmin, lang, contentLangFilter, tagFilter, searchField, sortBy, viewHistory]);
 
-  // Same access-controlled list, but without search/tag/category filters —
-  // used by the "Continue reading" shelf and tag chip generator on Home.
+  // Same access-controlled list, but without search / tag / scope / category
+  // filters — used by the "Continue reading" and "New arrivals" Home shelves
+  // and the tag chip generator.
   const accessibleItems = useMemo(() => filterAndSortItems(db.items, {
-    searchQuery: '', searchField: 'all', activeCategory: 'ALL',
+    searchQuery: '', searchField: 'all', scope: 'LIBRARY', category: 'ALL',
     contentLangFilter: [], tagFilter: [], sortBy: 'recent', lang, isAdmin,
     globalAccess: db.globalAccess, allowedUsers: db.allowedUsers, user,
     isFavorite: () => false, ratingOf: getAverageRating, viewHistory: [],
   }), [db.items, db.globalAccess, db.allowedUsers, isAdmin, user, lang]);
 
-  // Persist filter state whenever it changes
+  // Persist filter state whenever it changes. The legacy `activeCategory`
+  // field is no longer written; it lingers in localStorage for one cycle so
+  // a downgrade still finds something sensible, then gets overwritten.
   useEffect(() => {
     try {
-      localStorage.setItem('library_filters', JSON.stringify({ searchField, sortBy, contentLangFilter, tagFilter, activeCategory }));
+      localStorage.setItem('library_filters', JSON.stringify({ searchField, sortBy, contentLangFilter, tagFilter, scope, category }));
     } catch { /* quota */ }
-  }, [searchField, sortBy, contentLangFilter, tagFilter, activeCategory]);
+  }, [searchField, sortBy, contentLangFilter, tagFilter, scope, category]);
 
   // Reflect the UI locale on <html lang> for assistive tech and the browser.
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
@@ -375,8 +397,10 @@ const App: React.FC = () => {
           onOpenItem={(item) => { setViewHistory(recordView(item.id)); setSelectedItem(item); setCurrentPage('details'); }}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
-          activeCategory={activeCategory}
-          setActiveCategory={setActiveCategory}
+          scope={scope}
+          setScope={setScope}
+          category={category}
+          setCategory={setCategory}
           contentLangFilter={contentLangFilter}
           setContentLangFilter={setContentLangFilter}
           tagFilter={tagFilter}
@@ -406,7 +430,8 @@ const App: React.FC = () => {
               // category selections.
               setSearchField('author');
               setSearchQuery(author);
-              setActiveCategory('ALL');
+              setScope('LIBRARY');
+              setCategory('ALL');
               setContentLangFilter([]);
               setTagFilter([]);
               setSelectedItem(null);
@@ -418,7 +443,8 @@ const App: React.FC = () => {
               // empty result lists.
               setSearchField('all');
               setSearchQuery('');
-              setActiveCategory('ALL');
+              setScope('LIBRARY');
+              setCategory('ALL');
               setContentLangFilter([]);
               setTagFilter([tag]);
               setSelectedItem(null);

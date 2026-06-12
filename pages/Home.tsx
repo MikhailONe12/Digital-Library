@@ -55,10 +55,20 @@ const useDragScroll = () => {
       startX = e.pageX - el.offsetLeft;
       scrollLeft = el.scrollLeft;
       el.style.cursor = 'grabbing';
+      // Disable snap-proximity for the duration of the drag so the browser
+      // never pulls the scroll back to a card edge mid-motion — that's what
+      // made the strip feel like it stutters under the pointer. The class-
+      // level `snap-x snap-proximity` re-applies on release, giving the
+      // strip a gentle alignment at rest.
+      el.style.scrollSnapType = 'none';
+      el.style.userSelect = 'none';
     };
     const stop = () => {
+      if (!isDown) return;
       isDown = false;
       el.style.cursor = 'grab';
+      el.style.scrollSnapType = '';
+      el.style.userSelect = '';
     };
     const onMove = (e: MouseEvent) => {
       if (!isDown) return;
@@ -473,13 +483,13 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={continueScrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-mandatory"
+            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-proximity"
           >
             {continueItems.map(({ item, pct }) => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all hover:shadow-card-hover"
+                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden active:scale-[0.97] transition-all"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04] group">
                   {/* CardCover lazily derives a thumbnail from the first PDF/EPUB
@@ -542,13 +552,13 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={newScrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-mandatory"
+            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-proximity"
           >
             {newItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden border border-slate-200 dark:border-white/[0.08] shadow-card active:scale-[0.97] transition-all hover:shadow-card-hover"
+                className="flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden active:scale-[0.97] transition-all"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>

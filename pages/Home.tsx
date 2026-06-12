@@ -503,9 +503,14 @@ const Home: React.FC<HomeProps> = ({
                 key={item.id}
                 onClick={() => onOpenItem(item)}
                 /* Two-layer shadow: 1px contact + soft lift whose Gaussian
-                   tail now fully fades inside the scrollport's padded clip
-                   area (see container comment). Group powers cover zoom. */
-                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_14px_24px_-12px_rgba(0,0,0,0.20)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_16px_28px_-12px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
+                   tail fully fades inside the scrollport's padded clip area
+                   (see container comment). The previous −12px spread +
+                   alpha .20 over-attenuated: after the blur its peak
+                   darkness was ~7%, near-invisible on the slate background.
+                   −6px spread / alpha .28 keeps extents in bounds (bottom
+                   10+20−6=24px ≤ 32, sides 20−6=14px ≤ 16) while being
+                   clearly visible. Group powers cover zoom. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.08),0_10px_20px_-6px_rgba(0,0,0,0.28)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.10),0_14px_24px_-8px_rgba(0,0,0,0.34)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   {/* CardCover lazily derives a thumbnail from the first PDF/EPUB
@@ -579,8 +584,9 @@ const Home: React.FC<HomeProps> = ({
                 key={item.id}
                 onClick={() => onOpenItem(item)}
                 /* Same two-layer shadow as Continue — extents sized to fit
-                   the padded clip box. `group` powers the cover hover zoom. */
-                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_14px_24px_-12px_rgba(0,0,0,0.20)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_16px_28px_-12px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
+                   the padded clip box, alpha raised so the lift is actually
+                   visible. `group` powers the cover hover zoom. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.08),0_10px_20px_-6px_rgba(0,0,0,0.28)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.10),0_14px_24px_-8px_rgba(0,0,0,0.34)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>

@@ -483,22 +483,29 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={continueScrollRef}
-            className="flex gap-3 overflow-x-auto pb-7 no-scrollbar snap-x snap-proximity"
+            /* ROOT CAUSE of the "hard shadow edges": per the CSS spec,
+               overflow-x:auto forces computed overflow-y to auto as well —
+               so this scrollport clips at its padding box on ALL sides.
+               With zero horizontal padding the first/last card's shadow was
+               sliced at exactly the container edge (the 90° vertical cut),
+               and pb-7 (28px) was shorter than the shadow's 34px bottom
+               extent (offset+blur−spread), leaving a flat cutoff line.
+               Fix: px-4/-mx-4 carve a 16px gutter INSIDE the clip box for
+               the side tails while keeping section alignment (margins
+               cancel the padding); scroll-pl-4 keeps snap aligned to the
+               page column; pb-8 (32px) ≥ the shadow's bottom extent. The
+               shadow itself is sized so extents fit: sides −12+24=12px<16,
+               bottom 14−12+24=26px<32 (hover: 16px=16, 32px=32). */
+            className="flex gap-3 overflow-x-auto pt-1 pb-8 px-4 -mx-4 scroll-pl-4 no-scrollbar snap-x snap-proximity"
           >
             {continueItems.map(({ item, pct }) => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                /* Apple-style two-layer drop shadow. Layer 1 is a 1px contact
-                   shadow directly under the card (gives the "press" sense
-                   without a visible band). Layer 2 is the lift: large blur
-                   (32px), strong negative spread (-16px) and modest opacity,
-                   so the shadow's bottom doesn't end at a defined cutoff —
-                   the Gaussian tail fades into the page background. The
-                   parent scroll container's pb-7 gives the tail breathing
-                   room so it doesn't read as a horizontal "section floor".
-                   Hover deepens both layers. Group powers cover zoom. */
-                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_32px_-16px_rgba(0,0,0,0.18)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_28px_48px_-18px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
+                /* Two-layer shadow: 1px contact + soft lift whose Gaussian
+                   tail now fully fades inside the scrollport's padded clip
+                   area (see container comment). Group powers cover zoom. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_14px_24px_-12px_rgba(0,0,0,0.20)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_16px_28px_-12px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   {/* CardCover lazily derives a thumbnail from the first PDF/EPUB
@@ -561,17 +568,19 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={newScrollRef}
-            className="flex gap-3 overflow-x-auto pb-7 no-scrollbar snap-x snap-proximity"
+            /* Same clip-box fix as the Continue shelf: the scrollport clips
+               shadows at its padding box (overflow-x:auto ⇒ overflow-y:auto),
+               so px-4/-mx-4 + pb-8 give the shadow tails room to fade inside
+               the clip area while section alignment stays unchanged. */
+            className="flex gap-3 overflow-x-auto pt-1 pb-8 px-4 -mx-4 scroll-pl-4 no-scrollbar snap-x snap-proximity"
           >
             {newItems.map(item => (
               <button
                 key={item.id}
                 onClick={() => onOpenItem(item)}
-                /* Same two-layer Apple-style shadow as Continue — see comment
-                   there. `group` restores the cover zoom on hover, `pb-7`
-                   on the scroll container gives the Gaussian tail room to
-                   fade so there's no defined "floor" under the row. */
-                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_18px_32px_-16px_rgba(0,0,0,0.18)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_28px_48px_-18px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
+                /* Same two-layer shadow as Continue — extents sized to fit
+                   the padded clip box. `group` powers the cover hover zoom. */
+                className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.04),0_14px_24px_-12px_rgba(0,0,0,0.20)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.06),0_16px_28px_-12px_rgba(0,0,0,0.28)] active:scale-[0.97] transition-all duration-300"
               >
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>

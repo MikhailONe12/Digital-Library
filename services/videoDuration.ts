@@ -64,3 +64,12 @@ export const getVideoDuration = (url: string): Promise<number | null> => {
   inflight.set(url, p);
   return p;
 };
+
+// Seed the cache from outside (YouTube IFrame API, an open <video> element
+// inside the details page, etc.) so MediaCard's duration badge lights up
+// for the next render without a second round-trip.
+export const setVideoDuration = (url: string, sec: number): void => {
+  if (!url || !Number.isFinite(sec) || sec <= 0) return;
+  memCache.set(url, sec);
+  writeLS(url, sec);
+};

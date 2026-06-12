@@ -27,6 +27,8 @@ import { pickText, handleCoverError, getVideoPoster } from '../utils';
 import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
 import { getPdfThumbnail } from '../services/pdfThumb';
 import { getEpubThumbnail } from '../services/epubThumb';
+import TrackedVideoPlayer from '../components/TrackedVideoPlayer';
+import YouTubeTrackedPlayer from '../components/YouTubeTrackedPlayer';
 
 type ReaderTheme = 'default' | 'night' | 'sepia';
 
@@ -1256,8 +1258,10 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const getVideoEmbed = (url?: string) => {
     if (!url) return null;
     const host = window.location.hostname;
+    // YouTube: use the IFrame API player so we can persist watch position and
+    // duration (no Data API key required). Same row schema as books.
     const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
-    if (ytMatch) return <iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${ytMatch[1]}`} frameBorder="0" allowFullScreen></iframe>;
+    if (ytMatch) return <YouTubeTrackedPlayer videoId={ytMatch[1]} url={url} userId={userId} itemId={item.id} />;
     const rtMatch = url.match(/rutube\.ru\/video\/([a-z0-9]+)/i);
     if (rtMatch) return <iframe width="100%" height="100%" src={`https://rutube.ru/play/embed/${rtMatch[1]}`} frameBorder="0" allowFullScreen></iframe>;
     const twVod = url.match(/twitch\.tv\/videos\/(\d+)/i);
@@ -1270,7 +1274,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     if (vkExt) return <iframe width="100%" height="100%" src={url} frameBorder="0" allowFullScreen></iframe>;
     const vkMatch = url.match(/vk(?:video)?\.(?:com|ru)\/(?:.*?)video(-?\d+)_(\d+)/i);
     if (vkMatch) return <iframe width="100%" height="100%" src={`https://vk.com/video_ext.php?oid=${vkMatch[1]}&id=${vkMatch[2]}&hd=2`} frameBorder="0" allowFullScreen></iframe>;
-    if (/\.(mp4|webm|ogg|mov)$/i.test(url)) return <video src={url} controls className="w-full h-full bg-slate-100" poster={item.coverUrl} />;
+    // Direct files: tracked <video> that saves currentTime every 5s and seeds
+    // the duration cache on loadedmetadata.
+    if (/\.(mp4|webm|ogg|mov)$/i.test(url)) return <TrackedVideoPlayer url={url} userId={userId} itemId={item.id} poster={item.coverUrl} />;
     return null;
   };
 

@@ -126,17 +126,21 @@ const Home: React.FC<HomeProps> = ({
   // category — this is the replacement for the old "Новинки" filter chip.
   const newItems = useMemo(() => selectNewArrivals(allItems), [allItems]);
 
-  // Default Home — shelves only, no main grid. The user reaches the full
-  // catalog grid by opting in via the "Все" chip (category='ALL') or by
-  // picking a specific type / scope / filter. Empty-string category is the
-  // new "no chip selected" sentinel — same query semantics as 'ALL', but
-  // distinct in the UI so we know whether to show the grid.
-  const isDefaultView =
+  // Two independent visibility tests now that shelves and the catalog grid
+  // live side-by-side. `broadLibrary` = "user isn't drilling into a sub-set"
+  // (LIBRARY scope, no search / tag / lang filter). The shelves only make
+  // sense in that broad context — for FAVORITES, HISTORY, or a "show me
+  // only books" view they'd duplicate the very list the user just asked
+  // to narrow. The grid hides only on the pristine Home (broad library +
+  // no category chip); the moment "Все" lights up or any other chip is
+  // tapped, the grid joins the shelves below them.
+  const broadLibrary =
     scope === 'LIBRARY' &&
-    !category &&
     !searchQuery.trim() &&
     contentLangFilter.length === 0 &&
     tagFilter.length === 0;
+  const showShelves = broadLibrary && (category === '' || category === 'ALL');
+  const showGrid = !broadLibrary || !!category;
 
   // Refs for drag-scrolling each shelf with the mouse (touch already works
   // via the browser's native swipe). Separate refs so dragging one shelf
@@ -460,7 +464,7 @@ const Home: React.FC<HomeProps> = ({
       </div>
 
       {/* Continue reading shelf — default view only */}
-      {continueItems.length > 0 && isDefaultView && (
+      {continueItems.length > 0 && showShelves && (
         <div className="mb-8">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
             <BookOpen size={14} className="text-red-600" />
@@ -514,7 +518,7 @@ const Home: React.FC<HomeProps> = ({
           The link sits next to the title (not flushed right with ml-auto)
           so the heading row stays the same visual width as Continue and
           doesn't stretch to the viewport edge on wide screens. */}
-      {newItems.length > 0 && isDefaultView && (
+      {newItems.length > 0 && showShelves && (
         <div className="mb-8">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
             <Sparkles size={14} className="text-red-600" />
@@ -577,7 +581,7 @@ const Home: React.FC<HomeProps> = ({
           typed into search / filters). On the default Home the page ends at
           the shelves above; the grid would just duplicate everything shown
           there in a less navigable form. */}
-      {!isDefaultView && (
+      {showGrid && (
         <>
           <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
             {items.map(item => (

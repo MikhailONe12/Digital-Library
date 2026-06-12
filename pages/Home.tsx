@@ -3,9 +3,9 @@ import React, { useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus, Play } from 'lucide-react';
 import { isFavorited, isInWishlist, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
-import { pickText } from '../utils';
+import { pickText, hasVideo } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
 
 interface HomeProps {
@@ -411,6 +411,17 @@ const Home: React.FC<HomeProps> = ({
                       main grid, so the shelf no longer shows blank tiles. */}
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  {/* Centred play badge — same affordance the main grid uses
+                      for video items; without it a paused mid-watch video
+                      looks like a book tile that just happens to have a
+                      progress bar. */}
+                  {hasVideo(item) && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-lg ring-1 ring-white/10">
+                        <Play size={16} className="text-white ml-0.5" fill="currentColor" strokeWidth={0} />
+                      </div>
+                    </div>
+                  )}
                   <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/30">
                     <div className="h-full bg-red-500" style={{ width: `${Math.min(100, pct)}%` }} />
                   </div>
@@ -427,19 +438,22 @@ const Home: React.FC<HomeProps> = ({
 
       {/* New-arrivals shelf — replaces the old NEW filter chip. "Show all →"
           flips the sort to recent and scrolls to the grid, which is the
-          deep-dive escape hatch for users with a lot of recent imports. */}
+          deep-dive escape hatch for users with a lot of recent imports.
+          The link sits next to the title (not flushed right with ml-auto)
+          so the heading row stays the same visual width as Continue and
+          doesn't stretch to the viewport edge on wide screens. */}
       {newItems.length > 0 && isDefaultView && (
         <div className="mb-8">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
             <Sparkles size={14} className="text-red-600" />
             <span className="w-6 h-[2px] bg-red-600" />
-            {t.new}
+            <span>{t.new}</span>
             <button
               onClick={() => {
                 setSortBy('recent');
                 gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
-              className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold tracking-widest text-red-600 dark:text-red-400 hover:underline normal-case"
+              className="inline-flex items-center gap-1 text-[10px] font-bold tracking-widest text-red-600 dark:text-red-400 hover:underline normal-case"
             >
               {t.showAll} →
             </button>
@@ -454,6 +468,15 @@ const Home: React.FC<HomeProps> = ({
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  {/* Centred play badge — matches the main grid's video cue
+                      so the shelf doesn't disguise videos as books. */}
+                  {hasVideo(item) && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-lg ring-1 ring-white/10">
+                        <Play size={16} className="text-white ml-0.5" fill="currentColor" strokeWidth={0} />
+                      </div>
+                    </div>
+                  )}
                   <div className="absolute top-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black uppercase tracking-widest">
                     <Sparkles size={9} fill="currentColor" strokeWidth={2.5} /> {t.new}
                   </div>

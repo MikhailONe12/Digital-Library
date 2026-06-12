@@ -473,7 +473,7 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={continueScrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory"
+            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-mandatory"
           >
             {continueItems.map(({ item, pct }) => (
               <button
@@ -542,7 +542,7 @@ const Home: React.FC<HomeProps> = ({
           </h2>
           <div
             ref={newScrollRef}
-            className="flex gap-3 overflow-x-auto pb-3 -mx-4 sm:-mx-6 lg:-mx-10 px-4 sm:px-6 lg:px-10 no-scrollbar snap-x snap-mandatory"
+            className="flex gap-3 overflow-x-auto pb-3 no-scrollbar snap-x snap-mandatory"
           >
             {newItems.map(item => (
               <button

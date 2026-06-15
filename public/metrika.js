@@ -22,3 +22,12 @@ ym(109097132, "init", {
   accurateTrackBounce: true,
   trackLinks: true
 });
+
+try {
+  if (sessionStorage.getItem("ym_service_goal_open_library") !== "1") {
+    sessionStorage.setItem("ym_service_goal_open_library", "1");
+    ym(109097132, "reachGoal", "open_library");
+  }
+} catch (_) {
+  ym(109097132, "reachGoal", "open_library");
+}

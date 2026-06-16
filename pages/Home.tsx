@@ -174,9 +174,25 @@ const Home: React.FC<HomeProps> = ({
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
+  // Wraps the search input + filter toggle + the expandable panel; we use it
+  // to close the panel when the user clicks outside of it.
+  const filterWrapRef = useRef<HTMLDivElement | null>(null);
   // Anchor for the "Show all →" link inside the New-arrivals shelf, so the
   // tap lands on the grid even on long screens.
   const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // Close the filter panel on an outside click — pointerdown rather than
+  // click so the dismiss happens before any button inside the panel re-
+  // triggers it, and so it works for both mouse and touch.
+  useEffect(() => {
+    if (!isFilterOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const wrap = filterWrapRef.current;
+      if (wrap && !wrap.contains(e.target as Node)) setIsFilterOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [isFilterOpen]);
 
   const tg = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
@@ -301,7 +317,7 @@ const Home: React.FC<HomeProps> = ({
         </p>
       </header>
 
-      <div className="relative mb-6 z-20" role="search">
+      <div ref={filterWrapRef} className="relative mb-6 z-20" role="search">
         <div className="relative group">
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-red-600 transition-colors" size={19} aria-hidden="true" />
           <input

@@ -11,7 +11,7 @@ export type SortBy = 'recent' | 'rating' | 'views' | 'alpha';
  * not a filter — the full "show me everything sorted by date" need is
  * already covered by sortBy='recent'.
  */
-export type Scope = 'LIBRARY' | 'FAVORITES' | 'WISHLIST' | 'HISTORY' | 'FINISHED';
+export type Scope = 'LIBRARY' | 'FAVORITES' | 'HISTORY' | 'FINISHED';
 
 export interface CatalogQuery {
   searchQuery: string;
@@ -30,7 +30,6 @@ export interface CatalogQuery {
   allowedUsers: string[];
   user?: { id: number | string; username?: string } | null;
   isFavorite: (itemId: string) => boolean;
-  isWishlisted?: (itemId: string) => boolean;
   ratingOf: (itemId: string) => number;
   /** Reading-progress lookup (0-100). Used by the FINISHED scope. */
   progressOf?: (itemId: string) => number;
@@ -147,9 +146,6 @@ export const filterAndSortItems = (items: MediaItem[], q: CatalogQuery): MediaIt
   // order, but the filter is applied here so category can still narrow it.
   if (q.scope === 'FAVORITES') {
     available = available.filter(item => q.isFavorite(item.id));
-  } else if (q.scope === 'WISHLIST') {
-    const wish = q.isWishlisted || (() => false);
-    available = available.filter(item => wish(item.id));
   } else if (q.scope === 'FINISHED') {
     const pct = q.progressOf || (() => 0);
     available = available.filter(item => pct(item.id) >= 95);

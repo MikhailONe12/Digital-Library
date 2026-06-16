@@ -23,7 +23,6 @@ const emptyState = (): AppState => ({
   stats: [],
   userAnalytics: [],
   userFavorites: {},
-  userWishlist: {},
   userRatings: {},
   customTypes: [
     { id: 'BOOK',    en: 'Book',    ru: 'Книга',   es: 'Libro' },
@@ -156,19 +155,14 @@ const putSettings = (): Promise<Response> => {
 
 const loadUserData = async (userId: string) => {
   try {
-    const [favRes, wishRes, ratRes, progRes] = await Promise.all([
+    const [favRes, ratRes, progRes] = await Promise.all([
       fetch(`/api/users/${userId}/favorites`),
-      fetch(`/api/users/${userId}/wishlist`),
       fetch(`/api/users/${userId}/ratings`),
       fetch(`/api/users/${userId}/progress`),
     ]);
     if (favRes.ok) {
       const d = await favRes.json();
       cache.userFavorites = { [userId]: d.favorites || [] };
-    }
-    if (wishRes.ok) {
-      const d = await wishRes.json();
-      cache.userWishlist = { [userId]: d.wishlist || [] };
     }
     if (ratRes.ok) {
       const d = await ratRes.json();
@@ -327,27 +321,8 @@ export const toggleFavorite = (userId: string, itemId: string) => {
 export const isFavorited = (userId: string, itemId: string): boolean =>
   cache.userFavorites[userId]?.includes(itemId) || false;
 
-// ── #35 Wishlist ("Хочу прочитать") ─────────────────────────────────────────
-
-export const toggleWishlist = (userId: string, itemId: string) => {
-  const current = cache.userWishlist[userId] || [];
-  const has = current.includes(itemId);
-  const updated = has
-    ? current.filter(i => i !== itemId)
-    : [...current, itemId];
-  cache.userWishlist = { ...cache.userWishlist, [userId]: updated };
-
-  fetch(`/api/users/${userId}/wishlist/${itemId}`, {
-    method: has ? 'DELETE' : 'PUT',
-    headers: tgInitDataHeader(),
-  }).then(warnIfFailed('wishlist')).catch(e => console.warn('wishlist failed:', e));
-};
-
-export const isInWishlist = (userId: string, itemId: string): boolean =>
-  cache.userWishlist[userId]?.includes(itemId) || false;
-
 // ── #36 Right-to-erasure ────────────────────────────────────────────────────
-// Wipes every server-side trace of a single user — favourites, wishlist,
+// Wipes every server-side trace of a single user — favourites,
 // ratings, bookmarks, annotations, reading progress — and un-attributes the
 // user's analytics rows. Used to honour GDPR Art. 17 / 152-ФЗ deletion
 // requests. The server gate accepts either a verified Telegram session
@@ -357,7 +332,6 @@ export const isInWishlist = (userId: string, itemId: string): boolean =>
 export const eraseUserData = async (userId: string): Promise<void> => {
   // Optimistically clear local caches so the UI flips immediately.
   cache.userFavorites = { ...cache.userFavorites, [userId]: [] };
-  cache.userWishlist  = { ...cache.userWishlist,  [userId]: [] };
   cache.userRatings   = { ...cache.userRatings,   [userId]: {} };
   await writeRequest('Удаление данных пользователя', `/api/users/${userId}`, {
     method: 'DELETE',

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense, lazy } from 'react';
-import { getDb, loadDb, isFavorited, isInWishlist, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
+import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { filterAndSortItems, Scope } from './services/catalog';
@@ -43,9 +43,12 @@ const App: React.FC = () => {
   // category; 'NEW' silently maps to (LIBRARY, ALL) because new-arrivals is
   // now a Home shelf, not a saved filter.
   const _initialScope: Scope = (() => {
-    if (_savedFilters.scope) return _savedFilters.scope;
+    // The retired WISHLIST scope folds back into FAVORITES (the two were the
+    // same "save it for later" gesture); anything else passes through.
+    if (_savedFilters.scope) return _savedFilters.scope === 'WISHLIST' ? 'FAVORITES' : _savedFilters.scope;
     const legacy = _savedFilters.activeCategory;
-    if (legacy === 'FAVORITES' || legacy === 'WISHLIST' || legacy === 'HISTORY' || legacy === 'FINISHED') return legacy;
+    if (legacy === 'WISHLIST') return 'FAVORITES';
+    if (legacy === 'FAVORITES' || legacy === 'HISTORY' || legacy === 'FINISHED') return legacy;
     return 'LIBRARY';
   })();
   const _initialCategory: string = (() => {
@@ -230,7 +233,6 @@ const App: React.FC = () => {
     allowedUsers: db.allowedUsers,
     user,
     isFavorite: (id) => isFavorited(userId, id),
-    isWishlisted: (id) => isInWishlist(userId, id),
     ratingOf: getAverageRating,
     progressOf: getProgressPercent,
     viewHistory,

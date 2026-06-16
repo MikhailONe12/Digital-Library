@@ -1740,52 +1740,6 @@ app.delete('/api/users/:userId/favorites/:itemId',
   },
 );
 
-// ── #35 Wishlist ("Хочу прочитать") ─────────────────────────────────────────
-// Mirrors favourites: read returns the user's list, PUT adds, DELETE removes.
-// Separate from favourites so the catalogue can filter on either independently.
-app.get('/api/users/:userId/wishlist', validateUserId, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT item_id FROM user_wishlist WHERE user_id = $1',
-      [req.params.userId],
-    );
-    res.json({ wishlist: rows.map(r => r.item_id) });
-  } catch {
-    res.json({ wishlist: [] });
-  }
-});
-
-app.put('/api/users/:userId/wishlist/:itemId',
-  validateUserId, validateItemId, requireUserMatch,
-  async (req, res) => {
-    try {
-      await pool.query(
-        `INSERT INTO user_wishlist (user_id, item_id) VALUES ($1, $2)
-         ON CONFLICT (user_id, item_id) DO NOTHING`,
-        [req.params.userId, req.params.itemId],
-      );
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  },
-);
-
-app.delete('/api/users/:userId/wishlist/:itemId',
-  validateUserId, validateItemId, requireUserMatch,
-  async (req, res) => {
-    try {
-      await pool.query(
-        'DELETE FROM user_wishlist WHERE user_id = $1 AND item_id = $2',
-        [req.params.userId, req.params.itemId],
-      );
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(500).json({ error: e.message });
-    }
-  },
-);
-
 // ── #36 Right to erasure ────────────────────────────────────────────────────
 // DELETE /api/users/:userId wipes every per-user row across the schema —
 // implements GDPR Art. 17 and the analogous 152-ФЗ right. Authorised via the
@@ -1803,7 +1757,6 @@ app.delete('/api/users/:userId', validateUserId, async (req, res) => {
   }
   const wipes = [
     'DELETE FROM user_favorites        WHERE user_id = $1',
-    'DELETE FROM user_wishlist         WHERE user_id = $1',
     'DELETE FROM user_ratings          WHERE user_id = $1',
     'DELETE FROM user_bookmarks        WHERE user_id = $1',
     'DELETE FROM user_reading_progress WHERE user_id = $1',

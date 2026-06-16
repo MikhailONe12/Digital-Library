@@ -143,7 +143,6 @@ export interface AppState {
   stats: StatPoint[];
   userAnalytics: UserAnalytics[];
   userFavorites: Record<string, string[]>; // Maps user ID to array of item IDs
-  userWishlist: Record<string, string[]>;  // Maps user ID to array of item IDs ("Хочу прочитать")
   userRatings: Record<string, Record<string, number>>; // Maps user ID to { itemId: rating }
   customTypes: CustomType[];
   defaultLanguage: Locale;

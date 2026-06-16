@@ -3,8 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus, Play, Layers, LayoutGrid, ChevronLeft } from 'lucide-react';
-import { isFavorited, isInWishlist, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft } from 'lucide-react';
+import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
 
@@ -14,7 +14,7 @@ interface HomeProps {
   onOpenItem: (item: MediaItem) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
-  /** Personal collection axis: Library / Favorites / Wishlist / History / Finished. */
+  /** Personal collection axis: Library / Favorites / History / Finished. */
   scope: Scope;
   setScope: (s: Scope) => void;
   /** Content type axis: 'ALL' or a custom type id. */
@@ -205,7 +205,7 @@ const Home: React.FC<HomeProps> = ({
   //   • Section grid    — LIBRARY scope, category = a type id: one section,
   //     reached via a shelf's "Show all →" or an overflow chip, with a back
   //     header to return to the shelves Home.
-  //   • Scope grids     — FAVORITES / WISHLIST / HISTORY / FINISHED.
+  //   • Scope grids     — FAVORITES / HISTORY / FINISHED.
   // Everything that isn't the shelves Home is a flat grid.
   const broadLibrary =
     scope === 'LIBRARY' &&
@@ -515,7 +515,6 @@ const Home: React.FC<HomeProps> = ({
           { key: 'LIBRARY',   label: t.scopeLibrary, icon: BookOpen,     active: scope === 'LIBRARY' && category === '',    onClick: () => { setScope('LIBRARY'); setCategory(''); },    activeBg: 'bg-red-600',   fillActive: false },
           { key: 'ALL',       label: t.all,          icon: LayoutGrid,   active: scope === 'LIBRARY' && category === 'ALL', onClick: () => { setScope('LIBRARY'); setCategory('ALL'); }, activeBg: 'bg-red-600',   fillActive: false },
           { key: 'FAVORITES', label: t.favorites,    icon: Heart,        active: scope === 'FAVORITES',                     onClick: () => { setScope('FAVORITES'); setCategory(''); },  activeBg: 'bg-red-600',   fillActive: true },
-          { key: 'WISHLIST',  label: t.wishlist,     icon: BookmarkPlus, active: scope === 'WISHLIST',                      onClick: () => { setScope('WISHLIST'); setCategory(''); },   activeBg: 'bg-red-600',   fillActive: true },
           { key: 'HISTORY',   label: t.history,      icon: Clock,        active: scope === 'HISTORY',                       onClick: () => { setScope('HISTORY'); setCategory(''); },    activeBg: 'bg-red-600',   fillActive: false },
           { key: 'FINISHED',  label: t.finished,     icon: CheckCircle2, active: scope === 'FINISHED',                      onClick: () => { setScope('FINISHED'); setCategory(''); },   activeBg: 'bg-green-600', fillActive: false },
         ] as const).map(({ key, label, icon: Icon, active, onClick, activeBg, fillActive }) => (
@@ -756,10 +755,10 @@ const Home: React.FC<HomeProps> = ({
           {items.length === 0 && (
             <div className="py-24 text-center">
               <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
-                {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'WISHLIST' ? <BookmarkPlus size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
+                {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
               </div>
               <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
-                {scope === 'FAVORITES' ? t.noFavoritesYet : scope === 'WISHLIST' ? t.noWishlistYet : scope === 'HISTORY' ? t.noHistoryYet : scope === 'FINISHED' ? t.noFinishedYet : t.noResults}
+                {scope === 'FAVORITES' ? t.noFavoritesYet : scope === 'HISTORY' ? t.noHistoryYet : scope === 'FINISHED' ? t.noFinishedYet : t.noResults}
               </p>
             </div>
           )}

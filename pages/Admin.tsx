@@ -711,7 +711,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
   };
 
   // #36 GDPR right-to-erasure. Wipes everything a single user has stored on
-  // the server (favourites, wishlist, ratings, bookmarks, annotations,
+  // the server (favourites, ratings, bookmarks, annotations,
   // reading progress) and un-attributes their analytics rows. Used to honour
   // written deletion requests under GDPR Art. 17 / 152-ФЗ.
   const [eraseTarget, setEraseTarget] = useState('');

@@ -26,13 +26,15 @@ interface AdminProps {
   db: AppState;
   onUpdate: () => void;
   onLogout: () => void;
+  /** Open an item's content (reader / video) to inspect it, without tracking. */
+  onPreviewItem: (item: MediaItem) => void;
   isAdmin: boolean;
   setIsAdmin: (val: boolean) => void;
   lang: Locale;
   t: any;
 }
 
-const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, setIsAdmin, lang, t }) => {
+const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreviewItem, isAdmin, setIsAdmin, lang, t }) => {
   const ta = t.admin;
   const [apiKeyInput, setApiKeyInput] = useState('');
   // Removed 'users' from activeTab type as it is merged into security
@@ -1654,9 +1656,19 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, isAdmin, 
                   <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] flex items-center justify-between shadow-sm">
                     <div className="flex items-center gap-3 overflow-hidden min-w-0">
                       <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 tabular-nums w-7 text-right shrink-0">{idx + 1}.</span>
-                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-50 dark:bg-black/40 shrink-0 group">
+                      <button
+                        type="button"
+                        onClick={() => onPreviewItem(i)}
+                        title={ta.previewItem}
+                        aria-label={ta.previewItem}
+                        className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-50 dark:bg-black/40 shrink-0 group cursor-pointer focus:outline-none focus:ring-2 focus:ring-red-500"
+                      >
                         <CardCover item={i} lang={lang} />
-                      </div>
+                        {/* Hover scrim + magnifier hint that the cover opens the content. */}
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/45 transition-colors">
+                          <Eye size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </span>
+                      </button>
                       <div className="min-w-0">
                         <h4 className="text-xs font-black text-slate-900 dark:text-white truncate">{pickText(i.title, lang)}</h4>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">

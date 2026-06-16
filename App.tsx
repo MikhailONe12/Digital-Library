@@ -22,6 +22,10 @@ const FullscreenSpinner: React.FC = () => (
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'admin' | 'details'>('home');
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+  // Admin content preview — opened from the Admin items list, rendered as a
+  // full-screen overlay on top of Admin (so the dashboard keeps its state) and
+  // shown without recording views or saving progress.
+  const [previewItem, setPreviewItem] = useState<MediaItem | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [db, setDb] = useState(getDb());
   const [lang, setLang] = useState<Locale>(db.defaultLanguage);
@@ -476,12 +480,34 @@ const App: React.FC = () => {
             db={db}
             onUpdate={() => setDb(getDb())}
             onLogout={() => {setIsAdmin(false); setCurrentPage('home');}}
+            onPreviewItem={(item) => setPreviewItem(item)}
             setIsAdmin={setIsAdmin}
             isAdmin={isAdmin}
             lang={lang}
             t={t}
           />
         </Suspense>
+      )}
+
+      {/* Admin content preview — fixed overlay so Admin stays mounted beneath
+          it (its active tab / scroll survive). `preview` suppresses view and
+          progress tracking. */}
+      {previewItem && (
+        <div className="fixed inset-0 z-[400] overflow-y-auto bg-slate-50 dark:bg-black">
+          <Suspense fallback={<FullscreenSpinner />}>
+            <ItemDetails
+              item={previewItem}
+              preview
+              onBack={() => setPreviewItem(null)}
+              onRefresh={() => setDb(getDb())}
+              onOpenItem={(it) => setPreviewItem(it)}
+              onOpenAuthor={() => setPreviewItem(null)}
+              onOpenTag={() => setPreviewItem(null)}
+              lang={lang}
+              t={t}
+            />
+          </Suspense>
+        </div>
       )}
 
       {/* Version footer — readers are fixed z-[500] and cover this automatically */}

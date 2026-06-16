@@ -40,6 +40,13 @@ const emptyState = (): AppState => ({
 // In-memory cache — source of truth for the UI between renders.
 let cache: AppState = emptyState();
 
+// Admin "preview" mode. When on, all stat-writing calls (view/download counts,
+// reading & watch progress) become no-ops — it lets an admin open content from
+// the dashboard to inspect what's inside without inflating analytics or saving
+// a position. Toggled by ItemDetails while it renders in preview.
+let previewMode = false;
+export const setPreviewMode = (on: boolean): void => { previewMode = on; };
+
 // Server-computed average ratings, keyed by item id.
 let avgRatings: Record<string, number> = {};
 
@@ -652,6 +659,7 @@ const skipAnalyticsHeader = (): Record<string, string> => {
 };
 
 export const trackActivity = (type: 'view' | 'download', itemId: string) => {
+  if (previewMode) return;
   const idx = cache.items.findIndex(i => i.id === itemId);
   if (idx < 0) return;
 
@@ -791,6 +799,7 @@ export const saveReadingProgress = (
   userId: string, itemId: string,
   position: string, positionTotal: number, formatUrl: string,
 ): void => {
+  if (previewMode) return;
   if (!progressCache[itemId]) progressCache[itemId] = {};
   progressCache[itemId][formatUrl] = { position, position_total: positionTotal, format_url: formatUrl };
   fetch(`/api/users/${userId}/progress/${itemId}`, {

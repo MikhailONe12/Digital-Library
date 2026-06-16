@@ -19,7 +19,7 @@ import workerSrc from '../services/pdfWorker?worker&url';
 import {
   trackActivity, toggleFavorite, isFavorited, getUserRating, setUserRating,
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,
-  getReadingProgress, saveReadingProgress,
+  getReadingProgress, saveReadingProgress, setPreviewMode,
   getAnnotations, addAnnotation, deleteAnnotation,
   getDb, getProgressPercent, markItemFinished, resetItemProgress,
 } from '../services/db';
@@ -101,6 +101,9 @@ interface ItemDetailsProps {
   onOpenAuthor?: (author: string) => void;
   /** Same idea but for a tag chip — applies the catalog's tag filter. */
   onOpenTag?: (tag: string) => void;
+  /** Admin preview: open the content to inspect it without recording a view
+   *  or saving reading / watch progress. */
+  preview?: boolean;
   lang: Locale;
   t: any;
 }
@@ -290,7 +293,7 @@ const AudioPlayerOverlay: React.FC<AudioOverlayProps> = ({ url, itemId, userId, 
   );
 };
 
-const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, onOpenTag, lang, t }) => {
+const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, onOpenTag, preview = false, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
   // #29 — Audio player overlay (mp3/m4b/etc).
@@ -503,8 +506,17 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   useEffect(() => { localStorage.setItem(THEME_KEY, readerTheme); }, [readerTheme]);
   useEffect(() => { localStorage.setItem(FONT_KEY, String(epubFontSize)); }, [epubFontSize]);
 
+  // Preview mode (admin inspecting content): suppress every stat write —
+  // view counts and reading/watch progress — for as long as this component is
+  // mounted. Set before the tracking effect below runs so the view isn't
+  // counted even momentarily.
   useEffect(() => {
-    trackActivity('view', item.id);
+    setPreviewMode(preview);
+    return () => setPreviewMode(false);
+  }, [preview]);
+
+  useEffect(() => {
+    if (!preview) trackActivity('view', item.id);
     setIsFav(isFavorited(userId, item.id));
     setUserRatingState(getUserRating(userId, item.id));
     setAvgRating(getAverageRating(item.id));
@@ -1422,6 +1434,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
       window.open(fileUrl, '_blank');
     }
   };
+
+  // Admin preview: jump straight into the content so the admin sees what's
+  // inside in one click. Books/PDF/EPUB/audio auto-open their reader; videos
+  // and external links already embed/play on the detail page, so nothing to
+  // force there. Runs once per item.
+  useEffect(() => {
+    if (!preview) return;
+    const fmt = (item.formats || []).find(
+      f => isAudioFormat(f) || /\.(pdf|epub|djvu?)$/i.test((f.url || '').toLowerCase()),
+    );
+    if (fmt) handleRead(fmt);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, preview]);
 
   // ── Shared panels ──────────────────────────────────────────────────────────
 

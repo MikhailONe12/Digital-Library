@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus, Play, Layers } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus, Play, Layers, LayoutGrid, ChevronLeft } from 'lucide-react';
 import { isFavorited, isInWishlist, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
@@ -198,26 +198,23 @@ const Home: React.FC<HomeProps> = ({
   // category — this is the replacement for the old "Новинки" filter chip.
   const newItems = useMemo(() => selectNewArrivals(allItems), [allItems]);
 
-  // Two independent visibility tests now that shelves and the catalog grid
-  // live side-by-side. `broadLibrary` = "user isn't drilling into a sub-set"
-  // (LIBRARY scope, no search / tag / lang filter). The shelves only make
-  // sense in that broad context — for FAVORITES, HISTORY, or a "show me
-  // only books" view they'd duplicate the very list the user just asked
-  // to narrow. The grid hides only on the pristine Home (broad library +
-  // no category chip); the moment "Все" lights up or any other chip is
-  // tapped, the grid joins the shelves below them.
+  // Navigation model (after dropping the second chip row):
+  //   • Shelves Home   — LIBRARY scope, no category, no search/filter. Shows
+  //     Continue / New / section shelves. This is the only place shelves live.
+  //   • "Все" grid      — LIBRARY scope, category 'ALL': the whole catalog flat.
+  //   • Section grid    — LIBRARY scope, category = a type id: one section,
+  //     reached via a shelf's "Show all →" or an overflow chip, with a back
+  //     header to return to the shelves Home.
+  //   • Scope grids     — FAVORITES / WISHLIST / HISTORY / FINISHED.
+  // Everything that isn't the shelves Home is a flat grid.
   const broadLibrary =
     scope === 'LIBRARY' &&
     !searchQuery.trim() &&
     contentLangFilter.length === 0 &&
     tagFilter.length === 0;
-  const showShelves = broadLibrary && (category === '' || category === 'ALL');
-  const showGrid = !broadLibrary || !!category;
-  // Section shelves (and the overflow chips) belong only to the pristine Home
-  // (no chip selected). The "Все" / New-arrivals "Show all" path uses category
-  // 'ALL', which keeps Continue / New but swaps the section shelves for the
-  // full grid — so don't double up by showing them there too.
-  const showSectionShelves = broadLibrary && category === '';
+  const onShelvesHome = broadLibrary && category === '';
+  const showGrid = !onShelvesHome;
+  const showSectionShelves = onShelvesHome;
 
   // Per-section shelves — the home replacement for the old type chips. Group
   // the accessible catalog by content type (admin "section"), newest first,
@@ -243,11 +240,12 @@ const Home: React.FC<HomeProps> = ({
   const primaryShelves = shelfCategories.slice(0, 3);
   const overflowCategories = shelfCategories.slice(3);
 
-  // "Show all →" on a section shelf (or tapping an overflow chip): drill into
-  // that section's grid and scroll the grid into view once it has mounted.
+  // "Show all →" on a section shelf (or tapping an overflow chip): replace the
+  // shelves Home with that section's grid. The whole view swaps, so jump back
+  // to the top rather than scrolling to a now-relocated anchor.
   const openSection = (id: string) => {
     setCategory(id);
-    setTimeout(() => gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
   };
 
   // Refs for drag-scrolling each shelf with the mouse (touch already works
@@ -506,75 +504,40 @@ const Home: React.FC<HomeProps> = ({
         </div>
       )}
 
-      {/* Scope row — personal-collection axis (which corner of the library
-          we're looking at). One job per row: this picks the scope, the row
-          below picks the content type. Visually denser than the old icon-
-          only chips so it doesn't dominate the header. */}
-      <div className="flex gap-2 overflow-x-auto pb-3 mt-4 no-scrollbar scroll-smooth" role="tablist" aria-label={t.scopeLibrary}>
+      {/* Single navigation row — library view modes + personal collections.
+          "Библиотека" is the curated shelves Home, "Все" is the whole catalog
+          flat, the rest are personal collections. There's no second type-chip
+          row any more: content types surface as the shelves below, and a
+          section's grid is reached via its "Show all →". Picking any chip
+          resets the category so no stale type filter carries across. */}
+      <div className="flex gap-2 overflow-x-auto pb-8 mt-4 no-scrollbar scroll-smooth" role="tablist" aria-label={t.scopeLibrary}>
         {([
-          { key: 'LIBRARY',   label: t.scopeLibrary, icon: BookOpen,     activeBg: 'bg-red-600',   activeText: 'text-white' },
-          { key: 'FAVORITES', label: t.favorites,    icon: Heart,        activeBg: 'bg-red-600',   activeText: 'text-white' },
-          { key: 'WISHLIST',  label: t.wishlist,     icon: BookmarkPlus, activeBg: 'bg-red-600',   activeText: 'text-white' },
-          { key: 'HISTORY',   label: t.history,      icon: Clock,        activeBg: 'bg-red-600',   activeText: 'text-white' },
-          { key: 'FINISHED',  label: t.finished,     icon: CheckCircle2, activeBg: 'bg-green-600', activeText: 'text-white' },
-        ] as const).map(({ key, label, icon: Icon, activeBg, activeText }) => {
-          const active = scope === key;
-          return (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={active}
-              onClick={() => setScope(key)}
-              className={`flex-shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[13px] font-semibold transition-all duration-200 ${
-                active
-                  ? `${activeBg} ${activeText}`
-                  : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-              }`}
-            >
-              <Icon size={15} strokeWidth={2.25} fill={active && (key === 'FAVORITES' || key === 'WISHLIST') ? 'currentColor' : 'none'} />
-              {label}
-            </button>
-          );
-        })}
+          { key: 'LIBRARY',   label: t.scopeLibrary, icon: BookOpen,     active: scope === 'LIBRARY' && category === '',    onClick: () => { setScope('LIBRARY'); setCategory(''); },    activeBg: 'bg-red-600',   fillActive: false },
+          { key: 'ALL',       label: t.all,          icon: LayoutGrid,   active: scope === 'LIBRARY' && category === 'ALL', onClick: () => { setScope('LIBRARY'); setCategory('ALL'); }, activeBg: 'bg-red-600',   fillActive: false },
+          { key: 'FAVORITES', label: t.favorites,    icon: Heart,        active: scope === 'FAVORITES',                     onClick: () => { setScope('FAVORITES'); setCategory(''); },  activeBg: 'bg-red-600',   fillActive: true },
+          { key: 'WISHLIST',  label: t.wishlist,     icon: BookmarkPlus, active: scope === 'WISHLIST',                      onClick: () => { setScope('WISHLIST'); setCategory(''); },   activeBg: 'bg-red-600',   fillActive: true },
+          { key: 'HISTORY',   label: t.history,      icon: Clock,        active: scope === 'HISTORY',                       onClick: () => { setScope('HISTORY'); setCategory(''); },    activeBg: 'bg-red-600',   fillActive: false },
+          { key: 'FINISHED',  label: t.finished,     icon: CheckCircle2, active: scope === 'FINISHED',                      onClick: () => { setScope('FINISHED'); setCategory(''); },   activeBg: 'bg-green-600', fillActive: false },
+        ] as const).map(({ key, label, icon: Icon, active, onClick, activeBg, fillActive }) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={active}
+            onClick={onClick}
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 h-9 px-3.5 rounded-xl text-[13px] font-semibold transition-all duration-200 ${
+              active
+                ? `${activeBg} text-white`
+                : 'bg-white dark:bg-[#1c1c1e] text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
+            }`}
+          >
+            <Icon size={15} strokeWidth={2.25} fill={active && fillActive ? 'currentColor' : 'none'} />
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Category row — content-type axis. On the pristine Home the section
-          shelves below replace these chips entirely; the row only reappears
-          once the user has drilled into the grid (a section's "Show all", a
-          non-Library scope, or an active search / filter), where it doubles
-          as the lateral type switcher and the way back ("Все" → ''). */}
-      {showGrid && (
-        <div className="flex gap-2.5 overflow-x-auto pb-8 mt-1 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
-          <button
-            onClick={() => setCategory(category === 'ALL' ? '' : 'ALL')}
-            className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-              category === 'ALL'
-              ? 'bg-red-600 text-white'
-              : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-            }`}
-            aria-pressed={category === 'ALL'}
-          >
-            {t.all}
-          </button>
-          {categories.map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => setCategory(cat.id)}
-              aria-pressed={category === cat.id}
-              className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-                category === cat.id
-                ? 'bg-red-600 text-white'
-                : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-              }`}
-            >
-              {cat[lang] || cat.en || cat.id}
-            </button>
-          ))}
-        </div>
-      )}
-
       {/* Continue reading shelf — default view only */}
-      {continueItems.length > 0 && showShelves && (
+      {continueItems.length > 0 && onShelvesHome && (
         <div className="mb-8">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
             <BookOpen size={14} className="text-red-600" />
@@ -649,7 +612,7 @@ const Home: React.FC<HomeProps> = ({
           The link sits next to the title (not flushed right with ml-auto)
           so the heading row stays the same visual width as Continue and
           doesn't stretch to the viewport edge on wide screens. */}
-      {newItems.length > 0 && showShelves && (
+      {newItems.length > 0 && onShelvesHome && (
         <div className="mb-8">
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
             <Sparkles size={14} className="text-red-600" />
@@ -657,14 +620,11 @@ const Home: React.FC<HomeProps> = ({
             <span>{t.new}</span>
             <button
               onClick={() => {
-                // Activate the "Все" chip — that's what brings the catalog
-                // grid into view; sortBy stays at whatever the user picked
-                // (already 'recent' by default, so new arrivals lead).
+                // "Show all new" → the flat "Все" grid sorted newest-first.
+                // The shelves Home swaps for the grid, so jump to the top.
                 setCategory('ALL');
                 setSortBy('recent');
-                // After the chip activates and the grid mounts, scroll to it.
-                // setTimeout so the layout has run before we measure.
-                setTimeout(() => gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+                setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0);
               }}
               className="inline-flex items-center gap-1 text-[10px] font-bold tracking-widest text-red-600 dark:text-red-400 hover:underline normal-case"
             >
@@ -755,13 +715,31 @@ const Home: React.FC<HomeProps> = ({
         </div>
       )}
 
-      {/* Catalog grid + empty state — only when the user has explicitly opted
-          in (picked the "Все" chip, a specific type, a non-Library scope, or
-          typed into search / filters). On the default Home the page ends at
-          the shelves above; the grid would just duplicate everything shown
-          there in a less navigable form. */}
+      {/* Catalog grid + empty state — shown for every view that isn't the
+          shelves Home ("Все", a section drill-down, a personal-collection
+          scope, or an active search / filter). */}
       {showGrid && (
         <>
+          {/* Section drill-down header — when the grid is a single content
+              section (reached via a shelf's "Show all →"), name it and offer
+              a one-tap way back to the shelves Home. */}
+          {scope === 'LIBRARY' && !!category && category !== 'ALL' && (
+            <div className="flex items-center gap-3 mb-6 -mt-2">
+              <button
+                onClick={() => setCategory('')}
+                className="inline-flex items-center gap-1.5 h-9 pl-2 pr-3.5 rounded-xl text-[13px] font-semibold bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08] hover:border-red-300 dark:hover:border-red-500/30 active:scale-95 transition-all"
+              >
+                <ChevronLeft size={17} strokeWidth={2.5} />
+                {t.scopeLibrary}
+              </button>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white tracking-tight truncate">
+                {categories.find(c => c.id === category)?.[lang]
+                  || categories.find(c => c.id === category)?.en
+                  || category}
+              </h2>
+            </div>
+          )}
+
           <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
             {items.map(item => (
               <MediaCard

@@ -49,7 +49,15 @@ const App: React.FC = () => {
     return 'LIBRARY';
   })();
   const _initialCategory: string = (() => {
-    // Empty string is the new "no chip selected, show shelves only" default;
+    // One-time reset: the Home was restructured (type chips → section shelves),
+    // so the default landing view is now the shelves Home (category ''). Anyone
+    // whose last session persisted a grid view ('ALL' or a type id) is reset
+    // once so they actually see the new layout instead of an opaque flat grid.
+    if (!localStorage.getItem('home_shelves_v2')) {
+      try { localStorage.setItem('home_shelves_v2', '1'); } catch {}
+      return '';
+    }
+    // Empty string is the "no chip selected, show shelves only" default;
     // 'ALL' means the user has explicitly opened the catalog grid via the
     // "Все" chip. Custom type ids ('BOOK' etc.) flow through unchanged.
     if (typeof _savedFilters.category === 'string') return _savedFilters.category;

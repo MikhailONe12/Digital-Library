@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus, Play } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, BookmarkPlus, Play, Layers } from 'lucide-react';
 import { isFavorited, isInWishlist, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
@@ -102,6 +102,68 @@ const useDragScroll = () => {
   return ref;
 };
 
+// A single content-section shelf (e.g. "Books", "Articles") — the home-page
+// replacement for the old type filter chips. Same visual language as the
+// Continue / New shelves (drag-scrollable strip, identical card + shadow), so
+// the three read as one consistent row family. Lives as its own component so
+// each shelf gets its own `useDragScroll` ref (hooks can't run in a loop).
+const CategoryShelf: React.FC<{
+  title: string;
+  items: MediaItem[];
+  lang: Locale;
+  t: any;
+  onOpenItem: (item: MediaItem) => void;
+  onShowAll: () => void;
+}> = ({ title, items, lang, t, onOpenItem, onShowAll }) => {
+  const ref = useDragScroll();
+  return (
+    <div className="mb-8">
+      <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+        <Layers size={14} className="text-red-600" />
+        <span className="w-6 h-[2px] bg-red-600" />
+        <span className="truncate">{title}</span>
+        <button
+          onClick={onShowAll}
+          className="inline-flex items-center gap-1 text-[10px] font-bold tracking-widest text-red-600 dark:text-red-400 hover:underline normal-case shrink-0"
+        >
+          {t.showAll} →
+        </button>
+      </h2>
+      <div
+        ref={ref}
+        /* Same clip-box fix as the Continue / New shelves — see those for the
+           full rationale (overflow-x:auto ⇒ overflow-y:auto clips shadows at
+           the padding box; px-4/-mx-4 + pb-8 give the tails room to fade). */
+        className="flex gap-3 overflow-x-auto pt-1 pb-8 px-4 -mx-4 scroll-pl-4 no-scrollbar snap-x snap-proximity"
+      >
+        {items.map(item => (
+          <button
+            key={item.id}
+            onClick={() => onOpenItem(item)}
+            className="group flex-shrink-0 w-44 snap-start text-left bg-white dark:bg-[#1c1c1e] rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.08),0_10px_20px_-6px_rgba(0,0,0,0.28)] hover:shadow-[0_2px_4px_rgba(0,0,0,0.10),0_14px_24px_-8px_rgba(0,0,0,0.34)] active:scale-[0.97] transition-all duration-300"
+          >
+            <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
+              <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+              {hasVideo(item) && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-lg ring-1 ring-white/10">
+                    <Play size={16} className="text-white ml-0.5" fill="currentColor" strokeWidth={0} />
+                  </div>
+                </div>
+              )}
+              <div className="absolute bottom-2 left-2 right-2">
+                <p className="text-white text-xs font-bold tracking-tight line-clamp-2 drop-shadow">{pickText(item.title, lang)}</p>
+                {item.author && <p className="text-white/70 text-[10px] mt-0.5 line-clamp-1">{item.author}</p>}
+              </div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 const Home: React.FC<HomeProps> = ({
   items, allItems, onOpenItem, searchQuery, setSearchQuery,
   scope, setScope, category, setCategory,
@@ -151,6 +213,42 @@ const Home: React.FC<HomeProps> = ({
     tagFilter.length === 0;
   const showShelves = broadLibrary && (category === '' || category === 'ALL');
   const showGrid = !broadLibrary || !!category;
+  // Section shelves (and the overflow chips) belong only to the pristine Home
+  // (no chip selected). The "Все" / New-arrivals "Show all" path uses category
+  // 'ALL', which keeps Continue / New but swaps the section shelves for the
+  // full grid — so don't double up by showing them there too.
+  const showSectionShelves = broadLibrary && category === '';
+
+  // Per-section shelves — the home replacement for the old type chips. Group
+  // the accessible catalog by content type (admin "section"), newest first,
+  // capped per shelf. Only sections that actually have items get a shelf.
+  const itemsByCategory = useMemo(() => {
+    const map = new Map<string, MediaItem[]>();
+    for (const cat of categories) {
+      const list = allItems
+        .filter(i => i.type === cat.id)
+        .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime())
+        .slice(0, 12);
+      if (list.length > 0) map.set(cat.id, list);
+    }
+    return map;
+  }, [allItems, categories]);
+
+  // First 3 non-empty sections (admin order) become full shelves; any beyond
+  // that collapse into a compact chip row so the page doesn't grow unbounded.
+  const shelfCategories = useMemo(
+    () => categories.filter(c => itemsByCategory.has(c.id)),
+    [categories, itemsByCategory],
+  );
+  const primaryShelves = shelfCategories.slice(0, 3);
+  const overflowCategories = shelfCategories.slice(3);
+
+  // "Show all →" on a section shelf (or tapping an overflow chip): drill into
+  // that section's grid and scroll the grid into view once it has mounted.
+  const openSection = (id: string) => {
+    setCategory(id);
+    setTimeout(() => gridRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+  };
 
   // Refs for drag-scrolling each shelf with the mouse (touch already works
   // via the browser's native swipe). Separate refs so dragging one shelf
@@ -440,38 +538,40 @@ const Home: React.FC<HomeProps> = ({
         })}
       </div>
 
-      {/* Category row — content-type axis. Pure type filter; no personal-
-          collection chips here any more, and no NEW (that's now a shelf).
-          The "Все" chip now toggles between the shelves-only Home (no chip)
-          and the full catalog grid (chip on) — the same affordance the
-          New-arrivals shelf's "Show all →" routes through. */}
-      <div className="flex gap-2.5 overflow-x-auto pb-8 mt-1 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
-        <button
-          onClick={() => setCategory(category === 'ALL' ? '' : 'ALL')}
-          className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-            category === 'ALL'
-            ? 'bg-red-600 text-white'
-            : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
-          }`}
-          aria-pressed={category === 'ALL'}
-        >
-          {t.all}
-        </button>
-        {categories.map(cat => (
+      {/* Category row — content-type axis. On the pristine Home the section
+          shelves below replace these chips entirely; the row only reappears
+          once the user has drilled into the grid (a section's "Show all", a
+          non-Library scope, or an active search / filter), where it doubles
+          as the lateral type switcher and the way back ("Все" → ''). */}
+      {showGrid && (
+        <div className="flex gap-2.5 overflow-x-auto pb-8 mt-1 no-scrollbar scroll-smooth" role="group" aria-label={t.filters}>
           <button
-            key={cat.id}
-            onClick={() => setCategory(cat.id)}
-            aria-pressed={category === cat.id}
+            onClick={() => setCategory(category === 'ALL' ? '' : 'ALL')}
             className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
-              category === cat.id
+              category === 'ALL'
               ? 'bg-red-600 text-white'
               : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
             }`}
+            aria-pressed={category === 'ALL'}
           >
-            {cat[lang] || cat.en || cat.id}
+            {t.all}
           </button>
-        ))}
-      </div>
+          {categories.map(cat => (
+            <button
+              key={cat.id}
+              onClick={() => setCategory(cat.id)}
+              aria-pressed={category === cat.id}
+              className={`flex-shrink-0 whitespace-nowrap px-6 h-10 rounded-xl text-sm font-medium transition-all duration-200 ${
+                category === cat.id
+                ? 'bg-red-600 text-white'
+                : 'bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08]'
+              }`}
+            >
+              {cat[lang] || cat.en || cat.id}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Continue reading shelf — default view only */}
       {continueItems.length > 0 && showShelves && (
@@ -608,6 +708,47 @@ const Home: React.FC<HomeProps> = ({
                     {item.author && <p className="text-white/70 text-[10px] mt-0.5 line-clamp-1">{item.author}</p>}
                   </div>
                 </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Section shelves — one horizontal strip per content type, replacing
+          the old type filter chips. First three non-empty sections (admin
+          order) render in full; "Show all →" on each drills into that
+          section's grid. Pristine Home only. */}
+      {showSectionShelves && primaryShelves.map(cat => (
+        <CategoryShelf
+          key={cat.id}
+          title={cat[lang] || cat.en || cat.id}
+          items={itemsByCategory.get(cat.id)!}
+          lang={lang}
+          t={t}
+          onOpenItem={onOpenItem}
+          onShowAll={() => openSection(cat.id)}
+        />
+      ))}
+
+      {/* Overflow sections — everything past the first three collapses into a
+          compact chip row so the page stays short. Each chip drills straight
+          into that section's grid. */}
+      {showSectionShelves && overflowCategories.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+            <Layers size={14} className="text-red-600" />
+            <span className="w-6 h-[2px] bg-red-600" />
+            <span>{t.moreSections}</span>
+          </h2>
+          <div className="flex flex-wrap gap-2.5">
+            {overflowCategories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => openSection(cat.id)}
+                className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-medium bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08] hover:border-red-300 dark:hover:border-red-500/30 active:scale-95 transition-all"
+              >
+                {cat[lang] || cat.en || cat.id}
+                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 tabular-nums">{itemsByCategory.get(cat.id)!.length}</span>
               </button>
             ))}
           </div>

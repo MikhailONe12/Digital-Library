@@ -102,6 +102,32 @@ const useDragScroll = () => {
   return ref;
 };
 
+// Language chips shown in the top-right corner of every shelf cover. Mirrors
+// the logic in MediaCard (global content languages ∪ per-file languages) so a
+// shelf tile carries the same "what languages is this in" cue as the grid.
+const ShelfLangBadges: React.FC<{ item: MediaItem }> = ({ item }) => {
+  const langs = useMemo(() => {
+    const fileLanguages = (item.formats || [])
+      .map(f => f.language)
+      .filter((l): l is ContentLang => !!l);
+    const globalLanguages = item.contentLanguages || [];
+    return Array.from(new Set([...globalLanguages, ...fileLanguages]));
+  }, [item]);
+  if (!langs.length) return null;
+  return (
+    <div className="absolute top-2 right-2 flex flex-wrap justify-end gap-1 max-w-[70%]">
+      {langs.map(l => (
+        <span
+          key={l}
+          className="bg-white/85 backdrop-blur-md text-slate-700 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shadow-sm"
+        >
+          {l}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 // A single content-section shelf (e.g. "Books", "Articles") — the home-page
 // replacement for the old type filter chips. Same visual language as the
 // Continue / New shelves (drag-scrollable strip, identical card + shadow), so
@@ -145,6 +171,7 @@ const CategoryShelf: React.FC<{
             <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
               <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+              <ShelfLangBadges item={item} />
               {hasVideo(item) && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-lg ring-1 ring-white/10">
@@ -596,6 +623,7 @@ const Home: React.FC<HomeProps> = ({
                       main grid, so the shelf no longer shows blank tiles. */}
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  <ShelfLangBadges item={item} />
                   {/* Centred play badge — same affordance the main grid uses
                       for video items; without it a paused mid-watch video
                       looks like a book tile that just happens to have a
@@ -666,6 +694,7 @@ const Home: React.FC<HomeProps> = ({
                 <div className="aspect-[3/4] relative overflow-hidden bg-slate-100 dark:bg-white/[0.04]">
                   <div className="absolute inset-0"><CardCover item={item} lang={lang} /></div>
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  <ShelfLangBadges item={item} />
                   {/* Centred play badge — matches the main grid's video cue
                       so the shelf doesn't disguise videos as books. */}
                   {hasVideo(item) && (

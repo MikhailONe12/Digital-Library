@@ -1,4 +1,16 @@
-import { Locale, MediaItem, MultilingualText } from './types';
+import { ContentLang, Locale, MediaItem, MultilingualText } from './types';
+
+// The set of languages a card should advertise: the item's global content
+// languages plus any language attached to an individual file, de-duplicated.
+// Shared by the catalog grid (MediaCard) and the Home shelves (ShelfLangBadges)
+// so both derive the language badges from exactly the same rule.
+export const getDisplayedLanguages = (item: MediaItem): ContentLang[] => {
+  const fileLanguages = (item.formats || [])
+    .map(f => f.language)
+    .filter((l): l is ContentLang => !!l);
+  const globalLanguages = item.contentLanguages || [];
+  return Array.from(new Set([...globalLanguages, ...fileLanguages]));
+};
 
 export const pickText = (
   text: MultilingualText | undefined,

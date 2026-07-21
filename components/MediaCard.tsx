@@ -1,8 +1,8 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { MediaItem, Locale, ContentLang } from '../types';
+import { MediaItem, Locale } from '../types';
 import { Star, ShieldCheck, Heart, BookOpen, CheckCircle2, Play, Film } from 'lucide-react';
-import { pickText, hasVideo, getFirstVideoUrl, formatDuration } from '../utils';
+import { pickText, hasVideo, getFirstVideoUrl, formatDuration, getDisplayedLanguages } from '../utils';
 import { isDirectVideo } from '../services/videoThumb';
 import { getVideoDuration } from '../services/videoDuration';
 import CardCover from './CardCover';
@@ -17,11 +17,7 @@ interface MediaCardProps {
 
 const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited, progress }) => {
 
-  const displayedLanguages = useMemo(() => {
-    const fileLanguages = item.formats.map(f => f.language).filter((l): l is ContentLang => !!l);
-    const globalLanguages = item.contentLanguages || [];
-    return Array.from(new Set([...globalLanguages, ...fileLanguages]));
-  }, [item]);
+  const displayedLanguages = useMemo(() => getDisplayedLanguages(item), [item]);
 
   // Video cues (#1 play overlay, #2 duration badge, #3 red type chip) — visual
   // signal that this item plays instead of reading. Duration is only known

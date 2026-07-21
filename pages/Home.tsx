@@ -5,7 +5,7 @@ import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
 import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
-import { pickText, hasVideo } from '../utils';
+import { pickText, hasVideo, getDisplayedLanguages } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
 
 interface HomeProps {
@@ -111,11 +111,7 @@ const useDragScroll = () => {
 // language list still shows a badge instead of nothing.
 const ShelfLangBadges: React.FC<{ item: MediaItem }> = ({ item }) => {
   const langs = useMemo(() => {
-    const fileLanguages = (item.formats || [])
-      .map(f => f.language)
-      .filter((l): l is ContentLang => !!l);
-    const globalLanguages = item.contentLanguages || [];
-    const merged = Array.from(new Set([...globalLanguages, ...fileLanguages]));
+    const merged = getDisplayedLanguages(item);
     return merged.length ? merged : (['en'] as ContentLang[]);
   }, [item]);
   return (
@@ -210,9 +206,6 @@ const Home: React.FC<HomeProps> = ({
   // Wraps the search input + filter toggle + the expandable panel; we use it
   // to close the panel when the user clicks outside of it.
   const filterWrapRef = useRef<HTMLDivElement | null>(null);
-  // Anchor for the "Show all →" link inside the New-arrivals shelf, so the
-  // tap lands on the grid even on long screens.
-  const gridRef = useRef<HTMLDivElement | null>(null);
 
   // Close the filter panel on an outside click — pointerdown rather than
   // click so the dismiss happens before any button inside the panel re-
@@ -268,16 +261,22 @@ const Home: React.FC<HomeProps> = ({
   // Per-section shelves — the home replacement for the old type chips. Group
   // the accessible catalog by content type (admin "section"), newest first,
   // capped per shelf. Only sections that actually have items get a shelf.
-  const itemsByCategory = useMemo(() => {
+  // `sectionCounts` keeps the *true* size of each section (before the 12-item
+  // shelf cap) so the overflow chips can show how many items really live in a
+  // section rather than the capped display count.
+  const { itemsByCategory, sectionCounts } = useMemo(() => {
     const map = new Map<string, MediaItem[]>();
+    const counts = new Map<string, number>();
     for (const cat of categories) {
-      const list = allItems
+      const all = allItems
         .filter(i => i.type === cat.id)
-        .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime())
-        .slice(0, 12);
-      if (list.length > 0) map.set(cat.id, list);
+        .sort((a, b) => new Date(b.addedDate).getTime() - new Date(a.addedDate).getTime());
+      if (all.length > 0) {
+        map.set(cat.id, all.slice(0, 12));
+        counts.set(cat.id, all.length);
+      }
     }
-    return map;
+    return { itemsByCategory: map, sectionCounts: counts };
   }, [allItems, categories]);
 
   // First 3 non-empty sections (admin order) become full shelves; any beyond
@@ -767,7 +766,7 @@ const Home: React.FC<HomeProps> = ({
                 className="inline-flex items-center gap-2 px-5 h-10 rounded-xl text-sm font-medium bg-white dark:bg-[#1c1c1e] text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-white/[0.08] hover:border-red-300 dark:hover:border-red-500/30 active:scale-95 transition-all"
               >
                 {cat[lang] || cat.en || cat.id}
-                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 tabular-nums">{itemsByCategory.get(cat.id)!.length}</span>
+                <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 tabular-nums">{sectionCounts.get(cat.id)!}</span>
               </button>
             ))}
           </div>
@@ -799,7 +798,7 @@ const Home: React.FC<HomeProps> = ({
             </div>
           )}
 
-          <div ref={gridRef} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6 animate-in fade-in slide-in-from-bottom-5 duration-700">
             {items.map(item => (
               <MediaCard
                 key={item.id}

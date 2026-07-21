@@ -1417,6 +1417,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const AUDIO_EXT = /\.(mp3|m4a|m4b|ogg|oga|opus|wav)(\?|#|$)/i;
   const isAudioFormat = (f: FileFormat) => AUDIO_EXT.test(f.url || '');
 
+  // Does this format open in one of the built-in readers/players (rather than
+  // falling through to `window.open`)? Mirrors the branches in `handleRead`
+  // exactly — including the `.pdf`-by-name fallback — so anything that decides
+  // "is this openable in-app?" (e.g. the admin-preview auto-open below) stays
+  // in sync with what `handleRead` actually does.
+  const opensInReader = (f: FileFormat): boolean => {
+    if (isAudioFormat(f)) return true;
+    const url = (f.url || '').toLowerCase();
+    return url.endsWith('.pdf') || (f.name || '').toLowerCase().includes('pdf')
+      || url.endsWith('.epub')
+      || url.endsWith('.djvu') || url.endsWith('.djv');
+  };
+
   const handleRead = (format: FileFormat) => {
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;
     const url = format.url.toLowerCase();
@@ -1441,9 +1454,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   // force there. Runs once per item.
   useEffect(() => {
     if (!preview) return;
-    const fmt = (item.formats || []).find(
-      f => isAudioFormat(f) || /\.(pdf|epub|djvu?)$/i.test((f.url || '').toLowerCase()),
-    );
+    const fmt = (item.formats || []).find(opensInReader);
     if (fmt) handleRead(fmt);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, preview]);

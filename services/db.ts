@@ -506,11 +506,15 @@ export const resetTrafficStats = async (): Promise<void> => {
 
 /**
  * Apply the analytics-exclude list retroactively: delete access-log rows that
- * were recorded before the exclusion existed. Returns how many rows went, plus
- * how many browser-token excludes couldn't be applied (the token never reaches
- * the row, so those can't be matched after the fact).
+ * were recorded before the exclusion existed. Matches on identity (@handle /
+ * Telegram id) only. Returns how many rows went, plus the excludes that can't
+ * be applied backwards — IPs (rows store only the anonymised address, so
+ * matching one would delete the whole subnet) and browser tokens (never stored
+ * on a row at all).
  */
-export const purgeExcludedVisits = async (): Promise<{ deleted: number; browserTokensSkipped: number }> => {
+export const purgeExcludedVisits = async (): Promise<{
+  deleted: number; ipsSkipped: number; browserTokensSkipped: number;
+}> => {
   const res = await fetch('/api/visits/purge-excluded', {
     method: 'POST',
     headers: authHeaders(),
@@ -519,6 +523,7 @@ export const purgeExcludedVisits = async (): Promise<{ deleted: number; browserT
   const data = await res.json();
   return {
     deleted: data.deleted || 0,
+    ipsSkipped: data.ipsSkipped || 0,
     browserTokensSkipped: data.browserTokensSkipped || 0,
   };
 };

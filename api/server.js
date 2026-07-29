@@ -958,13 +958,10 @@ const isAnalyticsExcluded = (username, ip, userId, browserToken, settings) => {
   const exTok = (ex.browsers || []).map(b => b?.token).filter(Boolean);
 
   if (u && u !== 'guest' && exU.includes(u)) return true;
-  // Match the full IP *and* its anonymised form. visit_logs only ever stores
-  // the truncated value (#37), so an admin reading an address off the access
-  // log and pasting it into the exclude list would otherwise never match a
-  // real visitor. Entering a truncated address deliberately covers the whole
-  // /24 (IPv4) or /48 (IPv6) — which is what "stop counting my network" means.
-  if (ipClean && ipClean !== 'unknown'
-      && (exI.includes(ipClean) || exI.includes(anonymizeIp(ipClean)))) return true;
+  // Exact match only. Matching an anonymised entry (85.140.3.0) would silently
+  // widen the exclusion to the visitor's whole /24 and stop counting unrelated
+  // people who happen to share it — an exclude must target one visitor.
+  if (ipClean && ipClean !== 'unknown' && exI.includes(ipClean)) return true;
   if (uid && exUid.includes(uid)) return true;
   if (browserToken && exTok.includes(browserToken)) return true;
   return false;
@@ -1634,9 +1631,16 @@ app.post('/api/visits/reset', requireApiKey, async (req, res) => {
 // The write-time filter only stops *new* rows, so entries recorded before an
 // exclude was added linger in the log; this applies the list retroactively.
 //
-// Browser-token excludes can't be purged: the token is a request header and is
-// never stored on the row, so there's nothing to match against. The response
-// reports that separately rather than pretending those rows were handled.
+// Deliberately matches on identity (username / Telegram id) only:
+//   • IP excludes can't be applied backwards. Rows store the anonymised
+//     address (#37), so the only way to match an excluded IP would be to
+//     compare its truncated form — which would delete every row in that /24,
+//     including unrelated visitors. Over-deleting other people's rows is worse
+//     than leaving a few stale ones, so we don't.
+//   • Browser-token excludes can't be matched either: the token is a request
+//     header and never lands on the row.
+// Both counts come back in the response so the UI can say what was skipped
+// instead of implying the purge covered everything.
 app.post('/api/visits/purge-excluded', requireApiKey, async (req, res) => {
   try {
     const settings = await getSettingsCached();
@@ -1644,23 +1648,20 @@ app.post('/api/visits/purge-excluded', requireApiKey, async (req, res) => {
     const usernames = (ex.usernames || [])
       .map(x => String(x).toLowerCase().replace(/^@/, '').trim()).filter(Boolean);
     const userIds = (ex.userIds || []).map(x => String(x).trim()).filter(Boolean);
-    // Rows store the anonymised address, so compare on that form.
-    const ips = (ex.ips || [])
-      .map(x => anonymizeIp(String(x).trim())).filter(Boolean);
     // userIds are logged as `id_NN` when the visitor has no @handle.
-    const idMarkers = userIds.map(id => `id_${id}`);
-    const names = [...usernames, ...idMarkers];
+    const names = [...usernames, ...userIds.map(id => `id_${id}`)];
+    const skipped = {
+      ipsSkipped: (ex.ips || []).length,
+      browserTokensSkipped: (ex.browsers || []).length,
+    };
 
-    if (names.length === 0 && ips.length === 0) {
-      return res.json({ ok: true, deleted: 0, browserTokensSkipped: (ex.browsers || []).length });
-    }
+    if (names.length === 0) return res.json({ ok: true, deleted: 0, ...skipped });
+
     const { rowCount } = await pool.query(
-      `DELETE FROM visit_logs
-        WHERE ($1::text[] <> '{}' AND LOWER(username) = ANY($1))
-           OR ($2::text[] <> '{}' AND ip = ANY($2))`,
-      [names, ips],
+      'DELETE FROM visit_logs WHERE LOWER(username) = ANY($1)',
+      [names],
     );
-    res.json({ ok: true, deleted: rowCount || 0, browserTokensSkipped: (ex.browsers || []).length });
+    res.json({ ok: true, deleted: rowCount || 0, ...skipped });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

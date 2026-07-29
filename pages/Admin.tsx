@@ -769,13 +769,26 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     }
   };
 
-  // Exclude an address straight from the access log. The value shown there is
-  // already anonymised; the server compares both the full and truncated forms,
-  // so this genuinely stops future visits from that network being counted.
-  const handleExcludeLoggedIp = async (ip: string) => {
+  // What can we key an exclude on for this log row? A Telegram numeric id or an
+  // @handle identifies one person exactly. The logged IP can't be used: it is
+  // stored anonymised, so excluding it would silently cover the visitor's whole
+  // subnet. Anonymous rows therefore get no button.
+  const visitorExcludeKey = (username?: string): { kind: 'id' | 'name'; value: string } | null => {
+    const u = (username || '').trim();
+    if (!u || u.toLowerCase() === 'guest') return null;
+    if (u.startsWith('id_')) {
+      const id = u.slice(3);
+      return id ? { kind: 'id', value: id } : null;
+    }
+    return { kind: 'name', value: u.toLowerCase().replace(/^@/, '') };
+  };
+
+  // Exclude exactly the visitor on this log row, by identity.
+  const handleExcludeVisitor = async (key: { kind: 'id' | 'name'; value: string }) => {
     try {
-      await addAnalyticsExcludeIp(ip);
-      toast.success(ta.excludeThisIpDone);
+      if (key.kind === 'id') await addAnalyticsExcludeUserId(key.value);
+      else await addAnalyticsExcludeUsername(key.value);
+      toast.success(ta.excludeThisVisitorDone);
     } catch { /* toasted by db layer */ }
     onUpdate();
   };
@@ -788,11 +801,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     if (!confirm(ta.purgeExcludedConfirm)) return;
     setPurging(true);
     try {
-      const { deleted, browserTokensSkipped } = await purgeExcludedVisits();
+      const { deleted, ipsSkipped, browserTokensSkipped } = await purgeExcludedVisits();
       await loadAnalytics();
       toast.success(`${ta.purgeExcludedDone}: ${deleted}`);
-      // Browser excludes match on a request header that was never stored on the
-      // row, so say so rather than letting the admin assume full coverage.
+      // Say what the purge could NOT reach rather than letting the admin assume
+      // it covered every kind of exclude on the list.
+      if (ipsSkipped > 0) toast.info(ta.purgeExcludedIpNote);
       if (browserTokensSkipped > 0) toast.info(ta.purgeExcludedBrowserNote);
     } catch {
       toast.error(ta.purgeExcludedFailed);
@@ -1139,25 +1153,35 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                 <tr key={log.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
                                     <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleDateString()}</td>
                                     <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
-                                    <td className="p-3 font-bold text-slate-700 dark:text-slate-200">{log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}</td>
-                                    <td className="p-3 text-slate-500 dark:text-slate-400">
+                                    <td className="p-3 font-bold text-slate-700 dark:text-slate-200">
                                       <span className="inline-flex items-center gap-1.5">
-                                        {log.ip}
-                                        {/* One-tap exclude straight from the log. The stored address is
-                                            anonymised, and the server matches that form too, so this
-                                            excludes the visitor's whole /24 (or /48 for IPv6). */}
-                                        {log.ip && log.ip !== 'unknown' && !(db.analyticsExcludes?.ips || []).includes(log.ip) && (
-                                          <button
-                                            onClick={() => handleExcludeLoggedIp(log.ip)}
-                                            title={ta.excludeThisIp}
-                                            aria-label={ta.excludeThisIp}
-                                            className="text-slate-300 dark:text-slate-600 hover:text-red-600 transition-colors"
-                                          >
-                                            <Ban size={11} strokeWidth={3} />
-                                          </button>
-                                        )}
+                                        {log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}
+                                        {/* Exclude exactly this visitor, keyed on their identity rather
+                                            than their address: a Telegram id / @handle names one person
+                                            and survives an IP change. Absent for anonymous rows — there
+                                            the only handle is the anonymised IP, which would cover the
+                                            whole subnet, so we offer nothing rather than over-reach. */}
+                                        {(() => {
+                                          const key = visitorExcludeKey(log.username);
+                                          if (!key) return null;
+                                          const already = key.kind === 'id'
+                                            ? (db.analyticsExcludes?.userIds || []).includes(key.value)
+                                            : (db.analyticsExcludes?.usernames || []).includes(key.value);
+                                          if (already) return null;
+                                          return (
+                                            <button
+                                              onClick={() => handleExcludeVisitor(key)}
+                                              title={ta.excludeThisVisitor}
+                                              aria-label={ta.excludeThisVisitor}
+                                              className="text-slate-300 dark:text-slate-600 hover:text-red-600 transition-colors"
+                                            >
+                                              <Ban size={11} strokeWidth={3} />
+                                            </button>
+                                          );
+                                        })()}
                                       </span>
                                     </td>
+                                    <td className="p-3 text-slate-500 dark:text-slate-400">{log.ip}</td>
                                     <td className="p-3 text-right text-slate-400 dark:text-slate-500 truncate max-w-[150px]">{log.platform}</td>
                                 </tr>
                             ))}

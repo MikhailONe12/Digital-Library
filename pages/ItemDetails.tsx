@@ -4,11 +4,14 @@ import { createPortal } from 'react-dom';
 import { MediaItem, Locale, FileFormat, Bookmark, VideoLink, Annotation, HighlightColor, ArticleLink } from '../types';
 import CardCover from '../components/CardCover';
 import {
+  buildAttribution, licenseLabel, licenseUrl, licenseRequiresAttribution,
+} from '../services/licenses';
+import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
   Search, Newspaper, ExternalLink, Layers, Tag as TagIcon, Layers3,
-  CheckCircle2, RotateCcw,
+  CheckCircle2, RotateCcw, Scale, Copy,
   Headphones, Play, Pause, SkipBack, SkipForward, Volume2,
 } from 'lucide-react';
 // @ts-ignore
@@ -367,6 +370,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   useEffect(() => {
     try { localStorage.setItem(PDF_SPREAD_KEY, pdfSpread ? '1' : '0'); } catch { /* quota */ }
   }, [pdfSpread]);
+
+  // Externally-hosted content: the URL we're about to hand off to, held while
+  // the "you're leaving" sheet is up (null = sheet closed).
+  const [leavingTo, setLeavingTo] = useState<string | null>(null);
+  // Attribution copy button feedback.
+  const [attributionCopied, setAttributionCopied] = useState(false);
 
   // Article reader (in-app via /api/article-extract)
   const [activeArticle, setActiveArticle]   = useState<ArticleLink | null>(null);
@@ -1423,6 +1432,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   // "is this openable in-app?" (e.g. the admin-preview auto-open below) stays
   // in sync with what `handleRead` actually does.
   const opensInReader = (f: FileFormat): boolean => {
+    // Externally-hosted files never open in-app, whatever their extension.
+    if (f.external) return false;
     if (isAudioFormat(f)) return true;
     const url = (f.url || '').toLowerCase();
     return url.endsWith('.pdf') || (f.name || '').toLowerCase().includes('pdf')
@@ -1430,7 +1441,24 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
       || url.endsWith('.djvu') || url.endsWith('.djv');
   };
 
+  // Hand off to the origin site. Inside Telegram we use the WebApp bridge so
+  // the link opens in Telegram's own browser (a bare window.open is unreliable
+  // inside a Mini App); everywhere else a normal noopener tab.
+  const openAtOrigin = (url: string) => {
+    if (tg?.openLink) { try { tg.openLink(url); return; } catch { /* fall through */ } }
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  const hostOf = (url: string): string => {
+    try { return new URL(url, window.location.href).hostname.replace(/^www\./, ''); }
+    catch { return url; }
+  };
+
   const handleRead = (format: FileFormat) => {
+    // An externally-hosted work is only ever opened at its origin — we hold the
+    // metadata, they hold (and serve) the content. Checked first so no
+    // extension-based branch below can pull the file into our reader.
+    if (format.external) { setLeavingTo(format.url); return; }
     const fileUrl = item.isPrivate ? toProtectedUrl(format.url) : format.url;
     const url = format.url.toLowerCase();
     if (isAudioFormat(format)) {
@@ -1821,7 +1849,9 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             stacks: label row → bar → actions. Earlier the actions sat on the
             same flex row as the label, which collided with the percentage on
             narrow viewports and looked cluttered. */}
-        {(progressPct > 0 || item.formats.some(f => f.allowReading !== false)) && (
+        {/* External files are read on the origin site, so there's no position to
+            report — an item with nothing readable in-app shows no progress panel. */}
+        {(progressPct > 0 || item.formats.some(f => !f.external && f.allowReading !== false)) && (
           <div className="bg-white dark:bg-[#1c1c1e] p-5 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm mt-4 px-6">
             {/* Header line: label + % + finished badge */}
             <div className="flex items-center gap-2 mb-3">
@@ -1883,6 +1913,88 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm leading-relaxed text-slate-600 dark:text-slate-300 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
           </div>
         )}
+
+        {/* Rights & licence. Rendered whenever a licence or a source is on
+            record — for CC-style licences the attribution line below is a
+            condition of use, not decoration, so it ships with a copy button. */}
+        {(item.license?.code || item.source?.name) && (() => {
+          const label = licenseLabel(item.license, lang);
+          const href  = licenseUrl(item.license);
+          const credit = buildAttribution(item, lang);
+          return (
+            <div className="mt-8">
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+                <Scale size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.rightsTitle}
+              </h2>
+              <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm space-y-4">
+                {label && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseLabel}</span>
+                    {href ? (
+                      <a
+                        href={href} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/25 text-xs font-black text-red-600 dark:text-red-400 hover:border-red-400 transition-all"
+                      >
+                        {label}<ExternalLink size={11} strokeWidth={3} />
+                      </a>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-black text-slate-600 dark:text-slate-300">{label}</span>
+                    )}
+                  </div>
+                )}
+
+                {item.license?.holder && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseHolder}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.license.holder}</span>
+                  </div>
+                )}
+
+                {item.source?.name && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.sourceLabel}</span>
+                    {item.source.url ? (
+                      <a
+                        href={item.source.url} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-sm font-bold text-red-600 dark:text-red-400 hover:underline"
+                      >
+                        {item.source.name}<ExternalLink size={11} strokeWidth={3} />
+                      </a>
+                    ) : (
+                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
+                    )}
+                  </div>
+                )}
+
+                {item.license?.note && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-line">{item.license.note}</p>
+                )}
+
+                {credit && (
+                  <div className="pt-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t.licenseAttribution}</p>
+                    <div className="flex items-start gap-2">
+                      <p className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-black/40 rounded-2xl p-3 border border-slate-100 dark:border-white/[0.08] break-words">{credit}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(credit)
+                            .then(() => { setAttributionCopied(true); setTimeout(() => setAttributionCopied(false), 1800); })
+                            .catch(() => { /* clipboard blocked — the text is selectable anyway */ });
+                        }}
+                        title={t.copyAttribution}
+                        aria-label={t.copyAttribution}
+                        className="shrink-0 p-3 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 active:scale-95 transition-all"
+                      >
+                        {attributionCopied ? <CheckCircle2 size={14} strokeWidth={3} className="text-green-600" /> : <Copy size={14} strokeWidth={3} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Tags — each chip is a button that filters the catalog by that tag. */}
         {item.tags && item.tags.length > 0 && (
@@ -2034,11 +2146,22 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.downloads}</h2>
           <div className="space-y-4">
             {item.formats.map(f => {
-              const isFileReadAllowed     = (item.allowReading !== false) && (f.allowReading !== false);
-              const isFileDownloadAllowed = (item.allowDownload !== false) && (f.allowDownload !== false);
+              // An external file is served by its origin, never by us: reading
+              // it in-app and downloading it through our server are both off,
+              // regardless of the per-item permission toggles.
+              const isExternalFile        = !!f.external;
+              const isFileReadAllowed     = !isExternalFile && (item.allowReading !== false) && (f.allowReading !== false);
+              const isFileDownloadAllowed = !isExternalFile && (item.allowDownload !== false) && (f.allowDownload !== false);
               return (
                 <div key={f.id} className="p-3 bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/10 rounded-[2.5rem] shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-                  {isFileReadAllowed ? (
+                  {isExternalFile ? (
+                    <button
+                      onClick={() => handleRead(f)}
+                      className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-2"
+                    >
+                      <ExternalLink size={16} strokeWidth={3} />{t.openAtSource}
+                    </button>
+                  ) : isFileReadAllowed ? (
                     <button onClick={() => handleRead(f)} className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-4">
                       {isAudioFormat(f)
                         ? <><Headphones size={16} strokeWidth={3} />{t.listen}</>
@@ -2060,11 +2183,23 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                       </button>
                     )
                   )}
+                  {/* Say up-front whose site the button leads to — the user
+                      should know before tapping, not only in the sheet. */}
+                  {isExternalFile && (
+                    <p className="text-center text-[9px] font-bold text-slate-400 dark:text-slate-500 mb-3 truncate px-2">
+                      {item.source?.name || hostOf(f.url)}
+                    </p>
+                  )}
                   <div className="flex items-center justify-between px-2 pb-1">
                     <div className="flex items-center gap-2">
                       <div className="bg-red-600 text-white px-3 py-1.5 rounded-xl shadow-md shadow-red-100 flex items-center gap-1.5">
                         <FileText size={10} strokeWidth={3} /><span className="text-[9px] font-black uppercase tracking-wider">{f.name || 'FILE'}</span>
                       </div>
+                      {isExternalFile && (
+                        <div className="bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 px-3 py-1.5 rounded-xl border border-amber-200 dark:border-amber-500/25 flex items-center gap-1.5">
+                          <ExternalLink size={10} strokeWidth={3} /><span className="text-[9px] font-black uppercase tracking-wider">{t.externalSource}</span>
+                        </div>
+                      )}
                       {f.language && (
                         <div className="bg-slate-100 dark:bg-white/10 text-slate-500 dark:text-slate-300 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 flex items-center gap-1.5">
                           <Globe size={10} strokeWidth={3} /><span className="text-[9px] font-black uppercase tracking-wider">{f.language}</span>
@@ -2395,6 +2530,57 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           </footer>
         </div>,
         document.body
+      )}
+
+      {/* ── "You're leaving" sheet for externally-hosted works ─────────────── */}
+      {leavingTo && createPortal(
+        <div
+          className="fixed inset-0 z-[650] flex items-center justify-center p-6 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setLeavingTo(null)}
+        >
+          <div
+            className="w-full max-w-xs bg-white dark:bg-[#1c1c1e] rounded-[2.5rem] shadow-2xl p-7 text-center animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* A little book packing up and hopping over to the source's site. */}
+            <svg viewBox="0 0 120 80" className="w-32 h-20 mx-auto mb-4 text-slate-400 dark:text-slate-500" role="img" aria-hidden="true">
+              <path d="M32 40 Q60 8 90 32" stroke="#dc2626" strokeWidth="2.5" strokeDasharray="5 5" fill="none" strokeLinecap="round" opacity=".45" />
+              <rect x="84" y="34" width="30" height="34" rx="9" fill="currentColor" opacity=".12" />
+              <rect x="84" y="34" width="30" height="34" rx="9" fill="none" stroke="currentColor" strokeWidth="2.5" opacity=".35" />
+              <path d="M91 47h16M91 54h11" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" opacity=".45" />
+              <rect x="8" y="30" width="34" height="40" rx="8" fill="#dc2626" />
+              <rect x="8" y="30" width="9" height="40" rx="4.5" fill="#b91c1c" />
+              <circle cx="27" cy="46" r="2.7" fill="#fff" />
+              <circle cx="36" cy="46" r="2.7" fill="#fff" />
+              <path d="M26.5 55q5 4.5 10 0" stroke="#fff" strokeWidth="2.4" fill="none" strokeLinecap="round" />
+              <path d="M44 41l7-6" stroke="#dc2626" strokeWidth="3" strokeLinecap="round" />
+              <circle cx="53" cy="33" r="3.6" fill="#dc2626" />
+              <path d="M64 18v7M60.5 21.5h7" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" opacity=".5" />
+            </svg>
+
+            <h3 className="text-base font-black text-slate-900 dark:text-white mb-1.5 tracking-tight">{t.leavingTitle}</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-1">{t.leavingDesc}</p>
+            <p className="text-xs font-black text-slate-700 dark:text-slate-200 truncate mb-6">
+              {item.source?.name || hostOf(leavingTo)}
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setLeavingTo(null)}
+                className="flex-1 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/15 transition-colors"
+              >
+                {t.leavingStay}
+              </button>
+              <button
+                onClick={() => { const url = leavingTo; setLeavingTo(null); openAtOrigin(url); }}
+                className="flex-1 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center justify-center gap-1.5"
+              >
+                {t.leavingGo}<ExternalLink size={13} strokeWidth={3} />
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── Audio Player (#29) ─────────────────────────────────────────────── */}

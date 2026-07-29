@@ -12,6 +12,27 @@ export const getDisplayedLanguages = (item: MediaItem): ContentLang[] => {
   return Array.from(new Set([...globalLanguages, ...fileLanguages]));
 };
 
+/**
+ * Does this URL point at somebody else's server? Used to pre-tick the
+ * "external source" flag when an admin pastes a link instead of uploading.
+ * Only a hint for the admin UI — the stored `external` flag is what actually
+ * governs playback, so a wrong guess here is always correctable.
+ *
+ * `origin` is injectable so this stays testable outside a browser.
+ */
+export const isExternalUrl = (url: string, origin?: string): boolean => {
+  const base = origin ?? (typeof window !== 'undefined' ? window.location.origin : '');
+  if (!url || !base) return false;
+  try {
+    const u = new URL(url, base);
+    // Only http(s) can be "somewhere else"; blobs/data URIs are ours by nature.
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    return u.origin !== new URL(base).origin;
+  } catch {
+    return false; // relative or malformed → treated as our own
+  }
+};
+
 export const pickText = (
   text: MultilingualText | undefined,
   lang: Locale,

@@ -86,6 +86,9 @@ const normalizeItem = (item: any): MediaItem => ({
     ...f,
     allowDownload: f.allowDownload !== undefined ? f.allowDownload : true,
     allowReading: f.allowReading !== undefined ? f.allowReading : true,
+    // Legacy rows have no flag — absent means "hosted by us", the safe default
+    // (an unflagged file is one we uploaded, so rendering it in-app is fine).
+    external: f.external === true,
   })),
 });
 

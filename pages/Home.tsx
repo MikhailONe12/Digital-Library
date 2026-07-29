@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo, getDisplayedLanguages } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
@@ -102,6 +102,17 @@ const useDragScroll = () => {
   return ref;
 };
 
+// Marks a shelf tile whose content is hosted by someone else, so the "you're
+// leaving" hand-off isn't a surprise. Mirrors MediaCard's amber corner badge.
+const ShelfExternalBadge: React.FC<{ item: MediaItem }> = ({ item }) => {
+  if (!(item.formats || []).some(f => f.external)) return null;
+  return (
+    <span className="absolute top-2 right-2 bg-amber-500 text-white p-1 rounded-md shadow-sm">
+      <ExternalLink size={10} strokeWidth={3} />
+    </span>
+  );
+};
+
 // Language chips for a shelf cover. Mirrors MediaCard's logic (global content
 // languages ∪ per-file languages) so a shelf tile carries the same "what
 // languages is this in" cue as the grid. Renders just the chips (no wrapper
@@ -174,6 +185,7 @@ const CategoryShelf: React.FC<{
               <div className="absolute top-2 left-2 flex flex-wrap gap-1 max-w-[75%]">
                 <ShelfLangBadges item={item} />
               </div>
+              <ShelfExternalBadge item={item} />
               {hasVideo(item) && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="w-10 h-10 rounded-full bg-black/55 backdrop-blur-sm flex items-center justify-center shadow-lg ring-1 ring-white/10">
@@ -631,6 +643,7 @@ const Home: React.FC<HomeProps> = ({
                   <div className="absolute top-2 left-2 flex flex-wrap gap-1 max-w-[75%]">
                     <ShelfLangBadges item={item} />
                   </div>
+                  <ShelfExternalBadge item={item} />
                   {/* Centred play badge — same affordance the main grid uses
                       for video items; without it a paused mid-watch video
                       looks like a book tile that just happens to have a
@@ -721,6 +734,7 @@ const Home: React.FC<HomeProps> = ({
                       <ShelfLangBadges item={item} />
                     </div>
                   </div>
+                  <ShelfExternalBadge item={item} />
                   <div className="absolute bottom-2 left-2 right-2">
                     <p className="text-white text-xs font-bold tracking-tight line-clamp-2 drop-shadow">{pickText(item.title, lang)}</p>
                     {item.author && <p className="text-white/70 text-[10px] mt-0.5 line-clamp-1">{item.author}</p>}

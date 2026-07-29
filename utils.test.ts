@@ -1,5 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { pickText, getYouTubeId, getVideoPoster, COVER_FALLBACK } from './utils';
+import { pickText, getYouTubeId, getVideoPoster, COVER_FALLBACK, isExternalUrl } from './utils';
+
+describe('isExternalUrl', () => {
+  const ours = 'https://library.example.com';
+
+  it('flags a different origin', () => {
+    expect(isExternalUrl('https://lib.msu.ru/book.pdf', ours)).toBe(true);
+  });
+
+  it('does not flag our own origin or relative paths', () => {
+    expect(isExternalUrl('https://library.example.com/content/1/a.pdf', ours)).toBe(false);
+    expect(isExternalUrl('/content/1/a.pdf', ours)).toBe(false);
+  });
+
+  it('treats a different port or scheme as external', () => {
+    expect(isExternalUrl('https://library.example.com:8443/a.pdf', ours)).toBe(true);
+    expect(isExternalUrl('http://library.example.com/a.pdf', ours)).toBe(true);
+  });
+
+  it('ignores non-http(s) and malformed URLs', () => {
+    expect(isExternalUrl('blob:whatever', ours)).toBe(false);
+    expect(isExternalUrl('data:text/plain,hi', ours)).toBe(false);
+    expect(isExternalUrl('', ours)).toBe(false);
+  });
+});
 
 describe('pickText', () => {
   it('returns the requested locale when present', () => {

@@ -25,6 +25,34 @@ export interface FileFormat {
   language?: ContentLang; // Language specific to this file
   allowDownload?: boolean; // Per-file permission
   allowReading?: boolean;  // Per-file permission
+  /**
+   * The file lives on a third party's server (an institutional library, a
+   * publisher, an archive). When true the app never renders it in a built-in
+   * reader and never serves it — the link always opens at the origin site, so
+   * we can catalogue the work without redistributing someone else's file.
+   * Set explicitly rather than guessed from the URL: mistaking "their PDF" for
+   * "our PDF" is exactly the licence breach this flag exists to prevent.
+   */
+  external?: boolean;
+}
+
+/** Who actually hosts an externally-linked work. Shown as attribution. */
+export interface SourceInfo {
+  name: string;  // e.g. "Moscow State University Research Library"
+  url?: string;  // the source's own page for the work (or its homepage)
+}
+
+/**
+ * Distribution licence for an item's content. `code` is a preset id from
+ * services/licenses.ts, or CUSTOM_LICENSE_CODE when a source needs wording
+ * the preset list doesn't cover.
+ */
+export interface LicenseInfo {
+  code: string;
+  name?: string;   // free-text licence name — only used when code is CUSTOM
+  url?: string;    // link to the licence text
+  holder?: string; // rights holder, required for CC-BY-style attribution
+  note?: string;   // any extra wording the source requires verbatim
 }
 
 export interface VideoLink {
@@ -74,6 +102,10 @@ export interface MediaItem {
   series?: string;         // series name (free text); items sharing it are linked
   seriesOrder?: number;    // 1-based position within the series
   tags?: string[];         // free-form keywords for filtering / discovery
+  /** Set when the work is hosted elsewhere — powers the attribution line. */
+  source?: SourceInfo;
+  /** Distribution licence; absent means "not stated" (treated as ARR). */
+  license?: LicenseInfo;
   isPrivate: boolean;
   views: number;
   downloads: number;

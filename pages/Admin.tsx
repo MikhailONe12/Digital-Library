@@ -15,7 +15,10 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts';
-import { pickText } from '../utils';
+import { pickText, isExternalUrl } from '../utils';
+import {
+  LICENSE_PRESETS, CUSTOM_LICENSE_CODE, getLicensePreset, licenseForbidsRedistribution,
+} from '../services/licenses';
 import CardCover from '../components/CardCover';
 import AuthorsEditor from '../components/AuthorsEditor';
 import { toast } from '../services/toast';
@@ -49,6 +52,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   // the admin can locate an item without scrolling a 300-row list.
   const [adminItemSearch, setAdminItemSearch] = useState('');
   const [adminItemTypeFilter, setAdminItemTypeFilter] = useState<string>('ALL');
+  // Hosting filter: everything / only self-hosted / only externally-linked.
+  // Admin-only on purpose — readers shouldn't have to care where a file sits.
+  const [adminItemSourceFilter, setAdminItemSourceFilter] = useState<'ALL' | 'LOCAL' | 'EXTERNAL'>('ALL');
   useEffect(() => {
     if (!editingItem) return;
     setPubDateMode(/^\d{4}$/.test(editingItem.publishedDate || '') ? 'year' : 'date');
@@ -254,6 +260,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     const q = norm(adminItemSearch.trim());
     let list = db.items.slice();
     if (adminItemTypeFilter !== 'ALL') list = list.filter(i => i.type === adminItemTypeFilter);
+    // Hosting filter — admin-only. Lets the operator answer "what are we
+    // actually serving ourselves?" (licence audits) vs "what do we merely
+    // link to?". An item counts as external if any of its files is external.
+    if (adminItemSourceFilter !== 'ALL') {
+      const wantExternal = adminItemSourceFilter === 'EXTERNAL';
+      list = list.filter(i => (i.formats || []).some(f => !!f.external) === wantExternal);
+    }
     if (q) {
       list = list.filter(i => {
         const title = norm(pickText(i.title, lang));
@@ -267,7 +280,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
       return tb - ta;
     });
     return list;
-  }, [db.items, adminItemSearch, adminItemTypeFilter, lang]);
+  }, [db.items, adminItemSearch, adminItemTypeFilter, adminItemSourceFilter, lang]);
 
   const trafficStats = useMemo(() => {
     const now = new Date();
@@ -438,6 +451,19 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
       const updated = editingItem.formats.map(f => f.id === id ? { ...f, [field]: value } : f);
       setEditingItem({ ...editingItem, formats: updated });
     }
+  };
+
+  // Typing a URL into a file block also pre-answers "is this someone else's?".
+  // Only a suggestion — the admin can flip the toggle afterwards, and we never
+  // re-guess once they have, so an explicit choice is never overwritten.
+  const handleUpdateFormatUrl = (id: string, url: string) => {
+    if (!editingItem?.formats) return;
+    const updated = editingItem.formats.map(f =>
+      f.id === id
+        ? { ...f, url, external: f.external === undefined ? isExternalUrl(url) : f.external }
+        : f,
+    );
+    setEditingItem({ ...editingItem, formats: updated });
   };
 
   const handleRemoveFormat = (id: string) => {
@@ -1646,6 +1672,30 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                     );
                   })}
                 </div>
+                {/* Hosting filter — for licence audits: what do we serve vs
+                    merely link to. Amber matches the "external" cue elsewhere. */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mt-2">
+                  {([
+                    { key: 'ALL' as const,      label: ta.sourceFilterAll,      count: db.items.length },
+                    { key: 'LOCAL' as const,    label: ta.sourceFilterLocal,    count: db.items.filter(i => !(i.formats || []).some(f => f.external)).length },
+                    { key: 'EXTERNAL' as const, label: ta.sourceFilterExternal, count: db.items.filter(i => (i.formats || []).some(f => f.external)).length },
+                  ]).map(({ key, label, count }) => {
+                    const active = adminItemSourceFilter === key;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setAdminItemSourceFilter(key)}
+                        className={`shrink-0 px-4 h-8 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          active
+                            ? (key === 'EXTERNAL' ? 'bg-amber-500 text-white' : 'bg-slate-900 dark:bg-white text-white dark:text-slate-900')
+                            : 'bg-white dark:bg-[#1c1c1e] text-slate-500 border border-slate-200 dark:border-white/[0.08]'
+                        }`}
+                      >
+                        {label} · {count}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -1816,6 +1866,114 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                 </div>
               </div>
 
+              {/* Source — who hosts the work when we only link to it. */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.sourceSection}</p>
+                <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08]">
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.sourceNameLabel}</label>
+                    <input
+                      type="text" placeholder={ta.sourceNamePlaceholder}
+                      className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                      value={editingItem.source?.name || ''}
+                      onChange={e => setEditingItem({ ...editingItem, source: { ...(editingItem.source || {}), name: e.target.value } })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.sourceUrlLabel}</label>
+                    <input
+                      type="text" placeholder={ta.sourceUrlPlaceholder}
+                      className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                      value={editingItem.source?.url || ''}
+                      onChange={e => setEditingItem({ ...editingItem, source: { ...(editingItem.source || { name: '' }), url: e.target.value } })}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Licence — preset list, with CUSTOM for source-specific terms. */}
+              <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.licenseSection}</p>
+                <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08]">
+                  <div>
+                    <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.licenseSelectLabel}</label>
+                    <select
+                      className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                      value={editingItem.license?.code || ''}
+                      onChange={e => {
+                        const code = e.target.value;
+                        if (!code) { const { license, ...rest } = editingItem; setEditingItem(rest); return; }
+                        // Presets carry a canonical URL; adopt it so the item page
+                        // can link the licence text without the admin pasting it.
+                        setEditingItem({
+                          ...editingItem,
+                          license: {
+                            ...(editingItem.license || {}),
+                            code,
+                            url: getLicensePreset(code)?.url || '',
+                          },
+                        });
+                      }}
+                    >
+                      <option value="">—</option>
+                      {LICENSE_PRESETS.map(p => (
+                        <option key={p.code} value={p.code}>{p[lang] || p.en}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {editingItem.license?.code === CUSTOM_LICENSE_CODE && (
+                    <div>
+                      <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.licenseCustomNameLabel}</label>
+                      <input
+                        type="text" placeholder={ta.licenseCustomNamePlaceholder}
+                        className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                        value={editingItem.license?.name || ''}
+                        onChange={e => setEditingItem({ ...editingItem, license: { ...(editingItem.license || { code: CUSTOM_LICENSE_CODE }), name: e.target.value } })}
+                      />
+                    </div>
+                  )}
+
+                  {editingItem.license?.code && (
+                    <>
+                      <div>
+                        <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.licenseUrlLabel}</label>
+                        <input
+                          type="text" placeholder={ta.licenseUrlPlaceholder}
+                          className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-500 outline-none"
+                          value={editingItem.license?.url || ''}
+                          onChange={e => setEditingItem({ ...editingItem, license: { ...editingItem.license!, url: e.target.value } })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.licenseHolderLabel}</label>
+                        <input
+                          type="text" placeholder={ta.licenseHolderPlaceholder}
+                          className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                          value={editingItem.license?.holder || ''}
+                          onChange={e => setEditingItem({ ...editingItem, license: { ...editingItem.license!, holder: e.target.value } })}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.licenseNoteLabel}</label>
+                        <textarea
+                          rows={2} placeholder={ta.licenseNotePlaceholder}
+                          className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-500 outline-none resize-none"
+                          value={editingItem.license?.note || ''}
+                          onChange={e => setEditingItem({ ...editingItem, license: { ...editingItem.license!, note: e.target.value } })}
+                        />
+                      </div>
+                      {/* Advisory only — the admin may have a separate agreement. */}
+                      {licenseForbidsRedistribution(editingItem.license) && editingItem.allowDownload !== false && (
+                        <p className="flex items-start gap-2 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-xl p-2.5 leading-relaxed">
+                          <AlertCircle size={13} className="shrink-0 mt-px" />{ta.licenseRedistributionWarning}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
               {/* File Resources */}
               <div className="border-t border-slate-100 pt-6">
                 <div className="flex justify-between items-center mb-4">
@@ -1830,7 +1988,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                         onClick={() => { if (!f.url) handleRemoveFormat(f.id); }}
                         disabled={!!f.url}
                         title={f.url ? ta.fileUploadedHint : ta.removeBlock}
-                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 dark:text-slate-600 hover:text-red-500'}`}> <X size={14} /> </button> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.nameLabel}</label> <input placeholder="PDF / EPUB / …" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.name} onChange={e => handleUpdateFormat(f.id,'name', e.target.value)} /> </div> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.langLabel}</label> <select className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.language ||'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}> <option value="ru">RU</option> <option value="en">EN</option> <option value="es">ES</option> <option value="it">IT</option> <option value="fr">FR</option> <option value="de">DE</option> </select> </div> <div className="col-span-2"> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.fileUrl}</label> <div className="flex gap-1"> <input placeholder="https://..." className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.url} onChange={e => handleUpdateFormat(f.id,'url', e.target.value)} /> <button type="button" onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }} disabled={uploadState !== null || !!stagedContentFile} title={ta.chooseFile} className="px-2 bg-slate-100 dark:bg-white/[0.06] rounded-lg text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"> <Upload size={12} /> </button> </div> {stagedContentFile?.formatId === f.id && !uploadState && ( <div className="mt-1 flex items-center gap-1.5 p-1.5 bg-blue-50 rounded-lg border border-blue-100"> <span className="text-[8px] font-bold text-blue-700 flex-1 truncate">{stagedContentFile.file.name} ({formatFileSize(stagedContentFile.file.size)})</span> <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language ||'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">{ta.uploadBtn}</button>
+                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 dark:text-slate-600 hover:text-red-500'}`}> <X size={14} /> </button> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.nameLabel}</label> <input placeholder="PDF / EPUB / …" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.name} onChange={e => handleUpdateFormat(f.id,'name', e.target.value)} /> </div> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.langLabel}</label> <select className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.language ||'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}> <option value="ru">RU</option> <option value="en">EN</option> <option value="es">ES</option> <option value="it">IT</option> <option value="fr">FR</option> <option value="de">DE</option> </select> </div> <div className="col-span-2"> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.fileUrl}</label> <div className="flex gap-1"> <input placeholder="https://..." className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-400" value={f.url} onChange={e => handleUpdateFormatUrl(f.id, e.target.value)} /> <button type="button" onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }} disabled={uploadState !== null || !!stagedContentFile || !!f.external} title={ta.chooseFile} className="px-2 bg-slate-100 dark:bg-white/[0.06] rounded-lg text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"> <Upload size={12} /> </button> </div>
+                          {/* External-source switch. On = we only ever link to
+                              this file; uploading is disabled so nothing lands
+                              on our disk by accident. */}
+                          <label className="mt-2 flex items-start justify-between gap-3 p-2.5 bg-white dark:bg-[#1c1c1e] rounded-xl border border-slate-200 dark:border-white/10 cursor-pointer hover:border-amber-300 transition-colors">
+                            <span className="min-w-0">
+                              <span className="block text-[9px] font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">{ta.externalFileLabel}</span>
+                              {f.external && (
+                                <span className="block text-[8px] font-bold text-slate-400 dark:text-slate-500 leading-relaxed mt-0.5">{ta.externalFileHint}</span>
+                              )}
+                            </span>
+                            <span className="relative shrink-0">
+                              <input
+                                type="checkbox" className="sr-only peer"
+                                checked={!!f.external}
+                                onChange={e => handleUpdateFormat(f.id, 'external', e.target.checked)}
+                              />
+                              <span className="block w-10 h-6 bg-slate-200 dark:bg-white/10 rounded-full peer peer-checked:bg-amber-500 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" />
+                            </span>
+                          </label>
+                          {stagedContentFile?.formatId === f.id && !uploadState && ( <div className="mt-1 flex items-center gap-1.5 p-1.5 bg-blue-50 rounded-lg border border-blue-100"> <span className="text-[8px] font-bold text-blue-700 flex-1 truncate">{stagedContentFile.file.name} ({formatFileSize(stagedContentFile.file.size)})</span> <button type="button" onClick={() => editingItem?.id && uploadContentFile(editingItem.id, f.id, f.language ||'ru')} className="px-2 py-0.5 bg-blue-600 text-white text-[8px] font-black rounded shrink-0">{ta.uploadBtn}</button>
                               <button type="button" onClick={() => { setStagedContentFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }} className="text-blue-400 hover:text-red-500 shrink-0"><X size={10} /></button>
                             </div>
                           )}

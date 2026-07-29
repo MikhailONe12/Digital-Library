@@ -11,7 +11,7 @@ import {
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
   Search, Newspaper, ExternalLink, Layers, Tag as TagIcon, Layers3,
-  CheckCircle2, RotateCcw, Scale, Copy,
+  CheckCircle2, RotateCcw, Scale, Copy, AlignLeft,
   Headphones, Play, Pause, SkipBack, SkipForward, Volume2,
 } from 'lucide-react';
 // @ts-ignore
@@ -1908,264 +1908,15 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
         </div>
 
         {pickText(item.description, lang, '').trim() && (
-          <div className="mt-8">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><AlignLeft size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.about}</h2>
             <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm leading-relaxed text-slate-600 dark:text-slate-300 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
-          </div>
-        )}
-
-        {/* Primary action for a work we only link to: the source URL *is* the
-            content, and without this the page has nothing to press (the file
-            list further down only renders when the item carries formats).
-            Placed after the description so the reader decides from the summary
-            first, then leaves — same order as the read buttons for hosted
-            items. Routed through the leaving sheet like every other hand-off. */}
-        {item.source?.url && (
-          <div className="mt-8">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
-              <ExternalLink size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.sourceLabel}
-            </h2>
-            <div className="bg-white dark:bg-[#1c1c1e] p-3 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
-              <button
-                onClick={() => setLeavingTo(item.source!.url!)}
-                className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-2"
-              >
-                <ExternalLink size={16} strokeWidth={3} />{t.openAtSource}
-              </button>
-              <p className="text-center text-[9px] font-bold text-slate-400 dark:text-slate-500 mb-1 truncate px-2">
-                {item.source.name || hostOf(item.source.url)}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Rights & licence. Needs actual rights on record — a bare source name
-            is already shown by the source button above, and repeating it in a
-            near-empty block just padded the page. For CC-style licences the
-            attribution line below is a condition of use, not decoration, so it
-            ships with a copy button. */}
-        {(item.license?.code || item.license?.holder || item.license?.note) && (() => {
-          const label = licenseLabel(item.license, lang);
-          const href  = licenseUrl(item.license);
-          const credit = buildAttribution(item, lang);
-          return (
-            <div className="mt-8">
-              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
-                <Scale size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.rightsTitle}
-              </h2>
-              <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm space-y-4">
-                {label && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseLabel}</span>
-                    {href ? (
-                      <a
-                        href={href} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/25 text-xs font-black text-red-600 dark:text-red-400 hover:border-red-400 transition-all"
-                      >
-                        {label}<ExternalLink size={11} strokeWidth={3} />
-                      </a>
-                    ) : (
-                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-black text-slate-600 dark:text-slate-300">{label}</span>
-                    )}
-                  </div>
-                )}
-
-                {item.license?.holder && (
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseHolder}</span>
-                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.license.holder}</span>
-                  </div>
-                )}
-
-                {/* Stated as a fact, never as a link: leaving the app happens
-                    through the source button above, which goes via the
-                    confirmation sheet. A second, silent exit route hidden in
-                    the rights block would bypass that. */}
-                {item.source?.name && (
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.sourceLabel}</span>
-                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
-                  </div>
-                )}
-
-                {item.license?.note && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-line">{item.license.note}</p>
-                )}
-
-                {credit && (
-                  <div className="pt-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t.licenseAttribution}</p>
-                    <div className="flex items-start gap-2">
-                      <p className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-black/40 rounded-2xl p-3 border border-slate-100 dark:border-white/[0.08] break-words">{credit}</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(credit)
-                            .then(() => { setAttributionCopied(true); setTimeout(() => setAttributionCopied(false), 1800); })
-                            .catch(() => { /* clipboard blocked — the text is selectable anyway */ });
-                        }}
-                        title={t.copyAttribution}
-                        aria-label={t.copyAttribution}
-                        className="shrink-0 p-3 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 active:scale-95 transition-all"
-                      >
-                        {attributionCopied ? <CheckCircle2 size={14} strokeWidth={3} className="text-green-600" /> : <Copy size={14} strokeWidth={3} />}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Tags — each chip is a button that filters the catalog by that tag. */}
-        {item.tags && item.tags.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><TagIcon size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.tags}</h2>
-            <div className="flex flex-wrap gap-2">
-              {item.tags.map(tag => (
-                onOpenTag ? (
-                  <button
-                    key={tag}
-                    type="button"
-                    onClick={() => onOpenTag(tag)}
-                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-red-600 dark:text-red-400 hover:border-red-400 active:scale-95 transition-all"
-                  >#{tag}</button>
-                ) : (
-                  <span key={tag} className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300">#{tag}</span>
-                )
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Series strip */}
-        {item.series && seriesSiblings.length > 1 && (
-          <div className="mt-10">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Layers size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.series}: {item.series}</h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-              {seriesSiblings.map(sib => {
-                const isCurrent = sib.id === item.id;
-                return (
-                  <button
-                    key={sib.id}
-                    onClick={() => { if (!isCurrent && onOpenItem) onOpenItem(sib); }}
-                    disabled={isCurrent}
-                    className={`flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border transition-all ${isCurrent ? 'border-red-500 ring-2 ring-red-500/30 cursor-default' : 'border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95'}`}
-                  >
-                    <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative overflow-hidden">
-                      {/* CardCover renders the uploaded coverUrl when present
-                          and falls back to a lazy PDF/EPUB/video thumbnail
-                          otherwise — same logic as the main grid. */}
-                      <CardCover item={sib} lang={lang} />
-                      {sib.seriesOrder != null && (
-                        <span className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-black px-1.5 py-0.5 rounded">#{sib.seriesOrder}</span>
-                      )}
-                    </div>
-                    <div className="p-2 bg-white dark:bg-[#1c1c1e]">
-                      <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            {(prevInSeries || nextInSeries) && onOpenItem && (
-              <div className="flex gap-2 mt-3">
-                {prevInSeries && (
-                  <button onClick={() => onOpenItem(prevInSeries)} className="flex-1 py-2.5 px-4 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:border-red-400 active:scale-95 transition-all flex items-center justify-center gap-2 truncate">
-                    <ChevronLeft size={14} /> {t.prevInSeries}
-                  </button>
-                )}
-                {nextInSeries && (
-                  <button onClick={() => onOpenItem(nextInSeries)} className="flex-1 py-2.5 px-4 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-2 truncate">
-                    {t.nextInSeries} <ChevronRight size={14} />
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* More by this author — horizontal strip of sibling books, capped at 12 */}
-        {authorSiblings.length > 0 && (
-          <div className="mt-10">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
-              <User size={14} className="text-red-600" />
-              <span className="w-6 h-[2px] bg-red-600" />
-              {t.moreByAuthor}: {item.author}
-            </h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
-              {authorSiblings.map(sib => (
-                <button
-                  key={sib.id}
-                  onClick={() => onOpenItem?.(sib)}
-                  className="flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95 transition-all"
-                >
-                  <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative overflow-hidden">
-                    {/* Same auto-thumbnail fallback as everywhere else. */}
-                    <CardCover item={sib} lang={lang} />
-                  </div>
-                  <div className="p-2 bg-white dark:bg-[#1c1c1e]">
-                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-            {onOpenAuthor && (
-              <button
-                onClick={() => onOpenAuthor(item.author.trim())}
-                className="mt-3 w-full py-2.5 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:border-red-400 active:scale-95 transition-all"
-              >
-                {t.viewAllByAuthor}
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Articles */}
-        {item.articles && item.articles.length > 0 && (
-          <div className="mt-10">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Newspaper size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.articles}</h2>
-            <div className="space-y-2">
-              {item.articles.map(a => (
-                <button
-                  key={a.id}
-                  onClick={() => setActiveArticle(a)}
-                  className="w-full text-left p-4 bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/10 rounded-[1.5rem] hover:border-red-300 transition-all active:scale-[0.99] flex items-center gap-3"
-                >
-                  <div className="p-2.5 bg-red-50 dark:bg-red-500/15 rounded-xl shrink-0">
-                    <Newspaper size={16} className="text-red-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-slate-900 dark:text-white truncate">{a.title || a.url}</p>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">{a.source || new URL(a.url).hostname} · {a.language?.toUpperCase() || ''}</p>
-                  </div>
-                  <ChevronRight size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {playableVideos.length > 0 && (
-          <div className="mt-10">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.preview}</h2>
-            <div className="space-y-6">
-              {playableVideos.map(v => (
-                <div key={v.id}>
-                  {v.source && (
-                    <span className="inline-block mb-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 dark:bg-red-500/15 px-3 py-1 rounded-lg">{v.source}</span>
-                  )}
-                  <div className="aspect-video rounded-[2rem] overflow-hidden border-4 border-white dark:border-[#1c1c1e] shadow-2xl bg-slate-100 dark:bg-[#1c1c1e] relative group">{v.embed}</div>
-                </div>
-              ))}
-            </div>
           </div>
         )}
 
         {item.formats.length > 0 && (
         <div className="mt-10">
-          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.downloads}</h2>
+          <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><FileText size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.downloads}</h2>
           <div className="space-y-4">
             {item.formats.map(f => {
               // An external file is served by its origin, never by us: reading
@@ -2251,6 +2002,255 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             })}
           </div>
         </div>
+        )}
+
+        {/* Primary action for a work we only link to: the source URL *is* the
+            content, and without this the page has nothing to press (the file
+            list further down only renders when the item carries formats).
+            Placed after the description so the reader decides from the summary
+            first, then leaves — same order as the read buttons for hosted
+            items. Routed through the leaving sheet like every other hand-off. */}
+        {item.source?.url && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+              <ExternalLink size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.sourceLabel}
+            </h2>
+            <div className="bg-white dark:bg-[#1c1c1e] p-3 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+              <button
+                onClick={() => setLeavingTo(item.source!.url!)}
+                className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-2"
+              >
+                <ExternalLink size={16} strokeWidth={3} />{t.openAtSource}
+              </button>
+              <p className="text-center text-[9px] font-bold text-slate-400 dark:text-slate-500 mb-1 truncate px-2">
+                {item.source.name || hostOf(item.source.url)}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {playableVideos.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Play size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.preview}</h2>
+            <div className="space-y-6">
+              {playableVideos.map(v => (
+                <div key={v.id}>
+                  {v.source && (
+                    <span className="inline-block mb-2 text-[10px] font-black uppercase tracking-widest text-red-600 bg-red-50 dark:bg-red-500/15 px-3 py-1 rounded-lg">{v.source}</span>
+                  )}
+                  <div className="aspect-video rounded-[2rem] overflow-hidden border-4 border-white dark:border-[#1c1c1e] shadow-2xl bg-slate-100 dark:bg-[#1c1c1e] relative group">{v.embed}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Articles */}
+        {item.articles && item.articles.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Newspaper size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.articles}</h2>
+            <div className="space-y-2">
+              {item.articles.map(a => (
+                <button
+                  key={a.id}
+                  onClick={() => setActiveArticle(a)}
+                  className="w-full text-left p-4 bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/10 rounded-[1.5rem] hover:border-red-300 transition-all active:scale-[0.99] flex items-center gap-3"
+                >
+                  <div className="p-2.5 bg-red-50 dark:bg-red-500/15 rounded-xl shrink-0">
+                    <Newspaper size={16} className="text-red-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-black text-slate-900 dark:text-white truncate">{a.title || a.url}</p>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5">{a.source || new URL(a.url).hostname} · {a.language?.toUpperCase() || ''}</p>
+                  </div>
+                  <ChevronRight size={16} className="text-slate-300 dark:text-slate-600 shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Rights & licence. Needs actual rights on record — a bare source name
+            is already shown by the source button above, and repeating it in a
+            near-empty block just padded the page. For CC-style licences the
+            attribution line below is a condition of use, not decoration, so it
+            ships with a copy button. */}
+        {(item.license?.code || item.license?.holder || item.license?.note) && (() => {
+          const label = licenseLabel(item.license, lang);
+          const href  = licenseUrl(item.license);
+          const credit = buildAttribution(item, lang);
+          return (
+            <div className="mt-10">
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+                <Scale size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.rightsTitle}
+              </h2>
+              <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm space-y-4">
+                {label && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseLabel}</span>
+                    {href ? (
+                      <a
+                        href={href} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/25 text-xs font-black text-red-600 dark:text-red-400 hover:border-red-400 transition-all"
+                      >
+                        {label}<ExternalLink size={11} strokeWidth={3} />
+                      </a>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-black text-slate-600 dark:text-slate-300">{label}</span>
+                    )}
+                  </div>
+                )}
+
+                {item.license?.holder && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseHolder}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.license.holder}</span>
+                  </div>
+                )}
+
+                {/* Stated as a fact, never as a link: leaving the app happens
+                    through the source button above, which goes via the
+                    confirmation sheet. A second, silent exit route hidden in
+                    the rights block would bypass that. */}
+                {item.source?.name && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.sourceLabel}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
+                  </div>
+                )}
+
+                {item.license?.note && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-line">{item.license.note}</p>
+                )}
+
+                {credit && (
+                  <div className="pt-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t.licenseAttribution}</p>
+                    <div className="flex items-start gap-2">
+                      <p className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-black/40 rounded-2xl p-3 border border-slate-100 dark:border-white/[0.08] break-words">{credit}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(credit)
+                            .then(() => { setAttributionCopied(true); setTimeout(() => setAttributionCopied(false), 1800); })
+                            .catch(() => { /* clipboard blocked — the text is selectable anyway */ });
+                        }}
+                        title={t.copyAttribution}
+                        aria-label={t.copyAttribution}
+                        className="shrink-0 p-3 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 active:scale-95 transition-all"
+                      >
+                        {attributionCopied ? <CheckCircle2 size={14} strokeWidth={3} className="text-green-600" /> : <Copy size={14} strokeWidth={3} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Series strip */}
+        {item.series && seriesSiblings.length > 1 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Layers size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.series}: {item.series}</h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {seriesSiblings.map(sib => {
+                const isCurrent = sib.id === item.id;
+                return (
+                  <button
+                    key={sib.id}
+                    onClick={() => { if (!isCurrent && onOpenItem) onOpenItem(sib); }}
+                    disabled={isCurrent}
+                    className={`flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border transition-all ${isCurrent ? 'border-red-500 ring-2 ring-red-500/30 cursor-default' : 'border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95'}`}
+                  >
+                    <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative overflow-hidden">
+                      {/* CardCover renders the uploaded coverUrl when present
+                          and falls back to a lazy PDF/EPUB/video thumbnail
+                          otherwise — same logic as the main grid. */}
+                      <CardCover item={sib} lang={lang} />
+                      {sib.seriesOrder != null && (
+                        <span className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[10px] font-black px-1.5 py-0.5 rounded">#{sib.seriesOrder}</span>
+                      )}
+                    </div>
+                    <div className="p-2 bg-white dark:bg-[#1c1c1e]">
+                      <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {(prevInSeries || nextInSeries) && onOpenItem && (
+              <div className="flex gap-2 mt-3">
+                {prevInSeries && (
+                  <button onClick={() => onOpenItem(prevInSeries)} className="flex-1 py-2.5 px-4 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:border-red-400 active:scale-95 transition-all flex items-center justify-center gap-2 truncate">
+                    <ChevronLeft size={14} /> {t.prevInSeries}
+                  </button>
+                )}
+                {nextInSeries && (
+                  <button onClick={() => onOpenItem(nextInSeries)} className="flex-1 py-2.5 px-4 bg-red-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-2 truncate">
+                    {t.nextInSeries} <ChevronRight size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* More by this author — horizontal strip of sibling books, capped at 12 */}
+        {authorSiblings.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+              <User size={14} className="text-red-600" />
+              <span className="w-6 h-[2px] bg-red-600" />
+              {t.moreByAuthor}: {item.author}
+            </h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+              {authorSiblings.map(sib => (
+                <button
+                  key={sib.id}
+                  onClick={() => onOpenItem?.(sib)}
+                  className="flex-shrink-0 w-32 text-left rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10 hover:border-red-400 active:scale-95 transition-all"
+                >
+                  <div className="aspect-[3/4] bg-slate-100 dark:bg-white/[0.04] relative overflow-hidden">
+                    {/* Same auto-thumbnail fallback as everywhere else. */}
+                    <CardCover item={sib} lang={lang} />
+                  </div>
+                  <div className="p-2 bg-white dark:bg-[#1c1c1e]">
+                    <p className="text-[10px] font-bold text-slate-700 dark:text-slate-300 line-clamp-2 leading-tight">{pickText(sib.title, lang)}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {onOpenAuthor && (
+              <button
+                onClick={() => onOpenAuthor(item.author.trim())}
+                className="mt-3 w-full py-2.5 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 hover:border-red-400 active:scale-95 transition-all"
+              >
+                {t.viewAllByAuthor}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Tags — each chip is a button that filters the catalog by that tag. */}
+        {item.tags && item.tags.length > 0 && (
+          <div className="mt-10">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><TagIcon size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600"></span>{t.tags}</h2>
+            <div className="flex flex-wrap gap-2">
+              {item.tags.map(tag => (
+                onOpenTag ? (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => onOpenTag(tag)}
+                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-red-600 dark:text-red-400 hover:border-red-400 active:scale-95 transition-all"
+                  >#{tag}</button>
+                ) : (
+                  <span key={tag} className="px-3 py-1.5 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 text-xs font-bold text-slate-600 dark:text-slate-300">#{tag}</span>
+                )
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

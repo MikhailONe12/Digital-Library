@@ -1907,12 +1907,19 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           </div>
         </div>
 
-        {/* Primary action for a work we only link to. The source URL is the
-            content here — without this the page has nothing to press, because
-            the file list below only renders when the item carries formats.
-            Sits directly under the rating so it reads as the main call to
-            action, the same slot "Read online" occupies for hosted items.
-            Routed through the leaving sheet like every other hand-off. */}
+        {pickText(item.description, lang, '').trim() && (
+          <div className="mt-8">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
+            <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm leading-relaxed text-slate-600 dark:text-slate-300 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
+          </div>
+        )}
+
+        {/* Primary action for a work we only link to: the source URL *is* the
+            content, and without this the page has nothing to press (the file
+            list further down only renders when the item carries formats).
+            Placed after the description so the reader decides from the summary
+            first, then leaves — same order as the read buttons for hosted
+            items. Routed through the leaving sheet like every other hand-off. */}
         {item.source?.url && (
           <div className="mt-8">
             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
@@ -1929,13 +1936,6 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                 {item.source.name || hostOf(item.source.url)}
               </p>
             </div>
-          </div>
-        )}
-
-        {pickText(item.description, lang, '').trim() && (
-          <div className="mt-8">
-            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
-            <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm leading-relaxed text-slate-600 dark:text-slate-300 text-sm whitespace-pre-line">{pickText(item.description, lang, '')}</div>
           </div>
         )}
 

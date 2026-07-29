@@ -13,6 +13,15 @@ export const getDisplayedLanguages = (item: MediaItem): ContentLang[] => {
 };
 
 /**
+ * Is this work served by someone else rather than by us? True when any file is
+ * flagged external, and also when the item only carries a source URL (a
+ * catalogue entry with no uploaded files at all) — both mean tapping through
+ * leaves for the origin site, which is what the ↗ badge warns about.
+ */
+export const isExternallyHosted = (item: MediaItem): boolean =>
+  (item.formats || []).some(f => f.external) || !!item.source?.url;
+
+/**
  * Does this URL point at somebody else's server? Used to pre-tick the
  * "external source" flag when an admin pastes a link instead of uploading.
  * Only a hint for the admin UI — the stored `external` flag is what actually

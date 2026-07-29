@@ -1907,6 +1907,31 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           </div>
         </div>
 
+        {/* Primary action for a work we only link to. The source URL is the
+            content here — without this the page has nothing to press, because
+            the file list below only renders when the item carries formats.
+            Sits directly under the rating so it reads as the main call to
+            action, the same slot "Read online" occupies for hosted items.
+            Routed through the leaving sheet like every other hand-off. */}
+        {item.source?.url && (
+          <div className="mt-8">
+            <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+              <ExternalLink size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.sourceLabel}
+            </h2>
+            <div className="bg-white dark:bg-[#1c1c1e] p-3 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.02)]">
+              <button
+                onClick={() => setLeavingTo(item.source!.url!)}
+                className="w-full bg-red-600 text-white py-4 rounded-[2rem] font-black uppercase tracking-[0.2em] text-[10px] shadow-lg shadow-red-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mb-2"
+              >
+                <ExternalLink size={16} strokeWidth={3} />{t.openAtSource}
+              </button>
+              <p className="text-center text-[9px] font-bold text-slate-400 dark:text-slate-500 mb-1 truncate px-2">
+                {item.source.name || hostOf(item.source.url)}
+              </p>
+            </div>
+          </div>
+        )}
+
         {pickText(item.description, lang, '').trim() && (
           <div className="mt-8">
             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><span className="w-10 h-[2px] bg-red-600"></span>{t.about}</h2>
@@ -1914,10 +1939,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           </div>
         )}
 
-        {/* Rights & licence. Rendered whenever a licence or a source is on
-            record — for CC-style licences the attribution line below is a
-            condition of use, not decoration, so it ships with a copy button. */}
-        {(item.license?.code || item.source?.name) && (() => {
+        {/* Rights & licence. Needs actual rights on record — a bare source name
+            is already shown by the source button above, and repeating it in a
+            near-empty block just padded the page. For CC-style licences the
+            attribution line below is a condition of use, not decoration, so it
+            ships with a copy button. */}
+        {(item.license?.code || item.license?.holder || item.license?.note) && (() => {
           const label = licenseLabel(item.license, lang);
           const href  = licenseUrl(item.license);
           const credit = buildAttribution(item, lang);
@@ -1950,19 +1977,14 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
                   </div>
                 )}
 
+                {/* Stated as a fact, never as a link: leaving the app happens
+                    through the source button above, which goes via the
+                    confirmation sheet. A second, silent exit route hidden in
+                    the rights block would bypass that. */}
                 {item.source?.name && (
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.sourceLabel}</span>
-                    {item.source.url ? (
-                      <a
-                        href={item.source.url} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 text-sm font-bold text-red-600 dark:text-red-400 hover:underline"
-                      >
-                        {item.source.name}<ExternalLink size={11} strokeWidth={3} />
-                      </a>
-                    ) : (
-                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
-                    )}
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
                   </div>
                 )}
 

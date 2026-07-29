@@ -5,7 +5,7 @@ import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
 import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
-import { pickText, hasVideo, getDisplayedLanguages } from '../utils';
+import { pickText, hasVideo, getDisplayedLanguages, isExternallyHosted } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
 
 interface HomeProps {
@@ -105,7 +105,7 @@ const useDragScroll = () => {
 // Marks a shelf tile whose content is hosted by someone else, so the "you're
 // leaving" hand-off isn't a surprise. Mirrors MediaCard's amber corner badge.
 const ShelfExternalBadge: React.FC<{ item: MediaItem }> = ({ item }) => {
-  if (!(item.formats || []).some(f => f.external)) return null;
+  if (!isExternallyHosted(item)) return null;
   return (
     <span className="absolute top-2 right-2 bg-amber-500 text-white p-1 rounded-md shadow-sm">
       <ExternalLink size={10} strokeWidth={3} />

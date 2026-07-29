@@ -15,7 +15,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
 } from 'recharts';
-import { pickText, isExternalUrl } from '../utils';
+import { pickText, isExternalUrl, isExternallyHosted } from '../utils';
 import {
   LICENSE_PRESETS, CUSTOM_LICENSE_CODE, getLicensePreset, licenseForbidsRedistribution,
 } from '../services/licenses';
@@ -265,7 +265,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     // link to?". An item counts as external if any of its files is external.
     if (adminItemSourceFilter !== 'ALL') {
       const wantExternal = adminItemSourceFilter === 'EXTERNAL';
-      list = list.filter(i => (i.formats || []).some(f => !!f.external) === wantExternal);
+      list = list.filter(i => isExternallyHosted(i) === wantExternal);
     }
     if (q) {
       list = list.filter(i => {
@@ -1765,8 +1765,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                 <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 mt-2">
                   {([
                     { key: 'ALL' as const,      label: ta.sourceFilterAll,      count: db.items.length },
-                    { key: 'LOCAL' as const,    label: ta.sourceFilterLocal,    count: db.items.filter(i => !(i.formats || []).some(f => f.external)).length },
-                    { key: 'EXTERNAL' as const, label: ta.sourceFilterExternal, count: db.items.filter(i => (i.formats || []).some(f => f.external)).length },
+                    { key: 'LOCAL' as const,    label: ta.sourceFilterLocal,    count: db.items.filter(i => !isExternallyHosted(i)).length },
+                    { key: 'EXTERNAL' as const, label: ta.sourceFilterExternal, count: db.items.filter(i => isExternallyHosted(i)).length },
                   ]).map(({ key, label, count }) => {
                     const active = adminItemSourceFilter === key;
                     return (

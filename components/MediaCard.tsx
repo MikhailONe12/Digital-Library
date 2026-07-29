@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { MediaItem, Locale } from '../types';
 import { Star, ShieldCheck, Heart, BookOpen, CheckCircle2, Play, Film, ExternalLink } from 'lucide-react';
-import { pickText, hasVideo, getFirstVideoUrl, formatDuration, getDisplayedLanguages } from '../utils';
+import { pickText, hasVideo, getFirstVideoUrl, formatDuration, getDisplayedLanguages, isExternallyHosted } from '../utils';
 import { isDirectVideo } from '../services/videoThumb';
 import { getVideoDuration } from '../services/videoDuration';
 import CardCover from './CardCover';
@@ -87,7 +87,7 @@ const MediaCard: React.FC<MediaCardProps> = ({ item, onClick, lang, isFavorited,
         <div className="absolute top-2.5 right-2.5 flex flex-col items-end gap-1.5">
           {/* Hosted elsewhere — tapping through leaves for the source's site.
               Worth signalling before the tap, not only on the detail page. */}
-          {(item.formats || []).some(f => f.external) && (
+          {isExternallyHosted(item) && (
             <div className="bg-amber-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
               <ExternalLink size={10} strokeWidth={3} />
             </div>

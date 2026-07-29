@@ -1,5 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { pickText, getYouTubeId, getVideoPoster, COVER_FALLBACK, isExternalUrl } from './utils';
+import { pickText, getYouTubeId, getVideoPoster, COVER_FALLBACK, isExternalUrl, isExternallyHosted } from './utils';
+import { MediaItem } from './types';
+
+describe('isExternallyHosted', () => {
+  const item = (over: any): MediaItem => ({ formats: [], ...over } as MediaItem);
+
+  it('is true when a file is flagged external', () => {
+    expect(isExternallyHosted(item({ formats: [{ external: true }] }))).toBe(true);
+  });
+
+  it('is true for a link-only entry that carries just a source URL', () => {
+    expect(isExternallyHosted(item({ source: { name: 'Columbia', url: 'https://x.edu/a' } }))).toBe(true);
+  });
+
+  it('is false for our own files, and for a source with a name but no URL', () => {
+    expect(isExternallyHosted(item({ formats: [{ external: false }] }))).toBe(false);
+    expect(isExternallyHosted(item({ source: { name: 'Columbia' } }))).toBe(false);
+    expect(isExternallyHosted(item({}))).toBe(false);
+  });
+
+  it('survives a missing formats array', () => {
+    expect(isExternallyHosted({ } as MediaItem)).toBe(false);
+  });
+});
 
 describe('isExternalUrl', () => {
   const ours = 'https://library.example.com';

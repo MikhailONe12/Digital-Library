@@ -80,13 +80,24 @@ const allowedOrigins = (process.env.CORS_ORIGIN || 'https://library.optionsdata.
 
 // Don't advertise the framework — one less hint for an attacker.
 app.disable('x-powered-by');
-// 'loopback' (not true) — Express only honours X-Forwarded-For when the
-// immediate TCP peer is on 127.0.0.0/8 or ::1, i.e. the local nginx that
-// terminates TLS and proxies to us on the same host. With the previous
-// `true`, ANY internet client could send X-Real-IP/X-Forwarded-For: 1.2.3.4
-// and bypass the IP blacklist, rate limiter and analytics excludes simply
-// by rotating those headers.
-app.set('trust proxy', 'loopback');
+// Never `true` — with it, ANY client could send X-Forwarded-For: 1.2.3.4 and
+// walk past the IP blacklist, the rate limiter and the analytics excludes just
+// by rotating headers (#20).
+//
+// 'loopback' alone was too narrow for how we actually run: the API lives in a
+// container and nginx reaches it through a published port, so the peer address
+// inside the container is the Docker bridge gateway (172.16/12), never
+// 127.0.0.1. The trust test therefore never matched and req.ip fell back to
+// that gateway — one shared address for every visitor, which silently defeated
+// per-IP rate limiting and IP-based excludes.
+//
+// Trusting the private ranges is safe *here* because the container port is
+// published on host loopback only (docker-compose: 127.0.0.1:3001:3001), so
+// nginx is the sole ingress, and it overwrites X-Real-IP with $remote_addr and
+// appends the peer to X-Forwarded-For. A forged header therefore arrives as
+// "1.2.3.4, <real-ip>"; Express walks the chain from the right and stops at the
+// first untrusted hop — the real public IP — so the forgery is ignored.
+app.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 
 app.use(cors({ origin: allowedOrigins, methods: ['GET', 'POST', 'PUT', 'DELETE'] }));
 app.use(express.json({ limit: '10mb' }));
@@ -117,6 +128,22 @@ const rateBuckets = new Map(); // key -> { count, resetAt }
 // (the local nginx). Reading the raw headers ourselves would re-introduce the
 // spoofing vector that #20 closed.
 const clientIp = (req) => (req.ip || req.socket?.remoteAddress || 'unknown').toString().trim();
+
+// Is this an infrastructure address rather than a visitor's? Used to detect the
+// case where proxy trust is misconfigured and req.ip resolves to a gateway or
+// loopback address — then every visitor would look identical, so callers that
+// have a second (weaker) source can prefer it instead of logging noise.
+const isInternalIp = (ip) => {
+  if (!ip || ip === 'unknown') return true;
+  const s = String(ip).trim().replace(/^::ffff:/i, '');
+  if (s === '::1' || s.startsWith('127.')) return true;
+  if (s.startsWith('10.') || s.startsWith('192.168.')) return true;
+  const m = s.match(/^172\.(\d{1,3})\./);
+  if (m && +m[1] >= 16 && +m[1] <= 31) return true;
+  if (s.startsWith('169.254.')) return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(s) || /^fe80:/i.test(s)) return true;
+  return false;
+};
 
 // Returns an Express middleware enforcing `max` requests per `windowMs` for the
 // given `name` (name keeps independent routes from sharing a counter).
@@ -931,7 +958,13 @@ const isAnalyticsExcluded = (username, ip, userId, browserToken, settings) => {
   const exTok = (ex.browsers || []).map(b => b?.token).filter(Boolean);
 
   if (u && u !== 'guest' && exU.includes(u)) return true;
-  if (ipClean && ipClean !== 'unknown' && exI.includes(ipClean)) return true;
+  // Match the full IP *and* its anonymised form. visit_logs only ever stores
+  // the truncated value (#37), so an admin reading an address off the access
+  // log and pasting it into the exclude list would otherwise never match a
+  // real visitor. Entering a truncated address deliberately covers the whole
+  // /24 (IPv4) or /48 (IPv6) — which is what "stop counting my network" means.
+  if (ipClean && ipClean !== 'unknown'
+      && (exI.includes(ipClean) || exI.includes(anonymizeIp(ipClean)))) return true;
   if (uid && exUid.includes(uid)) return true;
   if (browserToken && exTok.includes(browserToken)) return true;
   return false;
@@ -1540,7 +1573,19 @@ app.put('/api/settings', requireApiKey, async (req, res) => {
 app.post('/api/visits', async (req, res) => {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
   const username = clip(req.body?.username, 64);
-  const ip       = clip(req.body?.ip, 64);
+  // Trust the connection, not the payload. The client used to report its own
+  // address (fetched from a third-party lookup), which made IP excludes both
+  // spoofable and unreliable — a failed lookup sent 'unknown' and silently
+  // disabled IP-based exclusion for that visit. clientIp() is the same source
+  // /api/items/:itemId/track already uses, so the two paths now agree.
+  //
+  // If the connection only yields an infrastructure address (proxy trust
+  // misconfigured, or a topology this build didn't anticipate), every row would
+  // otherwise collapse onto one gateway IP. In that case fall back to what the
+  // client reported: weaker, but it keeps the log informative instead of
+  // uniformly useless.
+  const realIp   = clientIp(req);
+  const ip       = isInternalIp(realIp) ? (clip(req.body?.ip, 64) || realIp) : realIp;
   // Use the verified Telegram user (initData HMAC) — body fields would be
   // trivially spoofable. browserToken arrives via custom header.
   const tgUser  = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
@@ -1580,6 +1625,42 @@ app.post('/api/visits/reset', requireApiKey, async (req, res) => {
   try {
     await pool.query('DELETE FROM visit_logs');
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Purge access-log rows belonging to anyone currently on the exclude list.
+// The write-time filter only stops *new* rows, so entries recorded before an
+// exclude was added linger in the log; this applies the list retroactively.
+//
+// Browser-token excludes can't be purged: the token is a request header and is
+// never stored on the row, so there's nothing to match against. The response
+// reports that separately rather than pretending those rows were handled.
+app.post('/api/visits/purge-excluded', requireApiKey, async (req, res) => {
+  try {
+    const settings = await getSettingsCached();
+    const ex = settings.analyticsExcludes || {};
+    const usernames = (ex.usernames || [])
+      .map(x => String(x).toLowerCase().replace(/^@/, '').trim()).filter(Boolean);
+    const userIds = (ex.userIds || []).map(x => String(x).trim()).filter(Boolean);
+    // Rows store the anonymised address, so compare on that form.
+    const ips = (ex.ips || [])
+      .map(x => anonymizeIp(String(x).trim())).filter(Boolean);
+    // userIds are logged as `id_NN` when the visitor has no @handle.
+    const idMarkers = userIds.map(id => `id_${id}`);
+    const names = [...usernames, ...idMarkers];
+
+    if (names.length === 0 && ips.length === 0) {
+      return res.json({ ok: true, deleted: 0, browserTokensSkipped: (ex.browsers || []).length });
+    }
+    const { rowCount } = await pool.query(
+      `DELETE FROM visit_logs
+        WHERE ($1::text[] <> '{}' AND LOWER(username) = ANY($1))
+           OR ($2::text[] <> '{}' AND ip = ANY($2))`,
+      [names, ips],
+    );
+    res.json({ ok: true, deleted: rowCount || 0, browserTokensSkipped: (ex.browsers || []).length });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

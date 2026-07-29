@@ -504,6 +504,25 @@ export const resetTrafficStats = async (): Promise<void> => {
   });
 };
 
+/**
+ * Apply the analytics-exclude list retroactively: delete access-log rows that
+ * were recorded before the exclusion existed. Returns how many rows went, plus
+ * how many browser-token excludes couldn't be applied (the token never reaches
+ * the row, so those can't be matched after the fact).
+ */
+export const purgeExcludedVisits = async (): Promise<{ deleted: number; browserTokensSkipped: number }> => {
+  const res = await fetch('/api/visits/purge-excluded', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  return {
+    deleted: data.deleted || 0,
+    browserTokensSkipped: data.browserTokensSkipped || 0,
+  };
+};
+
 // ── Error log (built-in monitoring) ──────────────────────────────────────────
 
 export interface ErrorLogRow {

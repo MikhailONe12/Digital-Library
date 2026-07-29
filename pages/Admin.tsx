@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
 import type { ErrorLogRow } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -769,6 +769,39 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     }
   };
 
+  // Exclude an address straight from the access log. The value shown there is
+  // already anonymised; the server compares both the full and truncated forms,
+  // so this genuinely stops future visits from that network being counted.
+  const handleExcludeLoggedIp = async (ip: string) => {
+    try {
+      await addAnalyticsExcludeIp(ip);
+      toast.success(ta.excludeThisIpDone);
+    } catch { /* toasted by db layer */ }
+    onUpdate();
+  };
+
+  // Apply the exclude list to rows that predate it. The write-time filter only
+  // stops new entries, so without this an exclusion added today leaves every
+  // earlier visit sitting in the access log.
+  const [purging, setPurging] = useState(false);
+  const handlePurgeExcluded = async () => {
+    if (!confirm(ta.purgeExcludedConfirm)) return;
+    setPurging(true);
+    try {
+      const { deleted, browserTokensSkipped } = await purgeExcludedVisits();
+      await loadAnalytics();
+      toast.success(`${ta.purgeExcludedDone}: ${deleted}`);
+      // Browser excludes match on a request header that was never stored on the
+      // row, so say so rather than letting the admin assume full coverage.
+      if (browserTokensSkipped > 0) toast.info(ta.purgeExcludedBrowserNote);
+    } catch {
+      toast.error(ta.purgeExcludedFailed);
+    } finally {
+      setPurging(false);
+      onUpdate();
+    }
+  };
+
   // ── Error log (built-in monitoring) ──────────────────────────────────────
   const [errorRows, setErrorRows] = useState<ErrorLogRow[]>([]);
   const [errorsLoading, setErrorsLoading] = useState(false);
@@ -1107,7 +1140,24 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                     <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleDateString()}</td>
                                     <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
                                     <td className="p-3 font-bold text-slate-700 dark:text-slate-200">{log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}</td>
-                                    <td className="p-3 text-slate-500 dark:text-slate-400">{log.ip}</td>
+                                    <td className="p-3 text-slate-500 dark:text-slate-400">
+                                      <span className="inline-flex items-center gap-1.5">
+                                        {log.ip}
+                                        {/* One-tap exclude straight from the log. The stored address is
+                                            anonymised, and the server matches that form too, so this
+                                            excludes the visitor's whole /24 (or /48 for IPv6). */}
+                                        {log.ip && log.ip !== 'unknown' && !(db.analyticsExcludes?.ips || []).includes(log.ip) && (
+                                          <button
+                                            onClick={() => handleExcludeLoggedIp(log.ip)}
+                                            title={ta.excludeThisIp}
+                                            aria-label={ta.excludeThisIp}
+                                            className="text-slate-300 dark:text-slate-600 hover:text-red-600 transition-colors"
+                                          >
+                                            <Ban size={11} strokeWidth={3} />
+                                          </button>
+                                        )}
+                                      </span>
+                                    </td>
                                     <td className="p-3 text-right text-slate-400 dark:text-slate-500 truncate max-w-[150px]">{log.platform}</td>
                                 </tr>
                             ))}
@@ -1592,7 +1642,17 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                           {(db.analyticsExcludes?.browsers || []).map(b => {
                               const isMe = b.token === thisBrowserToken;
                               return (
-                                  <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white dark:bg-[#1c1c1e] border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200'}`}> <span className="font-mono text-slate-400 dark:text-slate-500 shrink-0">{b.token.slice(0, 8)}…</span> <span className="flex-1 min-w-0 truncate">{b.label}</span> <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span> {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>} <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button> </div> ); })} </div> </div> {/* Reset content stats */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <BarChart4 size={14} /> {ta.resetStatsTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetStatsDesc}</p> <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"> {ta.resetStatsButton} </button> </div> {/* Reset traffic stats */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <Monitor size={14} /> {ta.resetTrafficTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetTrafficDesc}</p> <button onClick={handleResetTrafficStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"> {ta.resetTrafficButton} </button> </div> {/* #36 — GDPR / right-to-erasure. Surgical, per-user delete distinct from the aggregate "reset stats" above. */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <Trash2 size={14} /> {ta.eraseUserTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.eraseUserDesc}</p> <input className="w-full mb-3 bg-white dark:bg-[#1c1c1e] border border-red-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none" placeholder={ta.eraseUserPlaceholder} value={eraseTarget} onChange={e => setEraseTarget(e.target.value)} /> <button onClick={handleEraseUser} disabled={!eraseTarget.trim()} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700 disabled:opacity-40"> {ta.eraseUserButton} </button> </div> {/* Error log (built-in monitoring) */} <div className="p-5 md:p-6 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden"> <div className="flex items-center justify-between mb-1"> <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"> <AlertCircle size={14} /> {ta.errorLogTitle} {errorRows.length > 0 && ( <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px]">{errorRows.length}</span> )} </h4> <div className="flex items-center gap-1 shrink-0"> <button onClick={refreshErrors} title={ta.errorLogRefresh} className="p-2 text-slate-400 hover:text-slate-700 transition-colors"> <RefreshCw size={14} className={errorsLoading ?'animate-spin' : ''} />
+                                  <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white dark:bg-[#1c1c1e] border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200'}`}> <span className="font-mono text-slate-400 dark:text-slate-500 shrink-0">{b.token.slice(0, 8)}…</span> <span className="flex-1 min-w-0 truncate">{b.label}</span> <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span> {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>} <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button> </div> ); })} </div>
+                      {/* Apply the list to rows recorded before it existed. */}
+                      <button
+                        onClick={handlePurgeExcluded}
+                        disabled={purging}
+                        className="w-full mt-4 py-3 bg-white dark:bg-[#1c1c1e] border border-slate-300 dark:border-white/15 text-slate-700 dark:text-slate-200 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:border-red-400 hover:text-red-600 active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40"
+                      >
+                        <Trash2 size={13} /> {ta.purgeExcludedBtn}
+                      </button>
+                      <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-2 leading-relaxed">{ta.purgeExcludedDesc}</p>
+                      </div> {/* Reset content stats */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <BarChart4 size={14} /> {ta.resetStatsTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetStatsDesc}</p> <button onClick={handleResetStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"> {ta.resetStatsButton} </button> </div> {/* Reset traffic stats */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <Monitor size={14} /> {ta.resetTrafficTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.resetTrafficDesc}</p> <button onClick={handleResetTrafficStats} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700"> {ta.resetTrafficButton} </button> </div> {/* #36 — GDPR / right-to-erasure. Surgical, per-user delete distinct from the aggregate "reset stats" above. */} <div className="p-5 md:p-6 bg-red-50 rounded-3xl border border-red-100"> <h4 className="text-[10px] font-black text-red-500 uppercase tracking-widest mb-3 flex items-center gap-2"> <Trash2 size={14} /> {ta.eraseUserTitle} </h4> <p className="text-[9px] text-slate-400 font-bold mb-4">{ta.eraseUserDesc}</p> <input className="w-full mb-3 bg-white dark:bg-[#1c1c1e] border border-red-200 rounded-2xl px-4 py-3 text-xs font-mono focus:border-red-600 outline-none" placeholder={ta.eraseUserPlaceholder} value={eraseTarget} onChange={e => setEraseTarget(e.target.value)} /> <button onClick={handleEraseUser} disabled={!eraseTarget.trim()} className="w-full py-4 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md active:scale-95 transition-all hover:bg-red-700 disabled:opacity-40"> {ta.eraseUserButton} </button> </div> {/* Error log (built-in monitoring) */} <div className="p-5 md:p-6 bg-slate-50 dark:bg-black/40 rounded-3xl border border-slate-200 dark:border-white/10 overflow-hidden"> <div className="flex items-center justify-between mb-1"> <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest flex items-center gap-2"> <AlertCircle size={14} /> {ta.errorLogTitle} {errorRows.length > 0 && ( <span className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[9px]">{errorRows.length}</span> )} </h4> <div className="flex items-center gap-1 shrink-0"> <button onClick={refreshErrors} title={ta.errorLogRefresh} className="p-2 text-slate-400 hover:text-slate-700 transition-colors"> <RefreshCw size={14} className={errorsLoading ?'animate-spin' : ''} />
                               </button>
                               {errorRows.length > 0 && (
                                   <button onClick={handleClearErrors} title={ta.errorLogClear} className="p-2 text-slate-400 hover:text-red-600 transition-colors">

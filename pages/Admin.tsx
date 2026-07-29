@@ -1089,9 +1089,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                       <Monitor size={14} className="text-blue-600" /> {t.accessLogs}
                 </h3>
                 <div className="overflow-x-auto overflow-y-auto max-h-[420px]">
-                    <table className="w-full text-left border-collapse min-w-[500px]">
+                    {/* min-width grew with the date column so the five columns
+                        don't cramp on a phone; the wrapper scrolls horizontally. */}
+                    <table className="w-full text-left border-collapse min-w-[590px]">
                         <thead className="sticky top-0 z-10 bg-white dark:bg-[#1c1c1e]">
                             <tr className="border-b border-slate-100 dark:border-white/[0.08]">
+                                <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{ta.date}</th>
                                 <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{ta.time}</th>
                                 <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{ta.user}</th>
                                 <th className="p-3 text-[9px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest bg-white dark:bg-[#1c1c1e]">{t.ipAddress}</th>
@@ -1101,6 +1104,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                         <tbody className="text-[10px] font-mono">
                             {db.visitLogs && db.visitLogs.slice(0, 50).map(log => (
                                 <tr key={log.id} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                                    <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleDateString()}</td>
                                     <td className="p-3 text-slate-400 dark:text-slate-500 whitespace-nowrap">{new Date(log.timestamp).toLocaleTimeString()}</td>
                                     <td className="p-3 font-bold text-slate-700 dark:text-slate-200">{log.username?.startsWith('id_') ? `ID ${log.username.slice(3)}` : log.username}</td>
                                     <td className="p-3 text-slate-500 dark:text-slate-400">{log.ip}</td>
@@ -1108,7 +1112,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                 </tr>
                             ))}
                             {(!db.visitLogs || db.visitLogs.length === 0) && (
-                                <tr><td colSpan={4} className="p-8 text-center text-slate-400 dark:text-slate-500">{ta.noLogs}</td></tr>
+                                <tr><td colSpan={5} className="p-8 text-center text-slate-400 dark:text-slate-500">{ta.noLogs}</td></tr>
                             )}
                         </tbody>
                     </table>

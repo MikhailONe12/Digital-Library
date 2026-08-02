@@ -2070,85 +2070,6 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
           </div>
         )}
 
-        {/* Rights & licence. Needs actual rights on record — a bare source name
-            is already shown by the source button above, and repeating it in a
-            near-empty block just padded the page. For CC-style licences the
-            attribution line below is a condition of use, not decoration, so it
-            ships with a copy button. */}
-        {(item.license?.code || item.license?.holder || item.license?.note) && (() => {
-          const label = licenseLabel(item.license, lang);
-          const href  = licenseUrl(item.license);
-          const credit = buildAttribution(item, lang);
-          return (
-            <div className="mt-10">
-              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
-                <Scale size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.rightsTitle}
-              </h2>
-              <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm space-y-4">
-                {label && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseLabel}</span>
-                    {href ? (
-                      <a
-                        href={href} target="_blank" rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/25 text-xs font-black text-red-600 dark:text-red-400 hover:border-red-400 transition-all"
-                      >
-                        {label}<ExternalLink size={11} strokeWidth={3} />
-                      </a>
-                    ) : (
-                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-black text-slate-600 dark:text-slate-300">{label}</span>
-                    )}
-                  </div>
-                )}
-
-                {item.license?.holder && (
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseHolder}</span>
-                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.license.holder}</span>
-                  </div>
-                )}
-
-                {/* Stated as a fact, never as a link: leaving the app happens
-                    through the source button above, which goes via the
-                    confirmation sheet. A second, silent exit route hidden in
-                    the rights block would bypass that. */}
-                {item.source?.name && (
-                  <div className="flex items-baseline gap-2 flex-wrap">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.sourceLabel}</span>
-                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
-                  </div>
-                )}
-
-                {item.license?.note && (
-                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-line">{item.license.note}</p>
-                )}
-
-                {credit && (
-                  <div className="pt-1">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t.licenseAttribution}</p>
-                    <div className="flex items-start gap-2">
-                      <p className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-black/40 rounded-2xl p-3 border border-slate-100 dark:border-white/[0.08] break-words">{credit}</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard?.writeText(credit)
-                            .then(() => { setAttributionCopied(true); setTimeout(() => setAttributionCopied(false), 1800); })
-                            .catch(() => { /* clipboard blocked — the text is selectable anyway */ });
-                        }}
-                        title={t.copyAttribution}
-                        aria-label={t.copyAttribution}
-                        className="shrink-0 p-3 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 active:scale-95 transition-all"
-                      >
-                        {attributionCopied ? <CheckCircle2 size={14} strokeWidth={3} className="text-green-600" /> : <Copy size={14} strokeWidth={3} />}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
-
         {/* Series strip */}
         {item.series && seriesSiblings.length > 1 && (
           <div className="mt-10">
@@ -2252,6 +2173,85 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             </div>
           </div>
         )}
+
+        {/* Rights & licence. Needs actual rights on record — a bare source name
+            is already shown by the source button above, and repeating it in a
+            near-empty block just padded the page. For CC-style licences the
+            attribution line below is a condition of use, not decoration, so it
+            ships with a copy button. */}
+        {(item.license?.code || item.license?.holder || item.license?.note) && (() => {
+          const label = licenseLabel(item.license, lang);
+          const href  = licenseUrl(item.license);
+          const credit = buildAttribution(item, lang);
+          return (
+            <div className="mt-10">
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+                <Scale size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.rightsTitle}
+              </h2>
+              <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm space-y-4">
+                {label && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseLabel}</span>
+                    {href ? (
+                      <a
+                        href={href} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-50 dark:bg-red-500/15 border border-red-100 dark:border-red-500/25 text-xs font-black text-red-600 dark:text-red-400 hover:border-red-400 transition-all"
+                      >
+                        {label}<ExternalLink size={11} strokeWidth={3} />
+                      </a>
+                    ) : (
+                      <span className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-xs font-black text-slate-600 dark:text-slate-300">{label}</span>
+                    )}
+                  </div>
+                )}
+
+                {item.license?.holder && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.licenseHolder}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.license.holder}</span>
+                  </div>
+                )}
+
+                {/* Stated as a fact, never as a link: leaving the app happens
+                    through the source button above, which goes via the
+                    confirmation sheet. A second, silent exit route hidden in
+                    the rights block would bypass that. */}
+                {item.source?.name && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.sourceLabel}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.source.name}</span>
+                  </div>
+                )}
+
+                {item.license?.note && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed whitespace-pre-line">{item.license.note}</p>
+                )}
+
+                {credit && (
+                  <div className="pt-1">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t.licenseAttribution}</p>
+                    <div className="flex items-start gap-2">
+                      <p className="flex-1 min-w-0 text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-black/40 rounded-2xl p-3 border border-slate-100 dark:border-white/[0.08] break-words">{credit}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard?.writeText(credit)
+                            .then(() => { setAttributionCopied(true); setTimeout(() => setAttributionCopied(false), 1800); })
+                            .catch(() => { /* clipboard blocked — the text is selectable anyway */ });
+                        }}
+                        title={t.copyAttribution}
+                        aria-label={t.copyAttribution}
+                        className="shrink-0 p-3 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-300 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 active:scale-95 transition-all"
+                      >
+                        {attributionCopied ? <CheckCircle2 size={14} strokeWidth={3} className="text-green-600" /> : <Copy size={14} strokeWidth={3} />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── EPUB Reader ────────────────────────────────────────────────────── */}

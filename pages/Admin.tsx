@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
 import type { ErrorLogRow } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -837,6 +837,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     return { kind: 'name', value: u.toLowerCase().replace(/^@/, '') };
   };
 
+  // A pseudonym is opaque, so give it a stable colour and show only its first
+  // chars: the eye matches "same swatch = same person" far faster than it
+  // compares hex strings down a column.
+  const visitorTint = (h: string) => `hsl(${parseInt(h.slice(0, 4), 16) % 360} 62% 48%)`;
+
+  // Exclude one exact visitor by pseudonym. Works for anonymous rows, where
+  // there is no @handle or Telegram id to key on and the stored IP covers a
+  // whole subnet.
+  const handleExcludeVisitorHash = async (hash: string) => {
+    try {
+      await addAnalyticsExcludeVisitor(hash);
+      toast.success(ta.excludeThisVisitorDone);
+    } catch { /* toasted by db layer */ }
+    onUpdate();
+  };
+
+  const handleRemoveExcludeVisitor = async (hash: string) => {
+    try { await removeAnalyticsExcludeVisitor(hash); } catch { /* toasted */ }
+    onUpdate();
+  };
+
   // Exclude exactly the visitor on this log row, by identity.
   const handleExcludeVisitor = async (key: { kind: 'id' | 'name'; value: string }) => {
     try {
@@ -1235,7 +1256,33 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                         })()}
                                       </span>
                                     </td>
-                                    <td className="p-3 text-slate-500 dark:text-slate-400">{log.ip}</td>
+                                    <td className="p-3 text-slate-500 dark:text-slate-400">
+                                      <span className="inline-flex items-center gap-2">
+                                        {log.ip}
+                                        {/* Pseudonym: same swatch + code = same visitor. The address
+                                            itself stays truncated, so this is what distinguishes two
+                                            people who share a /24 — and what an exclude can target. */}
+                                        {log.ip_hash && (() => {
+                                          const excluded = (db.analyticsExcludes?.visitors || []).includes(log.ip_hash!);
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => !excluded && handleExcludeVisitorHash(log.ip_hash!)}
+                                              disabled={excluded}
+                                              title={excluded ? ta.visitorExcludedAlready : ta.excludeThisVisitor}
+                                              className={`inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md border transition-colors ${
+                                                excluded
+                                                  ? 'border-slate-200 dark:border-white/10 opacity-45 cursor-default'
+                                                  : 'border-slate-200 dark:border-white/10 hover:border-red-400 hover:text-red-600'
+                                              }`}
+                                            >
+                                              <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: visitorTint(log.ip_hash!) }} />
+                                              <span className="text-[9px] font-bold tracking-wider">{log.ip_hash!.slice(0, 6)}</span>
+                                            </button>
+                                          );
+                                        })()}
+                                      </span>
+                                    </td>
                                     <td className="p-3 text-right text-slate-400 dark:text-slate-500 truncate max-w-[150px]">{log.platform}</td>
                                 </tr>
                             ))}
@@ -1721,6 +1768,23 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                               const isMe = b.token === thisBrowserToken;
                               return (
                                   <div key={b.token} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold border ${isMe ? 'bg-green-50 border-green-100 text-green-700' : 'bg-white dark:bg-[#1c1c1e] border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-200'}`}> <span className="font-mono text-slate-400 dark:text-slate-500 shrink-0">{b.token.slice(0, 8)}…</span> <span className="flex-1 min-w-0 truncate">{b.label}</span> <span className="text-[9px] text-slate-300 shrink-0">{new Date(b.addedAt).toLocaleDateString()}</span> {isMe && <span className="text-[9px] font-black uppercase text-green-600 shrink-0">{ta.youHere}</span>} <button onClick={() => handleRemoveBrowser(b.token)} className="text-slate-300 hover:text-red-500 transition-colors shrink-0"><X size={11} /></button> </div> ); })} </div>
+                      {/* Visitor pseudonyms — added from the access log. Listed
+                          here so an exclude made with one tap can be undone. */}
+                      {(db.analyticsExcludes?.visitors || []).length > 0 && (
+                        <div className="mt-4">
+                          <label className="text-[8px] font-black uppercase text-slate-500 dark:text-slate-400 tracking-widest ml-1">{ta.excludeVisitors}</label>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {(db.analyticsExcludes?.visitors || []).map(h => (
+                              <span key={h} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg text-[10px] font-bold text-slate-700 dark:text-slate-200">
+                                <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: visitorTint(h) }} />
+                                <span className="tracking-wider">{h.slice(0, 6)}</span>
+                                <button onClick={() => handleRemoveExcludeVisitor(h)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={10} /></button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       {/* Apply the list to rows recorded before it existed. */}
                       <button
                         onClick={handlePurgeExcluded}

@@ -34,7 +34,7 @@ const emptyState = (): AppState => ({
   ],
   defaultLanguage: 'ru',
   globalAccess: false,
-  analyticsExcludes: { usernames: [], ips: [], userIds: [], browsers: [] },
+  analyticsExcludes: { usernames: [], ips: [], userIds: [], browsers: [], visitors: [] },
 });
 
 // In-memory cache — source of truth for the UI between renders.
@@ -240,6 +240,7 @@ export const loadDb = async (userId?: string): Promise<AppState> => {
       ips:       remote.analyticsExcludes?.ips || [],
       userIds:   remote.analyticsExcludes?.userIds || [],
       browsers:  remote.analyticsExcludes?.browsers || [],
+      visitors:  remote.analyticsExcludes?.visitors || [],
     },
   };
   avgRatings = remote.ratings || {};
@@ -623,6 +624,33 @@ export const removeAnalyticsExcludeUserId = async (id: string): Promise<void> =>
   cache.analyticsExcludes = {
     ...cache.analyticsExcludes,
     userIds: cache.analyticsExcludes.userIds.filter(x => x !== id),
+  };
+  await commitSettings(prev);
+};
+
+/**
+ * Exclude one exact visitor by the pseudonym shown on their access-log rows.
+ * Unlike an IP exclude this targets a single address (the stored IP is
+ * truncated to a /24, so it can't), and unlike a username exclude it works for
+ * a visitor who never identified themselves to Telegram.
+ */
+export const addAnalyticsExcludeVisitor = async (hash: string): Promise<void> => {
+  const clean = (hash || '').trim();
+  if (!clean) return;
+  if (cache.analyticsExcludes.visitors.includes(clean)) return;
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    visitors: [...cache.analyticsExcludes.visitors, clean],
+  };
+  await commitSettings(prev);
+};
+
+export const removeAnalyticsExcludeVisitor = async (hash: string): Promise<void> => {
+  const prev = { ...cache };
+  cache.analyticsExcludes = {
+    ...cache.analyticsExcludes,
+    visitors: cache.analyticsExcludes.visitors.filter(x => x !== hash),
   };
   await commitSettings(prev);
 };

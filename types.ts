@@ -133,7 +133,14 @@ export interface VisitLog {
   id: string;
   timestamp: string;
   username: string;
+  /** Anonymised: last IPv4 octet zeroed, IPv6 truncated to /48 (#37). */
   ip: string;
+  /**
+   * Keyed digest of the visitor's full address. Equal values mean the same
+   * visitor; the address itself can't be recovered from it. Absent on rows
+   * written before the column existed, and when the server has no stable key.
+   */
+  ip_hash?: string;
   platform: string;
   device: string;
 }
@@ -196,5 +203,7 @@ export interface AppState {
     ips: string[];
     userIds: string[];
     browsers: { token: string; label: string; addedAt: string }[];
+    /** Visitor pseudonyms (VisitLog.ip_hash) — one exact visitor each. */
+    visitors: string[];
   };
 }

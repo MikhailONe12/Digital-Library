@@ -67,6 +67,12 @@ const initDb = async () => {
     END $$;
   `).catch(e => console.warn('progress PK migration skipped:', e.message));
 
+  // visit_logs.ip_hash — added after the table shipped, so existing databases
+  // need the column too (CREATE TABLE IF NOT EXISTS won't add it).
+  await pool.query(
+    'ALTER TABLE visit_logs ADD COLUMN IF NOT EXISTS ip_hash TEXT'
+  ).catch(e => console.warn('visit_logs.ip_hash migration skipped:', e.message));
+
   console.log('DB: schema initialized');
 };
 
@@ -409,6 +415,34 @@ const baseUrl = () =>
 
 // Coerce a value to a trimmed string of at most n chars, or null.
 const clip = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
+
+// Stable pseudonym for a visitor, stored next to the anonymised address.
+//
+// The anonymised IP alone can't tell two people apart — everyone on a /24 looks
+// identical — so the access log couldn't answer "is this the same visitor?".
+// An HMAC of the full address answers that without keeping the address: equal
+// inputs give equal output, and the digest can't be turned back into an IP
+// without the key, which never leaves the server and is never sent to a client.
+//
+// Threat model, stated plainly: the IPv4 space is small enough to enumerate, so
+// anyone holding BOTH the database and the server key could brute-force the
+// original addresses. The key is separate from the data precisely so a database
+// leak on its own doesn't expose them. Rotating the key (or API_KEY, when no
+// dedicated one is set) invalidates existing pseudonyms — old rows stop
+// correlating with new ones, which is a deliberate, cheap kill switch.
+const IP_HASH_KEY = process.env.IP_HASH_SECRET
+  || (process.env.API_KEY
+        ? createHmac('sha256', process.env.API_KEY).update('visit-ip-pseudonym').digest('hex')
+        : null);
+
+const visitorHash = (raw) => {
+  if (!IP_HASH_KEY) return null;              // no stable key ⇒ no fake correlation
+  const ip = (raw || '').trim();
+  if (!ip || ip === 'unknown') return null;
+  // 16 hex chars = 64 bits: collision-free at any traffic this app will see,
+  // and short enough to read off the screen.
+  return createHmac('sha256', IP_HASH_KEY).update(ip).digest('hex').slice(0, 16);
+};
 
 // #37 — IP anonymisation for long-lived rows. Zero the last octet of IPv4 and
 // truncate IPv6 to the first 48 bits — matches the standard used by Plausible
@@ -939,7 +973,7 @@ const DEFAULT_SETTINGS = {
   // analytics. Applied both at write-time (POST /api/visits and
   // POST /api/items/:itemId/track skip the insert) and at read-time
   // (GET /api/analytics filters out any pre-existing rows that match).
-  analyticsExcludes: { usernames: [], ips: [], userIds: [], browsers: [] },
+  analyticsExcludes: { usernames: [], ips: [], userIds: [], browsers: [], visitors: [] },
 };
 
 // True when the visitor matches any entry on the admin's "don't count me"
@@ -964,6 +998,12 @@ const isAnalyticsExcluded = (username, ip, userId, browserToken, settings) => {
   if (ipClean && ipClean !== 'unknown' && exI.includes(ipClean)) return true;
   if (uid && exUid.includes(uid)) return true;
   if (browserToken && exTok.includes(browserToken)) return true;
+  // Pseudonym match: identifies exactly one address, unlike the truncated IP.
+  const exVis = (ex.visitors || []).map(x => String(x).trim());
+  if (exVis.length) {
+    const h = visitorHash(ipClean);
+    if (h && exVis.includes(h)) return true;
+  }
   return false;
 };
 
@@ -1533,6 +1573,10 @@ const sanitiseSettings = (raw) => {
       usernames: 'usernames' in a ? arrOfStr(a.usernames, 1000, 64) : [],
       ips:       'ips'       in a ? arrOfStr(a.ips,       1000, 64) : [],
       userIds:   'userIds'   in a ? arrOfStr(a.userIds,   1000, 64) : [],
+      // Pseudonyms from the access log (visitorHash output) — lets an admin
+      // exclude one visitor exactly, including an anonymous one who has no
+      // @handle or Telegram id to key on.
+      visitors:  'visitors'  in a ? arrOfStr(a.visitors,  1000, 64) : [],
       browsers:  Array.isArray(a.browsers)
         ? (a.browsers.length > 1000 ? (() => { throw new ValidationError('Too many browsers'); })() : a.browsers.map(b => {
             if (!b || typeof b !== 'object') throw new ValidationError('browser entry must be object');
@@ -1601,10 +1645,10 @@ app.post('/api/visits', async (req, res) => {
       ? username
       : (userId ? `id_${userId}` : username);
     await pool.query(
-      `INSERT INTO visit_logs (id, username, ip, platform, device)
-       VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO visit_logs (id, username, ip, ip_hash, platform, device)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [
-        id, loggedUser, anonymizeIp(ip),
+        id, loggedUser, anonymizeIp(ip), visitorHash(ip),
         clip(req.body?.platform, 32),
         clip(req.body?.device, 256),
       ],
@@ -1650,16 +1694,23 @@ app.post('/api/visits/purge-excluded', requireApiKey, async (req, res) => {
     const userIds = (ex.userIds || []).map(x => String(x).trim()).filter(Boolean);
     // userIds are logged as `id_NN` when the visitor has no @handle.
     const names = [...usernames, ...userIds.map(id => `id_${id}`)];
+    // Pseudonyms are stored on the row and identify one address exactly, so
+    // unlike raw IPs they can be applied backwards without over-deleting.
+    const visitors = (ex.visitors || []).map(x => String(x).trim()).filter(Boolean);
     const skipped = {
       ipsSkipped: (ex.ips || []).length,
       browserTokensSkipped: (ex.browsers || []).length,
     };
 
-    if (names.length === 0) return res.json({ ok: true, deleted: 0, ...skipped });
+    if (names.length === 0 && visitors.length === 0) {
+      return res.json({ ok: true, deleted: 0, ...skipped });
+    }
 
     const { rowCount } = await pool.query(
-      'DELETE FROM visit_logs WHERE LOWER(username) = ANY($1)',
-      [names],
+      `DELETE FROM visit_logs
+        WHERE ($1::text[] <> '{}' AND LOWER(username) = ANY($1))
+           OR ($2::text[] <> '{}' AND ip_hash = ANY($2))`,
+      [names, visitors],
     );
     res.json({ ok: true, deleted: rowCount || 0, ...skipped });
   } catch (e) {
@@ -1758,7 +1809,7 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
     }
 
     const logsRes = await pool.query(
-      `SELECT id, timestamp, username, ip, platform, device
+      `SELECT id, timestamp, username, ip, ip_hash, platform, device
          FROM visit_logs
         ${visitNotIn}
         ORDER BY timestamp DESC

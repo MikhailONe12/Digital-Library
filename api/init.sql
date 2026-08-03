@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS visit_logs (
   id          TEXT        PRIMARY KEY,
   timestamp   TIMESTAMPTZ DEFAULT NOW(),
   username    TEXT,
+  -- Anonymised: last IPv4 octet zeroed / IPv6 truncated to /48 (#37).
   ip          TEXT,
+  -- Keyed digest of the FULL address. Lets the admin tell two visitors apart
+  -- without the address being recoverable from this table. See visitorHash().
+  ip_hash     TEXT,
   platform    TEXT,
   device      TEXT
 );

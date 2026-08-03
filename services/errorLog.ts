@@ -21,8 +21,36 @@ const tgHeaders = (): Record<string, string> => {
   return initData ? { 'x-telegram-init-data': initData } : {};
 };
 
+// Reports that can never be acted on. Without this filter they crowd out the
+// ones that matter — the log was 12 entries deep and all but one of them came
+// from here.
+//
+//  • Crawlers. Googlebot and friends run environments we don't target and have
+//    no service-worker support, so they reliably generate failures no visitor
+//    ever sees. Nothing they report is about our code.
+//  • Service-worker registration. The PWA plugin ships a self-destroying
+//    worker whose only job is to clear a legacy cache; registerSW.js rejects
+//    wherever registration isn't available (crawlers, pages opened by raw IP
+//    instead of the domain). Failing there is expected and harmless — the app
+//    doesn't depend on the worker.
+const CRAWLER_UA = /bot\b|crawler|spider|slurp|headlesschrome|lighthouse|pingdom|gtmetrix|semrush|ahrefs/i;
+const NOISE = [
+  /ServiceWorker/i,
+  /service worker/i,
+  /registerSW/i,
+];
+
+const isNoise = (r: ErrorReport): boolean => {
+  try {
+    if (CRAWLER_UA.test(navigator.userAgent || '')) return true;
+  } catch { /* no navigator — keep the report */ }
+  const text = `${r.message || ''} ${r.stack || ''} ${r.url || ''}`;
+  return NOISE.some(re => re.test(text));
+};
+
 export const captureError = (r: ErrorReport): void => {
   try {
+    if (isNoise(r)) return;
     const sig = `${r.kind}:${r.message}`.slice(0, 200);
     const now = Date.now();
     const last = recentlySent.get(sig);

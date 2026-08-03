@@ -8,10 +8,47 @@ import Home from './pages/Home';
 import { Globe, ChevronDown, ShieldAlert, ServerCrash, RotateCcw } from 'lucide-react';
 import Toaster from './components/Toaster';
 
+/**
+ * lazy() that survives a deploy.
+ *
+ * Chunk filenames carry a content hash, so a tab holding the previous
+ * index.html asks for chunks that no longer exist once new assets ship. The
+ * import rejects, React unwinds to the error boundary and the reader gets the
+ * "something went wrong" screen instead of the page they tapped — which is
+ * exactly what the error log showed (componentStack: Lazy → Suspense → div).
+ *
+ * One reload fetches the current index.html and, with it, chunk names that
+ * exist. A sessionStorage flag makes it strictly once per screen: if the chunk
+ * is genuinely missing the second failure is left to the boundary rather than
+ * reloading forever. The flag is cleared on success so a later deploy in the
+ * same long-lived session can recover the same way.
+ */
+const lazyWithReload = <T extends React.ComponentType<any>>(
+  key: string,
+  factory: () => Promise<{ default: T }>,
+) => lazy(async () => {
+  const flag = `chunk_reload_${key}`;
+  try {
+    const mod = await factory();
+    try { sessionStorage.removeItem(flag); } catch { /* private mode */ }
+    return mod;
+  } catch (err) {
+    let retried = true;
+    try {
+      retried = !!sessionStorage.getItem(flag);
+      if (!retried) sessionStorage.setItem(flag, '1');
+    } catch { /* storage unavailable — don't reload blindly */ }
+    if (retried) throw err;
+    window.location.reload();
+    // Never settles: the document is being replaced.
+    return new Promise<{ default: T }>(() => {});
+  }
+});
+
 // Heavy, rarely-first screens are code-split so the catalog loads fast.
 // Admin pulls in recharts; ItemDetails pulls in the PDF/EPUB readers.
-const Admin = lazy(() => import('./pages/Admin'));
-const ItemDetails = lazy(() => import('./pages/ItemDetails'));
+const Admin = lazyWithReload('admin', () => import('./pages/Admin'));
+const ItemDetails = lazyWithReload('item', () => import('./pages/ItemDetails'));
 
 const FullscreenSpinner: React.FC = () => (
   <div className="fixed inset-0 z-[400] bg-white dark:bg-black flex items-center justify-center">

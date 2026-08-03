@@ -2151,6 +2151,21 @@ app.use((err, req, res, _next) => {
     if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'File too large' });
     return res.status(400).json({ error: err.message });
   }
+
+  // Malformed request bodies are the caller's fault, not a server fault.
+  // express.json() rejects unparseable JSON with a 4xx-tagged SyntaxError; that
+  // used to fall through to the branch below, so a scanner POSTing `{"invalid":}`
+  // got a misleading 500 back and left a stack trace in the admin error log.
+  // Answer with the status body-parser already decided and don't record it —
+  // otherwise anyone can fill the log by sending junk.
+  const status = err.status || err.statusCode;
+  if (Number.isInteger(status) && status >= 400 && status < 500) {
+    const reason = err.type === 'entity.parse.failed' ? 'Malformed JSON body'
+      : err.type === 'entity.too.large' ? 'Payload too large'
+      : 'Bad request';
+    return res.status(status).json({ error: reason });
+  }
+
   console.error('Unhandled error:', err.message);
   // Persist to the built-in monitor so server crashes are visible in the admin
   // panel, not just the container logs.

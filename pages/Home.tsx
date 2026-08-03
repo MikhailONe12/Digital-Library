@@ -3,10 +3,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink } from 'lucide-react';
-import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink, Download } from 'lucide-react';
+import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds, exportMyData } from '../services/db';
 import { pickText, hasVideo, getDisplayedLanguages, isExternallyHosted } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
+import { toast } from '../services/toast';
 
 interface HomeProps {
   items: MediaItem[];
@@ -234,6 +235,19 @@ const Home: React.FC<HomeProps> = ({
 
   const tg = (window as any).Telegram?.WebApp;
   const userId = tg?.initDataUnsafe?.user?.id?.toString() || 'guest_user';
+  const hasTelegramIdentity = !!tg?.initData;
+  const [exporting, setExporting] = useState(false);
+  const handleExportMyData = async () => {
+    setExporting(true);
+    try {
+      const ok = await exportMyData(userId);
+      if (!ok) toast.error(t.myDataNoSession);
+    } catch {
+      toast.error(t.myDataFailed);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Continue-reading shelf: items with active progress, ordered by % asc so the
   // furthest-from-finished show first (they're more likely to be the active read).
@@ -836,6 +850,29 @@ const Home: React.FC<HomeProps> = ({
             </div>
           )}
         </>
+      )}
+
+      {/* Мои данные — 152-ФЗ ст. 14. Deliberately quiet and at the very bottom:
+          it is a right that has to exist and be findable, not a feature that
+          competes with the catalogue for attention. Hidden without a Telegram
+          identity, since there would be nothing to prove ownership with. */}
+      {hasTelegramIdentity && (
+        <div className="mt-16 pt-8 border-t border-slate-200 dark:border-white/[0.08]">
+          <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 mb-2">
+            {t.myDataTitle}
+          </p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed mb-4 max-w-md">
+            {t.myDataDesc}
+          </p>
+          <button
+            onClick={handleExportMyData}
+            disabled={exporting}
+            className="inline-flex items-center gap-2 px-4 h-10 rounded-xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] text-xs font-bold text-slate-600 dark:text-slate-300 hover:border-red-300 dark:hover:border-red-500/30 active:scale-95 transition-all disabled:opacity-50"
+          >
+            <Download size={14} />
+            {exporting ? t.myDataWorking : t.myDataDownload}
+          </button>
+        </div>
       )}
     </div>
   );

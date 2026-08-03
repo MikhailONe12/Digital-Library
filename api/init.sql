@@ -54,6 +54,14 @@ CREATE TABLE IF NOT EXISTS items (
 CREATE INDEX IF NOT EXISTS idx_items_seq ON items(seq);
 
 -- App settings: single row (whitelist, blacklist, custom types)
+-- Bookkeeping for one-off data migrations. Schema changes are idempotent DDL
+-- and can just re-run, but a data backfill usually must not: this table is how
+-- such a step records that it already happened.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name       TEXT        PRIMARY KEY,
+  applied_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   id          INT         PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   data        JSONB       NOT NULL,

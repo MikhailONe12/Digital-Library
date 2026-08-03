@@ -73,6 +73,28 @@ const initDb = async () => {
     'ALTER TABLE visit_logs ADD COLUMN IF NOT EXISTS ip_hash TEXT'
   ).catch(e => console.warn('visit_logs.ip_hash migration skipped:', e.message));
 
+  // One-off: clear visitor pseudonyms left on unattributable rows.
+  //
+  // Erasure only started clearing ip_hash once the column existed, so a person
+  // erased before that still had their visits grouped under one stable value —
+  // the linkage erasure is supposed to break. Rows with no username are either
+  // exactly those, or visits by someone who never identified themselves at all;
+  // for the latter the pseudonym is the only identifier on the row, so dropping
+  // it is the conservative reading of "keep no more than you need".
+  //
+  // Guarded by schema_migrations because it must NOT run again: new anonymous
+  // visits are supposed to keep their pseudonym, which is what makes them
+  // distinguishable in the access log.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE name = 'visit_logs_clear_orphan_ip_hash') THEN
+        UPDATE visit_logs SET ip_hash = NULL WHERE username IS NULL AND ip_hash IS NOT NULL;
+        INSERT INTO schema_migrations (name) VALUES ('visit_logs_clear_orphan_ip_hash');
+      END IF;
+    END $$;
+  `).catch(e => console.warn('orphan ip_hash cleanup skipped:', e.message));
+
   console.log('DB: schema initialized');
 };
 
@@ -1944,7 +1966,71 @@ app.delete('/api/users/:userId', validateUserId, async (req, res) => {
   // grouped under one stable value, which is exactly the linkage erasure is
   // meant to break (152-ФЗ ст. 21 / GDPR Art. 17).
   await sweep('UPDATE visit_logs  SET username = NULL, ip_hash = NULL WHERE username = $1 OR username = $2', [idMarker, username]);
+  // Crash reports carry the reporter's identity (set from verified initData in
+  // POST /api/errors). The stack itself is ours to keep for debugging, but the
+  // attribution is the user's data and has to go with everything else.
+  await sweep('UPDATE error_log SET user_id = NULL, username = NULL WHERE user_id = $1 OR username = $2', [userId, username]);
   res.json({ ok: true });
+});
+
+// Everything we hold about one person, in one response (152-ФЗ ст. 14 — the
+// subject's right to know what is processed about them; GDPR Art. 15).
+//
+// Coverage is deliberately the mirror image of DELETE /api/users/:userId: the
+// same tables, keyed the same two ways (user_id for per-user rows, @handle or
+// the id_<N> marker for analytics rows). If the two ever drift, one of the
+// rights is broken — either we hand back less than we hold, or we delete less
+// than we admit to holding.
+app.get('/api/users/:userId/export', validateUserId, requireUserMatch, async (req, res) => {
+  const { userId } = req.params;
+  const tgUser = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
+  const username = tgUser?.username || null;
+  const idMarker = `id_${userId}`;
+
+  // A failed section must not look like an empty one: silently returning []
+  // would under-report what we hold, which is the one thing a subject access
+  // response must never do.
+  const failed = [];
+  const q = async (label, sql, params) => {
+    try { const r = await pool.query(sql, params); return r.rows; }
+    catch (e) { console.warn('export', label, e.message); failed.push(label); return null; }
+  };
+
+  try {
+    const [favorites, ratings, bookmarks, progress, annotations, visits, events, errors] = await Promise.all([
+      q('favorites', 'SELECT item_id, created_at FROM user_favorites WHERE user_id = $1 ORDER BY created_at', [userId]),
+      q('ratings', 'SELECT item_id, rating, created_at FROM user_ratings WHERE user_id = $1 ORDER BY created_at', [userId]),
+      q('bookmarks', 'SELECT item_id, position, label, created_at FROM user_bookmarks WHERE user_id = $1 ORDER BY created_at', [userId]),
+      q('readingProgress', 'SELECT item_id, position, position_total, format_url FROM user_reading_progress WHERE user_id = $1', [userId]),
+      q('annotations', 'SELECT item_id, format_url, cfi_range, page, selected_text, note, color, created_at FROM user_annotations WHERE user_id = $1 ORDER BY created_at', [userId]),
+      q('visits', 'SELECT timestamp, ip, platform, device FROM visit_logs WHERE username = $1 OR username = $2 ORDER BY timestamp', [idMarker, username]),
+      q('itemEvents', 'SELECT item_id, event_type, timestamp FROM item_events WHERE username = $1 OR username = $2 ORDER BY timestamp', [idMarker, username]),
+      q('errorReports', 'SELECT ts, kind, message, url FROM error_log WHERE user_id = $1 OR username = $2 ORDER BY ts', [userId, username]),
+    ]);
+
+    if (failed.length) {
+      return res.status(500).json({ error: 'Export incomplete', sections: failed });
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="my-data-${userId}.json"`);
+    res.json({
+      exportedAt: new Date().toISOString(),
+      about: {
+        userId,
+        telegramUsername: username,
+        note: 'IP addresses in visits are stored anonymised (last IPv4 octet zeroed / IPv6 truncated to /48).',
+      },
+      favorites,
+      ratings,
+      bookmarks,
+      readingProgress: progress,
+      annotations,
+      visits,
+      itemEvents: events,
+      errorReports: errors,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── Step 5: per-user ratings (public — visitor action) ──────────────────────

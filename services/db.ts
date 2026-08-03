@@ -527,6 +527,30 @@ export const purgeExcludedVisits = async (): Promise<{
   };
 };
 
+/**
+ * Subject access request (152-ФЗ ст. 14): download everything the server holds
+ * about the signed-in person. Server-side the response mirrors what erasure
+ * deletes, so what you can read back is exactly what you can have removed.
+ * Returns false when there is no Telegram identity to prove ownership with.
+ */
+export const exportMyData = async (userId: string): Promise<boolean> => {
+  const headers = tgInitDataHeader();
+  if (!headers['x-telegram-init-data']) return false;
+  const res = await fetch(`/api/users/${userId}/export`, { headers });
+  if (!res.ok) throw new Error(`export: HTTP ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `my-data-${userId}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke on the next tick so the download has certainly started.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return true;
+};
+
 // ── Error log (built-in monitoring) ──────────────────────────────────────────
 
 export interface ErrorLogRow {

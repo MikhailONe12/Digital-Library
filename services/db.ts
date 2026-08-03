@@ -532,6 +532,12 @@ export const purgeExcludedVisits = async (): Promise<{
  * about the signed-in person. Server-side the response mirrors what erasure
  * deletes, so what you can read back is exactly what you can have removed.
  * Returns false when there is no Telegram identity to prove ownership with.
+ *
+ * NOT wired to any UI at the moment — the "My data" block was pulled from the
+ * home page until the privacy policy is published, so the app doesn't offer a
+ * right it hasn't documented yet. Kept, along with the endpoint and the
+ * myData* strings, so restoring the button is a self-contained change. Until
+ * then an operator can still answer a request by calling the endpoint.
  */
 export const exportMyData = async (userId: string): Promise<boolean> => {
   const headers = tgInitDataHeader();

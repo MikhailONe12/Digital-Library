@@ -166,9 +166,9 @@ const putSettings = (): Promise<Response> => {
 const loadUserData = async (userId: string) => {
   try {
     const [favRes, ratRes, progRes] = await Promise.all([
-      fetch(`/api/users/${userId}/favorites`),
-      fetch(`/api/users/${userId}/ratings`),
-      fetch(`/api/users/${userId}/progress`),
+      fetch(`/api/users/${userId}/favorites`, { headers: tgInitDataHeader() }),
+      fetch(`/api/users/${userId}/ratings`, { headers: tgInitDataHeader() }),
+      fetch(`/api/users/${userId}/progress`, { headers: tgInitDataHeader() }),
     ]);
     if (favRes.ok) {
       const d = await favRes.json();
@@ -216,7 +216,10 @@ export const loadDb = async (userId?: string): Promise<AppState> => {
   }
   if (!res.ok) {
     console.warn('loadDb: HTTP', res.status);
-    throw new Error(`loadDb: HTTP ${res.status}`);
+    // 403 is the blacklist verdict, decided server-side from the real
+    // connection. Distinguished from a transport failure so the UI can show
+    // "access denied" rather than "connection failed".
+    throw new Error(res.status === 403 ? 'loadDb: blocked' : `loadDb: HTTP ${res.status}`);
   }
 
   const remote = await res.json();
@@ -428,13 +431,6 @@ export const removeFromBlacklist = async (entry: string): Promise<void> => {
   await commitSettings(prev);
 };
 
-export const checkIsBlocked = (username?: string, ip?: string): boolean => {
-  const list = cache.blacklist || [];
-  if (username && list.includes(username.replace('@', '').toLowerCase())) return true;
-  if (ip && list.includes(ip.trim())) return true;
-  return false;
-};
-
 // ── Custom types ─────────────────────────────────────────────────────────────
 
 export const addCustomType = async (type: CustomType): Promise<void> => {
@@ -466,7 +462,10 @@ export const toggleGlobalAccess = async (enabled: boolean): Promise<void> => {
 
 // ── Visit logs (server-backed) ───────────────────────────────────────────────
 
-export const logVisit = (username: string, ip: string, platform: string) => {
+// The IP argument is gone: the server takes the address from the connection
+// (resolveVisitorIp), which is both unspoofable and one fewer third party
+// holding our visitors' addresses.
+export const logVisit = (username: string, platform: string) => {
   const tg = (window as any).Telegram?.WebApp;
   fetch('/api/visits', {
     method: 'POST',
@@ -477,7 +476,6 @@ export const logVisit = (username: string, ip: string, platform: string) => {
     },
     body: JSON.stringify({
       username: username || 'guest',
-      ip: ip || 'unknown',
       platform: platform || 'web',
       device: navigator.userAgent,
     }),
@@ -744,7 +742,7 @@ export const trackActivity = (type: 'view' | 'download', itemId: string) => {
 
 export const getBookmarks = async (userId: string, itemId: string): Promise<Bookmark[]> => {
   try {
-    const res = await fetch(`/api/users/${userId}/bookmarks/${itemId}`);
+    const res = await fetch(`/api/users/${userId}/bookmarks/${itemId}`, { headers: tgInitDataHeader() });
     const data = await res.json();
     return data.bookmarks || [];
   } catch {
@@ -772,7 +770,7 @@ export const deleteBookmark = async (userId: string, bookmarkId: string): Promis
 
 export const getAnnotations = async (userId: string, itemId: string): Promise<Annotation[]> => {
   try {
-    const res = await fetch(`/api/users/${userId}/annotations/${itemId}`);
+    const res = await fetch(`/api/users/${userId}/annotations/${itemId}`, { headers: tgInitDataHeader() });
     const data = await res.json();
     return data.annotations || [];
   } catch {
@@ -837,7 +835,7 @@ export const getReadingProgress = async (userId: string, itemId: string, formatU
   const cached = progressCache[itemId]?.[formatUrl];
   if (cached) return cached;
   try {
-    const res = await fetch(`/api/users/${userId}/progress/${itemId}`);
+    const res = await fetch(`/api/users/${userId}/progress/${itemId}`, { headers: tgInitDataHeader() });
     if (res.ok) {
       const rows: Array<{ position: string; position_total: number; format_url: string }> = await res.json();
       if (!progressCache[itemId]) progressCache[itemId] = {};

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef, useDeferredValue, Suspense, lazy } from 'react';
-import { getDb, loadDb, isFavorited, checkIsBlocked, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
+import { getDb, loadDb, isFavorited, logVisit, getAverageRating, recordView, getViewHistory, getProgressPercent } from './services/db';
 import { MediaItem, Locale, ContentLang } from './types';
 import { translations } from './translations';
 import { filterAndSortItems, Scope } from './services/catalog';
@@ -143,29 +143,22 @@ const App: React.FC = () => {
     setLoadError(false);
     try {
       await loadDb(userId);
-    } catch {
-      setLoadError(true);
+    } catch (e) {
+      // A blacklist verdict is not a load failure: show the access-denied
+      // screen, not the "connection failed / retry" one.
+      if ((e as Error)?.message === 'loadDb: blocked') setIsBlocked(true);
+      else setLoadError(true);
       setLoading(false);
       return;
     }
 
-    let ip = 'unknown';
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-      ip = data.ip;
-    } catch {
-      console.warn('Could not fetch IP, logging as unknown');
-    }
-
-    if (checkIsBlocked(username, ip)) {
-      setIsBlocked(true);
-    } else {
-      logVisit(username, ip, tg?.platform || 'web');
-    }
+    // The address is no longer looked up here. It used to come from
+    // api.ipify.org, which meant every visitor's IP was handed to a US service
+    // before we had done anything — a cross-border transfer of personal data
+    // (152-ФЗ ст. 12) for a value the server already knows from the
+    // connection. Blacklisting is decided server-side too: /api/state answers
+    // 403, which surfaces above as the access-denied screen.
+    logVisit(username, tg?.platform || 'web');
 
     setDb(getDb());
     setLoading(false);

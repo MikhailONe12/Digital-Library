@@ -951,15 +951,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     const tg = (window as any).Telegram?.WebApp;
     const username = tg?.initDataUnsafe?.user?.username || '';
     const userId   = tg?.initDataUnsafe?.user?.id;
+    // Ask our own server rather than an outside lookup service: it already
+    // sees the address on the connection, and sending the operator's IP to a
+    // third party just to learn it was a transfer with no purpose.
     let ip = '';
     try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 3000);
-      const r = await fetch('https://api.ipify.org?format=json', { signal: ctrl.signal });
-      clearTimeout(t);
-      const j = await r.json();
-      ip = j.ip || '';
-    } catch { /* no internet — leave blank */ }
+      const r = await fetch('/api/admin/whoami', { headers: { 'x-api-key': getServerApiKey() } });
+      if (r.ok) ip = (await r.json()).ip || '';
+    } catch { /* offline — leave blank, the other dimensions still apply */ }
 
     const labelParts = [username && `@${username}`, ip, navigator.platform].filter(Boolean);
     const browserLabel = labelParts.join(' · ') || 'Этот браузер';

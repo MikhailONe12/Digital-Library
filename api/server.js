@@ -76,9 +76,22 @@ const initDb = async () => {
   console.log('DB: schema initialized');
 };
 
-pool.connect()
-  .then(client => { client.release(); return initDb(); })
-  .catch(err => console.warn('DB not ready:', err.message));
+// Schema init/migration retries: a single attempt chained off the first
+// connect meant that if Postgres wasn't accepting connections yet (compose
+// starts both at once) the ALTERs never ran, and the API then served traffic
+// against a table missing a column — every visit 500s with nothing retrying.
+const initDbWithRetry = async (attempt = 1) => {
+  try {
+    const client = await pool.connect();
+    client.release();
+    await initDb();
+  } catch (err) {
+    const delay = Math.min(30_000, 2_000 * attempt);
+    console.warn(`DB init attempt ${attempt} failed (${err.message}); retrying in ${delay}ms`);
+    setTimeout(() => initDbWithRetry(attempt + 1), delay).unref?.();
+  }
+};
+initDbWithRetry();
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 
@@ -448,6 +461,17 @@ const visitorHash = (raw) => {
 // truncate IPv6 to the first 48 bits — matches the standard used by Plausible
 // and GA. Real-time blacklist / rate-limit checks still see the full IP via
 // clientIp(); only what gets persisted into visit_logs goes through here.
+// The address both write paths agree on. Prefer the connection; fall back to
+// the client's own claim only when the connection yields nothing but
+// infrastructure (misconfigured proxy trust), so the log stays informative
+// instead of collapsing onto one gateway address. Shared by /api/visits and
+// /api/items/:itemId/track so a pseudonym means the same thing on both.
+const resolveVisitorIp = (req) => {
+  const real = clientIp(req);
+  if (!isInternalIp(real)) return real;
+  return clip(req.body?.ip, 64) || real;
+};
+
 const anonymizeIp = (raw) => {
   if (!raw || typeof raw !== 'string') return null;
   const ip = raw.trim();
@@ -601,6 +625,14 @@ app.post('/api/errors', limitErrors, async (req, res) => {
 });
 
 // Admin: most recent errors (newest first).
+// The caller's own address, as the server sees it. Exists so the admin panel's
+// "exclude me" button doesn't have to ask a third-party lookup service what the
+// operator's IP is — we already know it from the connection, and routing it
+// through an outside company was a needless transfer of personal data.
+app.get('/api/admin/whoami', requireApiKey, (req, res) => {
+  res.json({ ip: clientIp(req) });
+});
+
 app.get('/api/admin/errors', requireApiKey, async (req, res) => {
   try {
     const { rows } = await pool.query(
@@ -1489,7 +1521,7 @@ app.post('/api/items/:itemId/track', validateItemId, async (req, res) => {
   }
   const field = type === 'view' ? 'views' : 'downloads';
   const username = clip(req.body?.username, 64);
-  const ip = clientIp(req);
+  const ip = resolveVisitorIp(req);
   const tgUser  = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
   const userId  = tgUser?.id || null;
   const browserToken = clip(req.headers['x-skip-analytics'], 80);
@@ -1625,8 +1657,7 @@ app.post('/api/visits', async (req, res) => {
   // otherwise collapse onto one gateway IP. In that case fall back to what the
   // client reported: weaker, but it keeps the log informative instead of
   // uniformly useless.
-  const realIp   = clientIp(req);
-  const ip       = isInternalIp(realIp) ? (clip(req.body?.ip, 64) || realIp) : realIp;
+  const ip       = resolveVisitorIp(req);
   // Use the verified Telegram user (initData HMAC) — body fields would be
   // trivially spoofable. browserToken arrives via custom header.
   const tgUser  = validateTelegramInitData(req.headers['x-telegram-init-data'], process.env.BOT_TOKEN);
@@ -1730,6 +1761,8 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
       .map(x => String(x).toLowerCase().replace(/^@/, '')).filter(Boolean);
     const exI = ((settings.analyticsExcludes?.ips) || [])
       .map(x => String(x).trim()).filter(Boolean);
+    const exV = ((settings.analyticsExcludes?.visitors) || [])
+      .map(x => String(x).trim()).filter(Boolean);
     // Build a parameterised WHERE for SQL injection safety.
     // `username IS NULL OR lower(...) NOT IN (...)` — without the IS NULL
     // branch, NULL-username rows (historical events from handle-less Telegram
@@ -1739,10 +1772,11 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
     const userNotIn = exU.length > 0
       ? `AND (username IS NULL OR lower(username) NOT IN (${exU.map((_, i) => `$${i + 1}`).join(',')}))`
       : '';
-    const visitNotIn = (exU.length + exI.length) > 0
+    const visitNotIn = (exU.length + exI.length + exV.length) > 0
       ? `WHERE 1=1
            ${exU.length > 0 ? `AND (username IS NULL OR lower(username) NOT IN (${exU.map((_, i) => `$${i + 1}`).join(',')}))` : ''}
-           ${exI.length > 0 ? `AND (ip IS NULL OR ip NOT IN (${exI.map((_, i) => `$${exU.length + i + 1}`).join(',')}))` : ''}`
+           ${exI.length > 0 ? `AND (ip IS NULL OR ip NOT IN (${exI.map((_, i) => `$${exU.length + i + 1}`).join(',')}))` : ''}
+           ${exV.length > 0 ? `AND (ip_hash IS NULL OR ip_hash NOT IN (${exV.map((_, i) => `$${exU.length + exI.length + i + 1}`).join(',')}))` : ''}`
       : '';
 
     // Left-join the events against a generated 30-day calendar so the chart
@@ -1814,7 +1848,7 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
         ${visitNotIn}
         ORDER BY timestamp DESC
         LIMIT 2000`,
-      [...exU, ...exI],
+      [...exU, ...exI, ...exV],
     );
 
     res.json({
@@ -1830,7 +1864,7 @@ app.get('/api/analytics', requireApiKey, async (req, res) => {
 
 // ── Step 5: per-user favorites (public — visitor action) ────────────────────
 
-app.get('/api/users/:userId/favorites', validateUserId, async (req, res) => {
+app.get('/api/users/:userId/favorites', validateUserId, requireUserMatch, async (req, res) => {
   try {
     const { rows } = await pool.query(
       'SELECT item_id FROM user_favorites WHERE user_id = $1',
@@ -1906,13 +1940,16 @@ app.delete('/api/users/:userId', validateUserId, async (req, res) => {
   // Un-attribute analytics rows — UPDATE-to-NULL keeps aggregate counters
   // intact while individual visits can no longer be tied to the deleted user.
   await sweep('UPDATE item_events SET username = NULL WHERE username = $1 OR username = $2', [idMarker, username]);
-  await sweep('UPDATE visit_logs  SET username = NULL WHERE username = $1 OR username = $2', [idMarker, username]);
+  // Clear the pseudonym too: leaving it would keep an erased person's visits
+  // grouped under one stable value, which is exactly the linkage erasure is
+  // meant to break (152-ФЗ ст. 21 / GDPR Art. 17).
+  await sweep('UPDATE visit_logs  SET username = NULL, ip_hash = NULL WHERE username = $1 OR username = $2', [idMarker, username]);
   res.json({ ok: true });
 });
 
 // ── Step 5: per-user ratings (public — visitor action) ──────────────────────
 
-app.get('/api/users/:userId/ratings', validateUserId, async (req, res) => {
+app.get('/api/users/:userId/ratings', validateUserId, requireUserMatch, async (req, res) => {
   try {
     const { rows } = await pool.query(
       'SELECT item_id, rating FROM user_ratings WHERE user_id = $1',
@@ -1954,7 +1991,7 @@ app.put('/api/users/:userId/ratings/:itemId',
 // ── Bookmarks ────────────────────────────────────────────────────────────────
 
 app.get('/api/users/:userId/bookmarks/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     try {
       const { rows } = await pool.query(
@@ -2011,7 +2048,7 @@ app.delete('/api/users/:userId/bookmarks/:bookmarkId',
 // ── User annotations (highlights + notes) ────────────────────────────────────
 
 app.get('/api/users/:userId/annotations/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     try {
       const { rows } = await pool.query(
@@ -2073,7 +2110,7 @@ app.delete('/api/users/:userId/annotations/:annotationId',
 // ── Reading progress ─────────────────────────────────────────────────────────
 
 // GET all progress for a user (used on app start to prefetch for progress bars)
-app.get('/api/users/:userId/progress', validateUserId, async (req, res) => {
+app.get('/api/users/:userId/progress', validateUserId, requireUserMatch, async (req, res) => {
   try {
     const { rows } = await pool.query(
       'SELECT item_id, position, position_total, format_url FROM user_reading_progress WHERE user_id = $1',
@@ -2087,7 +2124,7 @@ app.get('/api/users/:userId/progress', validateUserId, async (req, res) => {
 
 // GET single-item progress — returns all format rows for this item
 app.get('/api/users/:userId/progress/:itemId',
-  validateUserId, validateItemId,
+  validateUserId, validateItemId, requireUserMatch,
   async (req, res) => {
     try {
       const { rows } = await pool.query(

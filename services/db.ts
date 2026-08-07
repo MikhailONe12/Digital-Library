@@ -557,6 +557,45 @@ export const exportMyData = async (userId: string): Promise<boolean> => {
   return true;
 };
 
+export interface DoiLookup {
+  doi: string;
+  title: string;
+  authors: string[];
+  journal: string;
+  publisher: string;
+  /** Registry machine value ('journal-article', 'posted-content', …). */
+  type: string;
+  /** Year only — it belongs in the item's existing publishedDate. */
+  year: string;
+}
+
+/** Admin autofill: ask the registry what it knows about a DOI. */
+export const lookupDoi = async (doi: string): Promise<DoiLookup> => {
+  const res = await fetch(`/api/doi/lookup?doi=${encodeURIComponent(doi)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+};
+
+/**
+ * Formatted citation for a DOI. The resolver does the formatting — owning
+ * APA/MLA ourselves would mean owning every edge case in them.
+ */
+export const fetchCitation = async (doi: string, style: string): Promise<string> => {
+  const res = await fetch(
+    `/api/doi/citation?doi=${encodeURIComponent(doi)}&style=${encodeURIComponent(style)}`,
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `HTTP ${res.status}`);
+  }
+  return (await res.json()).citation || '';
+};
+
 // ── Error log (built-in monitoring) ──────────────────────────────────────────
 
 export interface ErrorLogRow {

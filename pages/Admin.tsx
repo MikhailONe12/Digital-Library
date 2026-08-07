@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
 import type { ErrorLogRow } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -19,6 +19,9 @@ import { pickText, isExternalUrl, isExternallyHosted } from '../utils';
 import {
   LICENSE_PRESETS, CUSTOM_LICENSE_CODE, getLicensePreset, licenseForbidsRedistribution,
 } from '../services/licenses';
+import {
+  PUBLICATION_TYPES, getPublicationType, publicationTypeLabel, isValidDoi, normalizeDoi,
+} from '../services/publication';
 import CardCover from '../components/CardCover';
 import AuthorsEditor from '../components/AuthorsEditor';
 import { toast } from '../services/toast';
@@ -421,6 +424,46 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     editingItem.allowReading === false ? 'x' : '',
   ].filter(Boolean).length : 0;
 
+  // Autofill from the DOI registry. Convenience, never a dependency: if the
+  // resolver is unreachable the admin just types the fields in, and anything
+  // already filled in is left alone — a lookup must not quietly overwrite a
+  // title someone deliberately corrected. The year lands in the existing
+  // publishedDate rather than a second year field.
+  const [doiBusy, setDoiBusy] = useState(false);
+  const handleDoiLookup = async () => {
+    if (!editingItem) return;
+    const doi = normalizeDoi(editingItem.publication?.doi || '');
+    if (!doi) { toast.error(ta.doiInvalid); return; }
+    setDoiBusy(true);
+    try {
+      const meta = await lookupDoi(doi);
+      const next: Partial<MediaItem> = {
+        ...editingItem,
+        publication: {
+          doi: meta.doi,
+          type: meta.type || editingItem.publication?.type,
+          journal: meta.journal || editingItem.publication?.journal,
+          publisher: meta.publisher || editingItem.publication?.publisher,
+        },
+      };
+      const titleEmpty = !(editingItem.title?.en || editingItem.title?.ru || editingItem.title?.es);
+      if (meta.title && titleEmpty) {
+        next.title = { ...(editingItem.title || { en: '', ru: '', es: '' }), en: meta.title };
+      }
+      if (meta.authors.length && !(editingItem.authors || []).length && !editingItem.author) {
+        next.authors = meta.authors;
+        next.author = meta.authors[0];
+      }
+      if (meta.year && !editingItem.publishedDate) next.publishedDate = meta.year;
+      setEditingItem(next);
+      toast.success(ta.doiFetched);
+    } catch (e) {
+      toast.error(`${ta.doiFailed}: ${(e as Error).message}`);
+    } finally {
+      setDoiBusy(false);
+    }
+  };
+
   const handleSaveItem = async () => {
     if (editingItem) {
       const hasTitle = editingItem.title && (editingItem.title.en || editingItem.title.ru || editingItem.title.es);
@@ -455,7 +498,21 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
         })),
         contentLanguages: editingItem.contentLanguages || ['en'],
         allowDownload: editingItem.allowDownload !== undefined ? editingItem.allowDownload : true,
-        allowReading: editingItem.allowReading !== undefined ? editingItem.allowReading : true
+        allowReading: editingItem.allowReading !== undefined ? editingItem.allowReading : true,
+        // Store the DOI in its canonical bare form whatever was pasted, so the
+        // same work can't end up recorded two ways. An empty or unparseable
+        // one drops the whole block rather than persisting `{doi: ''}`.
+        publication: (() => {
+          const doi = normalizeDoi(editingItem.publication?.doi || '');
+          if (!doi) return undefined;
+          const p = editingItem.publication!;
+          return {
+            doi,
+            ...(p.type ? { type: p.type } : {}),
+            ...(p.journal?.trim() ? { journal: p.journal.trim() } : {}),
+            ...(p.publisher?.trim() ? { publisher: p.publisher.trim() } : {}),
+          };
+        })(),
       } as MediaItem;
 
       try {
@@ -2127,6 +2184,79 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
 
                   {/* ── 4 · Каталог ─────────────────────────────────────── */}
                   <EditorGroup n={4} title={ta.groupCatalog} badge={catalogFilled} open={!!openGroups.groupCatalog} onToggle={() => toggleGroup('groupCatalog')}>
+                    {/* Scholarly identifiers. Optional and inside the collapsed
+                        Catalogue group, because most items (videos, courses,
+                        books) have no DOI and shouldn't be asked for one. */}
+                    <div>
+                      <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.publicationSection}</p>
+                      <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08]">
+                        <div>
+                          <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.doiLabel}</label>
+                          <div className="flex gap-1.5">
+                            <input
+                              type="text" placeholder={ta.doiPlaceholder}
+                              className="flex-1 min-w-0 bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none"
+                              value={editingItem.publication?.doi || ''}
+                              onChange={e => setEditingItem({ ...editingItem, publication: { ...(editingItem.publication || {}), doi: e.target.value } })}
+                            />
+                            <button
+                              type="button"
+                              onClick={handleDoiLookup}
+                              disabled={doiBusy || !isValidDoi(editingItem.publication?.doi || '')}
+                              title={ta.doiFetch}
+                              className="px-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-[9px] font-black uppercase tracking-widest shrink-0 disabled:opacity-40 transition-opacity"
+                            >
+                              {doiBusy ? '…' : ta.doiFetch}
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 leading-relaxed">{ta.doiHelp}</p>
+                        </div>
+
+                        {!!editingItem.publication?.doi && (
+                          <>
+                            <div>
+                              <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.publicationTypeLabel}</label>
+                              <select
+                                className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                                value={editingItem.publication?.type || ''}
+                                onChange={e => setEditingItem({ ...editingItem, publication: { ...(editingItem.publication || { doi: '' }), type: e.target.value } })}
+                              >
+                                <option value="">—</option>
+                                {/* A type the registry returned that isn't in our list is kept
+                                    as an option of its own rather than silently reset. */}
+                                {editingItem.publication?.type && !getPublicationType(editingItem.publication.type) && (
+                                  <option value={editingItem.publication.type}>
+                                    {publicationTypeLabel(editingItem.publication.type, lang)}
+                                  </option>
+                                )}
+                                {PUBLICATION_TYPES.map(pt => (
+                                  <option key={pt.code} value={pt.code}>{pt[lang] || pt.en}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.journalLabel}</label>
+                              <input
+                                type="text" placeholder={ta.journalPlaceholder}
+                                className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                                value={editingItem.publication?.journal || ''}
+                                onChange={e => setEditingItem({ ...editingItem, publication: { ...(editingItem.publication || { doi: '' }), journal: e.target.value } })}
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.publisherLabel}</label>
+                              <input
+                                type="text" placeholder={ta.publisherPlaceholder}
+                                className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none"
+                                value={editingItem.publication?.publisher || ''}
+                                onChange={e => setEditingItem({ ...editingItem, publication: { ...(editingItem.publication || { doi: '' }), publisher: e.target.value } })}
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
                     <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.seriesAndTags}</p> <div className="space-y-3"> <div className="flex gap-3"> <div className="flex-1"> <label className="text-[8px] font-black uppercase text-slate-400 ml-2">{ta.seriesName}</label> <input type="text" placeholder={ta.seriesNamePh} className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.series ||''} onChange={e => setEditingItem({...editingItem, series: e.target.value})} list="series-suggestions" /> <datalist id="series-suggestions"> {Array.from(new Set(db.items.map(i => i.series).filter(Boolean))).map(s => ( <option key={s} value={s} /> ))} </datalist> </div> <div className="w-24"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.seriesOrder}</label> <input type="number" min="1" step="1" placeholder="1" className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 text-xs font-bold focus:border-red-600 outline-none" value={editingItem.seriesOrder ??''} onChange={e => setEditingItem({...editingItem, seriesOrder: e.target.value ? parseInt(e.target.value) : undefined})} /> </div> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-2">{ta.tagsLabel}</label> {/* Chip-style tag input: existing chips with X to remove, free-text buffer at the end that commits on space / comma / Enter. Backspace on empty buffer removes the last chip. */} <div className="w-full bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-3 py-2 min-h-[3rem] flex flex-wrap items-center gap-1.5 focus-within:border-red-600 transition-colors cursor-text" onClick={() => (document.getElementById('tag-buffer-input') as HTMLInputElement | null)?.focus()}
                     >
                       {(editingItem.tags || []).map(tag => (

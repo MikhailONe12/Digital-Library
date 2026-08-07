@@ -7,6 +7,11 @@ import {
   buildAttribution, licenseLabel, licenseUrl, licenseRequiresAttribution,
 } from '../services/licenses';
 import {
+  normalizeDoi, doiUrl, publicationTypeLabel, CITATION_STYLES, citationStyleLabel,
+  type CitationStyle,
+} from '../services/publication';
+import { toast } from '../services/toast';
+import {
   ArrowLeft, Download, Star, Calendar, User, FileText, BookOpen, X, Lock, Heart,
   Globe, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, BookmarkPlus, BookMarked,
   Trash2, List, Sun, Moon, SunDim, Highlighter, PenLine, Eye, EyeOff, CircleDot,
@@ -24,7 +29,7 @@ import {
   getAverageRating, getBookmarks, addBookmark, deleteBookmark,
   getReadingProgress, saveReadingProgress, setPreviewMode,
   getAnnotations, addAnnotation, deleteAnnotation,
-  getDb, getProgressPercent, markItemFinished, resetItemProgress,
+  getDb, getProgressPercent, markItemFinished, resetItemProgress, fetchCitation,
 } from '../services/db';
 import { pickText, handleCoverError, getVideoPoster } from '../utils';
 import { getVideoThumbnail, isDirectVideo } from '../services/videoThumb';
@@ -370,6 +375,25 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   useEffect(() => {
     try { localStorage.setItem(PDF_SPREAD_KEY, pdfSpread ? '1' : '0'); } catch { /* quota */ }
   }, [pdfSpread]);
+
+  // Citation copy state. The text comes from the DOI resolver, so a failure
+  // here is a network problem, not a formatting one — say so plainly instead
+  // of copying something half-formed.
+  const [citeBusy, setCiteBusy] = useState<CitationStyle | null>(null);
+  const [citedStyle, setCitedStyle] = useState<CitationStyle | null>(null);
+  const handleCopyCitation = async (doi: string, style: CitationStyle) => {
+    setCiteBusy(style);
+    try {
+      const text = await fetchCitation(doi, style);
+      await navigator.clipboard.writeText(text);
+      setCitedStyle(style);
+      setTimeout(() => setCitedStyle(null), 1800);
+    } catch {
+      toast.error(t.publicationCiteFailed);
+    } finally {
+      setCiteBusy(null);
+    }
+  };
 
   // Externally-hosted content: the URL we're about to hand off to, held while
   // the "you're leaving" sheet is up (null = sheet closed).
@@ -2173,6 +2197,81 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             </div>
           </div>
         )}
+
+        {/* Publication — scholarly identifiers. Sits just above rights: both are
+            reference material a reader cites rather than acts on.
+
+            The type is reported as what the registry says, not as a verdict on
+            the work: a DOI proves registration, not peer review (preprints have
+            them too), so the block is labelled accordingly rather than badging
+            the item as reviewed. */}
+        {item.publication?.doi && (() => {
+          const doi = normalizeDoi(item.publication.doi);
+          if (!doi) return null;
+          const typeLabel = publicationTypeLabel(item.publication.type, lang);
+          return (
+            <div className="mt-10">
+              <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3">
+                <BookMarked size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.publicationTitle}
+              </h2>
+              <div className="bg-white dark:bg-[#1c1c1e] p-6 rounded-[2.5rem] border border-slate-100 dark:border-white/10 shadow-sm space-y-4">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">DOI</span>
+                  <a
+                    href={doiUrl(doi)} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs font-mono font-bold text-red-600 dark:text-red-400 hover:underline break-all"
+                  >
+                    {doi}<ExternalLink size={11} strokeWidth={3} className="shrink-0" />
+                  </a>
+                </div>
+
+                {typeLabel && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.publicationType}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{typeLabel}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500">{t.publicationPerRegistry}</span>
+                  </div>
+                )}
+
+                {item.publication.journal && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.publicationJournal}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.publication.journal}</span>
+                  </div>
+                )}
+
+                {item.publication.publisher && (
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.publicationPublisher}</span>
+                    <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{item.publication.publisher}</span>
+                  </div>
+                )}
+
+                {/* Citation. Formatted by the resolver, not by us — owning APA
+                    and MLA means owning every edge case in them. */}
+                <div className="pt-1">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-2">{t.publicationCite}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {CITATION_STYLES.map(style => (
+                      <button
+                        key={style}
+                        type="button"
+                        onClick={() => handleCopyCitation(doi, style)}
+                        disabled={citeBusy !== null}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-300 text-[11px] font-bold hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        {citedStyle === style
+                          ? <CheckCircle2 size={13} strokeWidth={3} className="text-green-600" />
+                          : <Copy size={13} strokeWidth={3} />}
+                        {citationStyleLabel(style)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Rights & licence. Needs actual rights on record — a bare source name
             is already shown by the source button above, and repeating it in a

@@ -214,6 +214,7 @@ setInterval(() => {
 // Named limiters reused on the sensitive routes below.
 const limitLogin    = rateLimit('login', 5, 15 * 60 * 1000);   // brute-force guard
 const limitArticle  = rateLimit('article', 30, 60 * 1000);      // SSRF/proxy-abuse guard
+const limitDoi      = rateLimit('doi', 60, 60 * 1000);          // upstream courtesy
 const limitBackup   = rateLimit('backup', 3, 60 * 1000);        // heavy pg_dump guard
 const limitErrors   = rateLimit('errors', 30, 60 * 1000);       // error-report flood guard
 const limitGlobal   = rateLimit('global', 600, 60 * 1000);      // catch-all DoS guard
@@ -1228,6 +1229,118 @@ const fetchWithSsrfGuard = async (initialUrl, signal, headers, maxHops = 5) => {
   }
   return { error: 'Too many redirects', status: 508 };
 };
+
+// ── DOI (scholarly metadata + citations) ─────────────────────────────────────
+//
+// Unlike /api/article-extract there is no SSRF surface here: the host is fixed
+// and only the DOI travels, so the guard is input shape rather than network
+// policy. The DOI is validated against the registered form before it is ever
+// put in a path, and percent-encoded on the way out.
+//
+// DOI_RESOLVER_BASE exists because some institutions front doi.org with their
+// own resolver; it also lets the tests point at a stub.
+const DOI_BASE = (process.env.DOI_RESOLVER_BASE || 'https://doi.org').replace(/\/+$/, '');
+const DOI_RE = /^10\.\d{4,9}\/\S+$/;
+const DOI_TIMEOUT_MS = 8000;
+const DOI_MAX_BYTES = 256 * 1024;
+
+const cleanDoi = (raw) => {
+  let d = String(raw || '').trim();
+  d = d.replace(/^doi:\s*/i, '')
+       .replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, '');
+  if (/^\(.*\)$/.test(d) || /^\[.*\]$/.test(d)) d = d.slice(1, -1);
+  d = d.replace(/[.,;]+$/, '').trim();
+  if (d.length > 256 || !DOI_RE.test(d)) return null;
+  return d;
+};
+
+// Encode each path segment but keep the '/' that separates registrant from
+// suffix — that slash is part of the DOI, not a path boundary we invented.
+const doiPath = (doi) => doi.split('/').map(encodeURIComponent).join('/');
+
+const fetchDoi = async (doi, accept) => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DOI_TIMEOUT_MS);
+  try {
+    const r = await fetch(`${DOI_BASE}/${doiPath(doi)}`, {
+      headers: {
+        Accept: accept,
+        // Crossref asks callers to identify themselves; it buys better service.
+        'User-Agent': `OptionsData-Library/1.0 (${process.env.BASE_URL || 'https://library.optionsdata.ru'})`,
+      },
+      redirect: 'follow',
+      signal: ctrl.signal,
+    });
+    if (r.status === 404) return { error: 'DOI not found', status: 404 };
+    if (!r.ok) return { error: 'Resolver error', status: 502 };
+    const text = (await r.text()).slice(0, DOI_MAX_BYTES);
+    return { text };
+  } catch (e) {
+    return { error: e.name === 'AbortError' ? 'Resolver timed out' : 'Resolver unreachable', status: 504 };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+// Admin autofill. Returns only the fields the editor fills in, so a change in
+// the registry's payload can't quietly become part of our stored shape.
+app.get('/api/doi/lookup', requireApiKey, limitDoi, async (req, res) => {
+  const doi = cleanDoi(req.query.doi);
+  if (!doi) return res.status(400).json({ error: 'Invalid DOI' });
+
+  const got = await fetchDoi(doi, 'application/vnd.citationstyles.csl+json');
+  if (got.error) return res.status(got.status).json({ error: got.error });
+
+  let csl;
+  try { csl = JSON.parse(got.text); }
+  catch { return res.status(502).json({ error: 'Resolver returned malformed metadata' }); }
+
+  const firstOf = (v) => (Array.isArray(v) ? v[0] : v) || '';
+  const authors = Array.isArray(csl.author)
+    ? csl.author
+        .map(a => (a.literal || [a.given, a.family].filter(Boolean).join(' ')).trim())
+        .filter(Boolean)
+    : [];
+  // CSL dates are [[year, month, day]]; the year alone is what we store, and it
+  // goes into the item's existing publishedDate rather than a second field.
+  const year = (csl.issued?.['date-parts']?.[0]?.[0])
+    ?? (csl['published-print']?.['date-parts']?.[0]?.[0])
+    ?? (csl['published-online']?.['date-parts']?.[0]?.[0])
+    ?? null;
+
+  res.json({
+    doi,
+    title: String(firstOf(csl.title)).trim(),
+    authors,
+    journal: String(firstOf(csl['container-title'])).trim(),
+    publisher: String(csl.publisher || '').trim(),
+    // Registry's own machine value, verbatim — the UI derives the label.
+    type: String(csl.type || '').trim(),
+    year: Number.isInteger(year) ? String(year) : '',
+  });
+});
+
+// Formatted citation. Public because the item page offers it to readers, and
+// rate-limited because it is a proxied upstream call. We ask the resolver to
+// do the formatting: hand-rolling APA/MLA means owning every edge case
+// (eight authors, no journal, non-Latin names) and getting them wrong.
+app.get('/api/doi/citation', limitDoi, async (req, res) => {
+  const doi = cleanDoi(req.query.doi);
+  if (!doi) return res.status(400).json({ error: 'Invalid DOI' });
+
+  const style = String(req.query.style || 'apa');
+  const ALLOWED = ['apa', 'modern-language-association', 'bibtex'];
+  if (!ALLOWED.includes(style)) return res.status(400).json({ error: 'Unsupported style' });
+
+  const accept = style === 'bibtex'
+    ? 'application/x-bibtex'
+    : `text/x-bibliography; style=${style}; locale=en-US`;
+
+  const got = await fetchDoi(doi, accept);
+  if (got.error) return res.status(got.status).json({ error: got.error });
+
+  res.json({ doi, style, citation: got.text.trim() });
+});
 
 app.get('/api/article-extract', limitArticle, async (req, res) => {
   const url = req.query.url;

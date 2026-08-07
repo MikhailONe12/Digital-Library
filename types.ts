@@ -55,6 +55,33 @@ export interface LicenseInfo {
   note?: string;   // any extra wording the source requires verbatim
 }
 
+/**
+ * Registry metadata for a scholarly publication, looked up by DOI.
+ *
+ * `type` deliberately holds the registry's own machine value ('journal-article',
+ * 'posted-content', …) rather than a display string: a free-text type can't be
+ * filtered on, and everyone spells it differently. The human label is derived
+ * at render time — see services/publication.ts.
+ *
+ * Note what this does NOT claim. A DOI is not evidence of peer review (arXiv
+ * and SSRN preprints have them too), and 'journal-article' only reflects how
+ * the publisher registered the record. The UI reports what the registry says
+ * and attributes it as such, instead of stamping the work as reviewed.
+ *
+ * The publication year is not here on purpose — it belongs in the existing
+ * `publishedDate`, which already accepts a bare year. A second year field is
+ * how the two drift apart.
+ */
+export interface PublicationInfo {
+  /** Bare DOI, e.g. "10.1007/s11403-023-00379-8" — no scheme, no doi.org. */
+  doi: string;
+  /** Registry type, verbatim. Absent when the record was filled in by hand. */
+  type?: string;
+  /** Journal / book / proceedings the work appeared in (CSL container-title). */
+  journal?: string;
+  publisher?: string;
+}
+
 export interface VideoLink {
   id: string;
   url: string;
@@ -106,6 +133,8 @@ export interface MediaItem {
   source?: SourceInfo;
   /** Distribution licence; absent means "not stated" (treated as ARR). */
   license?: LicenseInfo;
+  /** Scholarly identifiers; absent for most items (videos, courses, books). */
+  publication?: PublicationInfo;
   isPrivate: boolean;
   views: number;
   downloads: number;

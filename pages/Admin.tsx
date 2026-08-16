@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1208,6 +1208,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     xhr.send(formData);
   };
 
+  const handleTranscribe = async (method: TranscribeMethod, scope?: { itemId?: string; targetUrl?: string }) => {
+    try {
+      const { queued } = await queueTranscribe(method, scope);
+      jobsActiveRef.current = true;
+      await refreshJobs();
+      toast.success(`${ta.scan.queuedN}: ${queued}`);
+    } catch { /* writeRequest already raised a toast */ }
+  };
+
   const handleUnindex = async (itemId: string) => {
     if (!confirm(ta.scan.unindexConfirm)) return;
     try {
@@ -1551,6 +1560,20 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
             className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
           >
             <Play size={13} strokeWidth={3} /> {s.queueSubtitles}
+          </button>
+          <button
+            onClick={() => handleTranscribe('platform-subs')}
+            title={s.subsFromPlatformHint}
+            className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+          >
+            <Video size={13} strokeWidth={3} /> {s.subsFromPlatform}
+          </button>
+          <button
+            onClick={() => handleTranscribe('asr')}
+            title={s.runAsrHint}
+            className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+          >
+            <ScanLine size={13} strokeWidth={3} /> {s.runAsr}
           </button>
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums">
             {num(jobTotals.queued)} {s.queueQueued} · {num(jobTotals.running)} {s.queueRunning} ·{' '}
@@ -3500,6 +3523,32 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                       <p className={`text-[9px] font-bold leading-snug mt-1.5 break-words ${r.state === 'failed' ? 'text-red-500' : 'text-slate-400 dark:text-slate-500'}`}>
                                         {r.detail}
                                       </p>
+                                    )}
+                                    {/* Spoken material has two routes to the same
+                                        transcript. Cheap one first, and each says
+                                        what it costs, so the choice is informed
+                                        rather than a coin toss. */}
+                                    {(t.kind === s.targetVideo || /\.(mp4|webm|mkv|mp3|m4a|m4b|ogg|oga|opus|wav)$/i.test(t.url.split(/[?#]/)[0])) && (
+                                      <div className="flex flex-wrap gap-2 mt-2.5">
+                                        {t.kind === s.targetVideo && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleTranscribe('platform-subs', { itemId: editingItem.id, targetUrl: t.url })}
+                                            title={s.subsFromPlatformHint}
+                                            className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[9px] font-black uppercase tracking-widest transition-colors"
+                                          >
+                                            {s.subsFromPlatform}
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleTranscribe('asr', { itemId: editingItem.id, targetUrl: t.url })}
+                                          title={s.runAsrHint}
+                                          className="px-3 py-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 transition-colors"
+                                        >
+                                          {s.runAsr}
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 );

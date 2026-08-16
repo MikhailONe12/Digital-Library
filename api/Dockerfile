@@ -2,8 +2,19 @@ FROM node:20
 WORKDIR /app
 COPY package.json ./
 RUN npm install --production --silent
-RUN apt-get update && apt-get install -y --no-install-recommends calibre djvulibre-bin poppler-utils \
+RUN apt-get update && apt-get install -y --no-install-recommends calibre djvulibre-bin poppler-utils ffmpeg \
     && rm -rf /var/lib/apt/lists/*
+
+# yt-dlp fetches a platform's own subtitle track — seconds and a few kilobytes,
+# with timecodes already in it. That is the cheapest transcript there is, and it
+# is why speech recognition is the fallback rather than the plan.
+#
+# Pinned to a release rather than latest: platforms change their internals and
+# yt-dlp follows within days, so an unpinned build would differ between two
+# images built a week apart. Bump it deliberately when something stops working.
+ARG YTDLP_VERSION=2025.01.26
+ADD https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux /usr/local/bin/yt-dlp
+RUN chmod a+rx /usr/local/bin/yt-dlp
 COPY server.js init.sql ./
 EXPOSE 3001
 

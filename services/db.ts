@@ -984,6 +984,25 @@ export const unindexItem = async (itemId: string): Promise<{ files: number; chun
   return { files: data.files || 0, chunks: data.chunks || 0 };
 };
 
+export type TranscribeMethod = 'platform-subs' | 'asr';
+
+/**
+ * Queue a transcript for spoken material — the platform's own subtitles, or
+ * recognising the audio. Scope: one target, one material, or everything.
+ */
+export const queueTranscribe = async (
+  method: TranscribeMethod,
+  scope?: { itemId?: string; targetUrl?: string },
+): Promise<{ queued: number }> => {
+  const res = await writeRequest('Постановка задач', '/api/admin/jobs/transcribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ method, ...(scope || {}) }),
+  });
+  const data = await res.json();
+  return { queued: data.queued || 0 };
+};
+
 export const jobAction = async (id: number, action: 'cancel' | 'retry'): Promise<void> => {
   await writeRequest(action === 'cancel' ? 'Отмена задачи' : 'Повтор задачи',
     `/api/admin/jobs/${id}/${action}`, { method: 'POST', headers: authHeaders() });

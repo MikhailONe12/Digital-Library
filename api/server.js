@@ -2202,6 +2202,187 @@ const startWorker = () => {
 
 // ── Job: import a subtitle file ──────────────────────────────────────────────
 
+// ── Transcripts from the platform, or from listening ─────────────────────────
+//
+// Two ways to get the same thing, and the order matters: a platform's own
+// subtitle track costs seconds and arrives with timecodes already in it, while
+// recognising the audio costs an hour of CPU per lecture. So the cheap one is
+// the default and the expensive one is what you press when the first came back
+// empty.
+//
+// Both converge on parseSubtitles + storeTranscript, which are already tested:
+// yt-dlp writes VTT, whisper.cpp writes SRT, and one parser reads both. Nothing
+// downstream — timecodes, manual correction, re-index protection — needs to
+// know which path produced the cues.
+
+const WHISPER_BIN = process.env.WHISPER_BIN || 'whisper-cli';
+const WHISPER_MODEL = process.env.WHISPER_MODEL || '/mnt/library/models/ggml-medium.bin';
+const YTDLP_TIMEOUT_MS = 300_000;
+const ASR_TIMEOUT_MS = 6 * 60 * 60 * 1000;   // a long lecture on a CPU
+
+const tmpWorkDir = () => {
+  const dir = path.join(os.tmpdir(), `media-${randomBytes(8).toString('hex')}`);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+const cleanupDir = dir => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ } };
+
+/** Ask the platform for its own subtitle track. Nothing else is downloaded. */
+JOB_HANDLERS['platform-subs'] = async (job, ctx) => {
+  const { itemId, targetUrl, langs } = job.payload || {};
+  if (!itemId || !targetUrl) throw new Error('Задача без параметров');
+  const dir = tmpWorkDir();
+  try {
+    await ctx.report(0.15);
+    await execFileAsync('yt-dlp', [
+      '--skip-download',            // the video itself is never fetched
+      '--write-subs', '--write-auto-subs',
+      '--sub-format', 'vtt',
+      '--sub-langs', typeof langs === 'string' && langs ? langs : 'ru,en,ru-orig,en-orig',
+      '--no-playlist', '--no-warnings',
+      '-o', path.join(dir, 'sub'),
+      targetUrl,
+    ], { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
+
+    const files = fs.readdirSync(dir).filter(f => /\.vtt$/i.test(f));
+    if (!files.length) throw new Error('У этого ролика площадка субтитров не отдаёт — попробуйте распознавание речи');
+    // Prefer a human-made track over an auto one: same shape, better wording.
+    files.sort((a, b) => Number(/auto/i.test(a)) - Number(/auto/i.test(b)));
+
+    await ctx.report(0.6);
+    const cues = parseSubtitles(fs.readFileSync(path.join(dir, files[0]), 'utf8'));
+    if (!cues.length) throw new Error('Дорожка субтитров пуста');
+    if (await ctx.cancelled()) return 'Отменено';
+
+    const { cues: stored, chunks } = await storeTranscript(itemId, targetUrl, cues, 'subtitles', files[0]);
+    return `Субтитры площадки: ${stored} реплик, ${chunks} поисковых кусков`;
+  } finally {
+    cleanupDir(dir);
+  }
+};
+
+/**
+ * Listen and write it down. The audio track is fetched, recognised and deleted;
+ * what stays is the transcript.
+ */
+JOB_HANDLERS.asr = async (job, ctx) => {
+  const { itemId, targetUrl, filename } = job.payload || {};
+  if (!itemId || !targetUrl) throw new Error('Задача без параметров');
+  const dir = tmpWorkDir();
+  const wav = path.join(dir, 'audio.wav');
+  try {
+    if (filename) {
+      // Our own media file: no download, straight to a shape whisper.cpp reads.
+      const src = path.join(CONTENT_DIR, itemId, filename);
+      if (!fs.existsSync(src)) throw new Error('Файла нет на диске');
+      await ctx.report(0.1);
+      await execFileAsync('ffmpeg', ['-y', '-i', src, '-ar', '16000', '-ac', '1', wav],
+        { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
+    } else {
+      await ctx.report(0.1);
+      // Audio only — the picture is not needed to hear what was said.
+      await execFileAsync('yt-dlp', [
+        '-f', 'bestaudio', '-x', '--audio-format', 'wav',
+        '--postprocessor-args', 'ffmpeg:-ar 16000 -ac 1',
+        '--no-playlist', '--no-warnings',
+        '-o', path.join(dir, 'audio.%(ext)s'),
+        targetUrl,
+      ], { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
+      if (!fs.existsSync(wav)) throw new Error('Не удалось получить звуковую дорожку');
+    }
+    if (await ctx.cancelled()) return 'Отменено';
+
+    await ctx.report(0.3, { stage: 'asr' });
+    if (!fs.existsSync(WHISPER_MODEL)) {
+      throw new Error(`Модель распознавания не найдена: ${WHISPER_MODEL}`);
+    }
+    // SRT out, so the same parser reads it as a platform's VTT.
+    await execFileAsync(WHISPER_BIN, [
+      '-m', WHISPER_MODEL, '-f', wav, '-osrt', '-of', path.join(dir, 'out'),
+      '-l', 'auto', '-t', String(process.env.WHISPER_THREADS || 4),
+    ], { timeout: ASR_TIMEOUT_MS, maxBuffer: 64 * 1024 * 1024 });
+
+    const srt = path.join(dir, 'out.srt');
+    if (!fs.existsSync(srt)) throw new Error('Распознавание не дало результата');
+    const cues = parseSubtitles(fs.readFileSync(srt, 'utf8'));
+    if (!cues.length) throw new Error('В расшифровке нет ни одной реплики');
+
+    await ctx.report(0.9);
+    const { cues: stored, chunks } = await storeTranscript(itemId, targetUrl, cues, 'asr', 'whisper');
+    return `Распознавание: ${stored} реплик, ${chunks} поисковых кусков`;
+  } finally {
+    cleanupDir(dir);
+  }
+};
+
+/** Every spoken target of a material, with what can be done to each. */
+const spokenTargets = item => {
+  const out = [];
+  for (const v of Array.isArray(item.videos) ? item.videos : []) {
+    const url = typeof v?.url === 'string' ? v.url.trim() : '';
+    if (url) out.push({ url, label: v.source || 'видео', platform: true });
+  }
+  for (const f of Array.isArray(item.formats) ? item.formats : []) {
+    const url = typeof f?.url === 'string' ? f.url.trim() : '';
+    if (!url || f.external) continue;
+    const ext = path.extname(url.split(/[?#]/)[0]).toLowerCase();
+    if (SCAN_MEDIA_EXT.has(ext)) {
+      out.push({ url, label: f.name || 'файл', platform: false, filename: scanFilenameFromUrl(item.id, url) });
+    }
+  }
+  return out;
+};
+
+// Queue one method for one material, or for everything that has spoken content.
+app.post('/api/admin/jobs/transcribe', requireApiKey, async (req, res) => {
+  const method = req.body?.method === 'asr' ? 'asr' : 'platform-subs';
+  const onlyItem = typeof req.body?.itemId === 'string' ? req.body.itemId : null;
+  const onlyUrl = typeof req.body?.targetUrl === 'string' ? req.body.targetUrl.trim() : null;
+  try {
+    const { rows } = onlyItem
+      ? await pool.query('SELECT id, data FROM items WHERE id = $1', [onlyItem])
+      : await pool.query('SELECT id, data FROM items ORDER BY seq');
+
+    const planned = [];
+    for (const row of rows) {
+      const item = { ...(row.data || {}), id: row.id };
+      const title = item.title?.ru || item.title?.en || item.title?.es || row.id;
+      for (const target of spokenTargets(item)) {
+        if (onlyUrl && target.url !== onlyUrl) continue;
+        // A local file has no platform to ask; recognising it is the only route.
+        if (method === 'platform-subs' && !target.platform) continue;
+        planned.push({
+          itemId: row.id,
+          targetUrl: target.url,
+          label: `${title} · ${target.label}`,
+          payload: { itemId: row.id, targetUrl: target.url, filename: target.filename || null },
+        });
+      }
+    }
+    if (!planned.length) return res.json({ queued: 0 });
+
+    const batch = (await pool.query(
+      `INSERT INTO job_batches (kind, title) VALUES ($1, $2) RETURNING id`,
+      [method, `${method === 'asr' ? 'Распознавание' : 'Субтитры площадки'} · ${planned.length}`],
+    )).rows[0];
+
+    for (const p of planned) {
+      await pool.query(
+        `INSERT INTO jobs (batch_id, kind, item_id, format_url, label, payload, priority)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        // Recognition takes hours; letting a cheap subtitle fetch overtake it
+        // keeps the queue useful while a long job is running.
+        [batch.id, method, p.itemId, p.targetUrl, p.label, JSON.stringify(p.payload),
+         method === 'asr' ? 200 : 50],
+      );
+    }
+    res.json({ queued: planned.length, batchId: batch.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 JOB_HANDLERS.subtitles = async (job, ctx) => {
   const { itemId, targetUrl, filename } = job.payload || {};
   if (!itemId || !targetUrl || !filename) throw new Error('Задача без параметров');

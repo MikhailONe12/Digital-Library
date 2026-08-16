@@ -1088,7 +1088,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [pagesBusy, setPagesBusy] = useState(false);
 
   useEffect(() => {
-    if (activeTab !== 'scan' || !isAdmin) return;
+    // Loaded for the content list as well: every material card shows whether it
+    // is in the index, and that has to be true the moment the list opens.
+    if ((activeTab !== 'scan' && activeTab !== 'items') || !isAdmin) return;
     let cancelled = false;
     const tick = async () => {
       const report = await loadIndexReport();
@@ -1151,6 +1153,44 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
       toast.success(ta.scan.pagesSaved);
     } catch { /* writeRequest already raised a toast */ }
     finally { setPagesBusy(false); }
+  };
+
+  const indexByItem = useMemo(() => {
+    const byItem = new Map<string, IndexRow[]>();
+    for (const row of indexReport?.rows || []) {
+      const list = byItem.get(row.item_id);
+      if (list) list.push(row); else byItem.set(row.item_id, [row]);
+    }
+    return byItem;
+  }, [indexReport]);
+
+  /**
+   * What the content list shows on one material.
+   *
+   * The denominator is computed from the item itself, not from the report: a
+   * file that has never been indexed has no row at all, and counting only rows
+   * would report "1 of 1" on a material where half the files were never touched.
+   */
+  const itemIndexState = (item: MediaItem) => {
+    const indexable = (item.formats || []).filter(
+      f => !f.external && typeof f.url === 'string' && f.url.includes('/content/')
+    ).length;
+    const rows = indexByItem.get(item.id) || [];
+    const indexed = rows.filter(r => r.state === 'indexed');
+    const failed = rows.filter(r => r.state === 'failed');
+    if (!indexable) return { kind: 'none' as const, indexable, done: 0 };
+    if (failed.length) {
+      return { kind: 'failed' as const, indexable, done: indexed.length, detail: failed[0].detail };
+    }
+    if (indexed.length >= indexable) {
+      return {
+        kind: 'ok' as const, indexable, done: indexed.length,
+        chunks: indexed.reduce((n, r) => n + (r.chunk_count || 0), 0),
+        manual: indexed.reduce((n, r) => n + (r.manual_pages || 0), 0),
+        quality: Math.min(...indexed.map(r => r.quality ?? 1)),
+      };
+    }
+    return { kind: indexed.length ? ('partial' as const) : ('missing' as const), indexable, done: indexed.length };
   };
 
   // Green above clean-typeset level, amber where formulas or conversion damage
@@ -1245,6 +1285,16 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
             {num(totals.pages)} {s.pages} · {num(totals.chars)} {s.chars}
           </p>
         )}
+
+        {/* The check counts every record; only files can be indexed. Saying which
+            ones are left out, and why, stops "24 records but 21 indexed" reading
+            as a shortfall. */}
+        {(scanCounts.by.media || scanCounts.by.external) ? (
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-2">
+            {s.indexOutside}: {num(scanCounts.by.media || 0)} {s.stateMedia} ·{' '}
+            {num(scanCounts.by.external || 0)} {s.stateExternal} — {s.indexOutsideWhy}
+          </p>
+        ) : null}
 
         <div className="h-px bg-slate-100 dark:bg-white/[0.08] my-6" />
 
@@ -2618,8 +2668,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                 {adminFilteredItems.length === 0 && (
                   <p className="text-center py-12 text-[10px] font-black uppercase text-slate-300 dark:text-slate-600 tracking-widest">{t.noResults || 'No results'}</p>
                 )}
-                {adminFilteredItems.map((i, idx) => (
-                  <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] flex items-center justify-between shadow-sm">
+                {adminFilteredItems.map((i, idx) => {
+                const idx8 = itemIndexState(i);
+                return (
+                  <div key={i.id} className="bg-white p-4 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] flex items-center justify-between shadow-sm flex-wrap gap-y-2">
                     <div className="flex items-center gap-3 overflow-hidden min-w-0">
                       <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 tabular-nums w-7 text-right shrink-0">{idx + 1}.</span>
                       <button
@@ -2644,15 +2696,58 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                               {new Date(i.addedDate).toLocaleDateString(lang === 'en' ? 'en-US' : lang === 'es' ? 'es-ES' : 'ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })}
                             </span>
                           )}
+                          {/* Whether this material is searchable — visible only here,
+                              inside the admin, and only after the report has loaded. */}
+                          {(() => {
+                            const st = idx8;
+                            const styles = {
+                              ok:      'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25',
+                              partial: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/25',
+                              missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
+                              failed:  'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+                              none:    'bg-slate-100 text-slate-400 border-slate-200 dark:bg-white/5 dark:text-slate-500 dark:border-white/10',
+                            } as const;
+                            const text =
+                              st.kind === 'ok'      ? `${ta.scan.indexStateIndexed} · ${st.chunks.toLocaleString(lang === 'ru' ? 'ru-RU' : lang)} ${ta.scan.indexChunks}`
+                            : st.kind === 'partial' ? `${ta.scan.cardPartial} ${st.done}/${st.indexable}`
+                            : st.kind === 'failed'  ? ta.scan.indexStateFailed
+                            : st.kind === 'none'    ? ta.scan.cardNothing
+                            : ta.scan.cardNotIndexed;
+                            return (
+                              <span className={`px-2 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest ${styles[st.kind]}`}>
+                                {text}
+                              </span>
+                            );
+                          })()}
+                          {idx8.kind === 'ok' && idx8.manual > 0 && (
+                            <span className="px-2 py-0.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 text-[8px] font-black uppercase tracking-widest">
+                              {idx8.manual} {ta.scan.indexManual}
+                            </span>
+                          )}
                         </div>
+                        {idx8.kind === 'failed' && idx8.detail && (
+                          <p className="text-[8px] font-bold text-red-500 mt-1 break-words">{idx8.detail}</p>
+                        )}
                       </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
+                      {idx8.kind !== 'none' && (
+                        <button
+                          onClick={() => handleIndexRun(i.id)}
+                          disabled={indexReport?.job?.running}
+                          title={ta.scan.cardReindex}
+                          aria-label={ta.scan.cardReindex}
+                          className="p-2 bg-slate-50 dark:bg-white/[0.06] rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 disabled:opacity-40 transition-colors"
+                        >
+                          <RefreshCw size={16} className={indexReport?.job?.running ? 'animate-spin' : ''} />
+                        </button>
+                      )}
                       <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><Edit2 size={16}/></button>
                       <button onClick={() => setItemToDelete(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 hover:text-red-600" aria-label={ta.deleteItem}><Trash2 size={16}/></button>
                     </div>
                   </div>
-                ))}
+                );
+                })}
               </div>
             </div> )} {activeTab ==='types'&& ( <div className="bg-white p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm"> <h3 className="text-xs md:text-sm font-black mb-6 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">{t.types}</h3> {/* Add new category */} <div className="p-4 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 mb-6 space-y-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{t.addCategory}</p> <div className="grid grid-cols-3 gap-2"> {(['ru', 'en', 'es'] as const).map(l => ( <div key={l}> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{l.toUpperCase()}</label> <input type="text" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-100 dark:border-white/[0.08] rounded-xl px-3 py-2 text-xs font-bold focus:border-red-600 outline-none" value={newTypeLabels[l]} onChange={e => { const val = e.target.value; typedLangsRef.current.add(l); setNewTypeLabels(prev => { const next = { ...prev, [l]: val }; (['en', 'ru', 'es'] as const).forEach(other => {
                             if (other !== l && !typedLangsRef.current.has(other)) next[other] = val;

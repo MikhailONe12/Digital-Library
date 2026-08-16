@@ -2049,7 +2049,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                   </div>
                   <div>
                       <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">{ta.database}</h3>
-                      <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{ta.backupRestore}</p>
+                      <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{ta.backupSection}</p>
                   </div>
               </div>
               <div className="space-y-6">

@@ -65,9 +65,25 @@ const BACKUP_DIR  = process.env.BACKUP_DIR  || '/mnt/library/app/backups';
 const DB_CONTAINER = process.env.DB_CONTAINER || 'library-db';
 const DB_USER     = process.env.DB_USER || 'library';
 const DB_NAME     = process.env.DB_NAME || 'library';
+// Two things about the order here are deliberate.
+//
+// The API image is rebuilt BEFORE `dist` is published. The other way round, a
+// failed image build leaves a new frontend talking to an old API — the worst
+// outcome of the three, because it looks deployed. Publishing last means a
+// broken build changes nothing at all.
+//
+// And the build falls back to the legacy builder. BuildKit re-resolves
+// `node:20` against Docker Hub on every build; when the host has an AAAA route
+// it cannot actually use, that fails with "network is unreachable" even though
+// the base image has been sitting in the local store for months. The legacy
+// builder uses what is already there. This is a fallback, not the default —
+// when the registry is reachable, the first form still gets the newer builder.
 const DEPLOY_CMD  = process.env.DEPLOY_CMD ||
   `git fetch origin ${BRANCH} && git checkout ${BRANCH} && git pull origin ${BRANCH} ` +
-  `&& npm run build && cp -r dist/* ${DIST_DIR}/ && docker compose up -d --build library-api`;
+  `&& npm run build ` +
+  `&& { docker compose up -d --build library-api ` +
+  `|| DOCKER_BUILDKIT=0 docker compose up -d --build library-api; } ` +
+  `&& cp -r dist/* ${DIST_DIR}/`;
 
 const STATUS_FILE         = path.join(CONTROL_DIR, 'status.json');
 const MODE_FILE           = path.join(CONTROL_DIR, 'mode.json');

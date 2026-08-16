@@ -2008,9 +2008,51 @@ const srtTime = t => {
  * an optional cue id and the decimal separator, none of which is worth a second
  * implementation.
  */
+const cueLine = l => l
+  .replace(/<[^>]+>/g, '')                                    // <i>, <c.colorE5E5E5>
+  .replace(/\{\\[^}]*\}/g, '')                                // ASS-style overrides
+  .replace(/\s+/g, ' ')
+  .trim();
+
+// The same words twice at a cue boundary are the rolling effect, not speech.
+//
+// An auto-generated track scrolls: every cue reprints what the previous one
+// already said and adds a few words at the end. Read straight through, the
+// transcript comes out as "…changed the approach to risk. Do globally changed
+// the approach to risk. Do globally changed…" — which is what the reader sees
+// in a search result, and what the ranking counts as a dozen separate matches.
+//
+// Two overlaps are removed. A repeated whole line is the usual shape and is
+// unambiguous. A repeated run of words without a line break needs a threshold:
+// four words, because a speaker really can end one cue and start the next on
+// the same two or three ("the", "you know", "in the end"), and deleting genuine
+// speech is the worse mistake of the two.
+const OVERLAP_MIN_WORDS = 4;
+
+const dropRepeatedLines = (prevLines, lines) => {
+  const seen = new Set(prevLines.map(l => l.toLowerCase()));
+  let i = 0;
+  while (i < lines.length && seen.has(lines[i].toLowerCase())) i++;
+  return lines.slice(i);
+};
+
+const dropRepeatedTail = (prevText, text) => {
+  const prev = prevText.split(' ').filter(Boolean);
+  const cur = text.split(' ').filter(Boolean);
+  const max = Math.min(prev.length, cur.length);
+  for (let k = max; k >= OVERLAP_MIN_WORDS; k--) {
+    if (prev.slice(prev.length - k).join(' ').toLowerCase() === cur.slice(0, k).join(' ').toLowerCase()) {
+      return cur.slice(k).join(' ');
+    }
+  }
+  return text;
+};
+
 const parseSubtitles = raw => {
   const text = raw.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
   const cues = [];
+  let prevLines = [];      // as written, before any trimming — that is what repeats
+  let prevText = '';       // as kept, which is what the reader would read twice
   for (const blockText of text.split(/\n{2,}/)) {
     const lines = blockText.split('\n').map(l => l.trim()).filter(Boolean);
     if (!lines.length) continue;
@@ -2022,17 +2064,24 @@ const parseSubtitles = raw => {
     // A cue can carry positioning after the end time: "…  --> 00:00:04.000 line:90%"
     const end = srtTime((to || '').trim().split(/\s+/)[0] || '');
     if (start === null || end === null) continue;
-    const body = lines.slice(i + 1)
-      .join(' ')
-      .replace(/<[^>]+>/g, '')                                // <i>, <c.colorE5E5E5>
-      .replace(/\{\\[^}]*\}/g, '')                            // ASS-style overrides
-      .replace(/\s+/g, ' ')
-      .trim();
-    if (body) cues.push({ start, end, text: body });
+    const own = lines.slice(i + 1).map(cueLine).filter(Boolean);
+    if (!own.length) continue;
+
+    const fresh = dropRepeatedLines(prevLines, own);
+    prevLines = own;
+    // Same rule across the cue boundary and inside the cue: a two-line cue can
+    // reprint its own first line just as readily as the previous one's.
+    let body = '';
+    for (const line of fresh) {
+      const add = dropRepeatedTail(body || prevText, line).trim();
+      if (add) body = body ? `${body} ${add}` : add;
+    }
+    // Nothing new was said in this cue — it only redrew the previous one.
+    if (!body) continue;
+    prevText = body;
+    cues.push({ start, end, text: body });
   }
-  // Auto-generated tracks repeat the previous line in every cue for a rolling
-  // effect; keeping them would make the same sentence match a dozen times.
-  return cues.filter((c, n) => n === 0 || c.text !== cues[n - 1].text);
+  return cues;
 };
 
 // A chunk must cover one continuous stretch of speech, not merely a convenient

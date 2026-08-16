@@ -980,8 +980,7 @@ const scanClassify = (pages, chars) => {
 };
 
 const scanOneFile = async (itemId, format) => {
-  const url = typeof format?.url === 'string' ? format.url.trim() : '';
-  if (!url) return { state: 'error', detail: 'Файл без ссылки' };
+  const url = format.url.trim();
 
   // Flagged external: we deliberately never fetch it. Reporting it as a
   // separate state keeps "we chose not to" apart from "we failed to".
@@ -1022,6 +1021,50 @@ const scanOneFile = async (itemId, format) => {
   }
 };
 
+// Video and article links live outside `formats`, so the first version of this
+// scan said nothing about them — and an admin reading "0 external" would have
+// concluded there was no external material, when really nobody had looked.
+//
+// Links are classified without being fetched. Requesting arbitrary URLs from
+// the server is a different and much larger thing than reading our own disk:
+// it is an SSRF surface, it is slow, and for the platforms it would mean
+// scraping. What can be established without a request is exactly what the
+// subtitles step needs to know — which platform, and whether we already have a
+// transcript.
+const SCAN_VIDEO_PLATFORMS = [
+  // `seek` records whether jumping to a given second is a solved problem for us
+  // yet, not whether the platform supports it at all. Reporting "not checked"
+  // turns a vague task into a concrete list.
+  { re: /(?:youtube\.com|youtu\.be)/i,           kind: 'youtube', seek: true },
+  { re: /rutube\.ru/i,                           kind: 'rutube',  seek: false },
+  { re: /(?:vk\.com|vkvideo\.ru|vkontakte\.ru)/i, kind: 'vk',     seek: false },
+  { re: /twitch\.tv/i,                           kind: 'twitch',  seek: false },
+];
+
+const scanVideoLink = link => {
+  const url = link.url.trim();
+  const platform = SCAN_VIDEO_PLATFORMS.find(p => p.re.test(url));
+  if (!platform) {
+    return {
+      state: 'media', kind: 'video',
+      detail: 'Ссылка на видео, площадка не опознана. Расшифровки нет; переход на секунду проверять отдельно.',
+    };
+  }
+  return {
+    state: 'media', kind: platform.kind,
+    detail: platform.seek
+      ? 'Ссылка на видео. Расшифровки нет — ждёт шага с субтитрами.'
+      : 'Ссылка на видео. Расшифровки нет; переход на нужную секунду по этой площадке ещё не проверен.',
+  };
+};
+
+const scanArticleLink = () => {
+  return {
+    state: 'external', kind: 'article',
+    detail: 'Внешняя статья. Ждёт шага «Внешние источники».',
+  };
+};
+
 const runContentScan = async () => {
   const startedAt = new Date();
   Object.assign(scanJob, {
@@ -1041,18 +1084,34 @@ const runContentScan = async () => {
     for (const row of rows) {
       const item = row.data || {};
       const title = item.title?.ru || item.title?.en || item.title?.es || row.id;
-      for (const format of Array.isArray(item.formats) ? item.formats : []) {
-        if (typeof format?.url === 'string' && format.url.trim()) {
-          targets.push({ itemId: row.id, title, format });
-        }
+      // (item, url) is the primary key, so the same URL listed twice in one
+      // item would otherwise be probed twice and overwrite its own row.
+      const seen = new Set();
+      // An entry with no URL is skipped rather than reported: the row is keyed
+      // by URL, so there is nowhere to record it, and several such entries in
+      // one item would collide with each other.
+      const add = (entry, label, probe) => {
+        const url = typeof entry?.url === 'string' ? entry.url.trim() : '';
+        if (!url || seen.has(url)) return;
+        seen.add(url);
+        targets.push({ itemId: row.id, title, url, label, probe });
+      };
+      for (const f of Array.isArray(item.formats) ? item.formats : []) {
+        add(f, f?.name, () => scanOneFile(row.id, f));
+      }
+      for (const v of Array.isArray(item.videos) ? item.videos : []) {
+        add(v, v?.source || 'видео', () => scanVideoLink(v));
+      }
+      for (const a of Array.isArray(item.articles) ? item.articles : []) {
+        add(a, a?.title || a?.source || 'статья', scanArticleLink);
       }
     }
     scanJob.total = targets.length;
 
-    for (const { itemId, title, format } of targets) {
+    for (const { itemId, title, url, label, probe } of targets) {
       if (scanJob.stopRequested) break;
-      scanJob.current = `${title} · ${format.name || ''}`.trim();
-      const r = await scanOneFile(itemId, format);
+      scanJob.current = `${title} · ${label || ''}`.trim();
+      const r = await probe();
       await pool.query(
         `INSERT INTO content_scan
            (item_id, format_url, filename, kind, state, pages, chars, size_bytes, detail, scanned_at)
@@ -1061,7 +1120,7 @@ const runContentScan = async () => {
            filename = $3, kind = $4, state = $5, pages = $6, chars = $7,
            size_bytes = $8, detail = $9, scanned_at = NOW()`,
         [
-          itemId, format.url.trim(), r.filename || null, r.kind || null, r.state,
+          itemId, url, r.filename || null, r.kind || null, r.state,
           r.pages ?? null, r.chars ?? null, r.size ?? null, r.detail || null,
         ],
       );

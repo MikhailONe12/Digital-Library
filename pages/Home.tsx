@@ -5,7 +5,7 @@ import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
 import { searchInside, logSearchOpened } from '../services/db';
 import type { SearchHit } from '../services/db';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink, PlayCircle, Newspaper, FileText, Headphones, GraduationCap, FileQuestion } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo, getDisplayedLanguages, isExternallyHosted } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
@@ -255,6 +255,24 @@ const Home: React.FC<HomeProps> = ({
     (raw || '')
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
+  // What kind of source answered — a book, a video, a journal, an article, a
+  // lesson. A row of identical cards says nothing about where the reader is
+  // about to land: page 143 of a book and 12:34 of a lecture are different
+  // promises. The type comes from the catalogue; when the material is missing
+  // or carries a section the admin invented, the position still tells us the
+  // truth — a timecode means something that plays.
+  const hitIcon = (found: MediaItem | undefined, hit: SearchHit) => {
+    const byType: Record<string, React.ElementType> = {
+      BOOK: BookOpen, ARTICLE: FileText, JOURNAL: Newspaper,
+      VIDEO: PlayCircle, AUDIO: Headphones, COURSE: GraduationCap, LESSON: GraduationCap,
+    };
+    const known = byType[String(found?.type || '').toUpperCase()];
+    if (known) return known;
+    if (hit.second_start !== null) return PlayCircle;
+    if (hit.page !== null || found) return BookOpen;
+    return FileQuestion;
+  };
+
   // Wraps the search input + filter toggle + the expandable panel; we use it
   // to close the panel when the user clicks outside of it.
   const filterWrapRef = useRef<HTMLDivElement | null>(null);
@@ -897,7 +915,7 @@ const Home: React.FC<HomeProps> = ({
         <div className="mt-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="flex items-center gap-3 mb-4">
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
-              {t.foundInBooks}
+              {t.foundInSources}
             </h3>
             <span className="text-[10px] font-black text-red-600 tabular-nums">{insideHits.length}</span>
             <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
@@ -926,12 +944,20 @@ const Home: React.FC<HomeProps> = ({
                   }}
                   className="w-full text-left p-3.5 rounded-2xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] hover:border-red-300 dark:hover:border-red-500/40 active:scale-[0.99] transition-all"
                 >
-                  <p className="text-[13px] font-black text-slate-900 dark:text-white truncate">
-                    {found ? pickText(found.title, lang) : hit.item_id}
-                  </p>
-                  {hit.author && (
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate mt-0.5">{hit.author}</p>
-                  )}
+                  <div className="flex items-start gap-2">
+                    {React.createElement(hitIcon(found, hit), {
+                      size: 15, strokeWidth: 2.5,
+                      className: 'shrink-0 mt-[1px] text-red-600 dark:text-red-500',
+                    })}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-black text-slate-900 dark:text-white truncate">
+                        {found ? pickText(found.title, lang) : hit.item_id}
+                      </p>
+                      {hit.author && (
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate mt-0.5">{hit.author}</p>
+                      )}
+                    </div>
+                  </div>
                   {/* The server's headline wraps matches in <b>; sanitizeSnippet
                       escapes everything else, so book text cannot reach innerHTML
                       as markup. */}

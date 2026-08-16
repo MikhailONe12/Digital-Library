@@ -1311,6 +1311,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     }
   };
 
+  // Arrived from a search result: which video to open, and at what second.
+  //
+  // Declared here, above getVideoEmbed, and not next to the effect that fills
+  // it in. The embed list is built during render, straight after this function,
+  // so a `const` declared below would be read before it exists — the whole page
+  // then dies with "Cannot access ... before initialization" instead of showing
+  // the video. State a render-time helper reads must be declared before it.
+  const openedAtRef = useRef<string | null>(null);
+  // Survives until the document is loaded, which is when the page is chosen.
+  const openAtPageRef = useRef<number | null>(null);
+  const videoAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+  const [videoStartSeconds, setVideoStartSeconds] = useState<number | null>(null);
+
   const getVideoEmbed = (url?: string) => {
     if (!url) return null;
     const host = window.location.hostname;
@@ -1521,14 +1535,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     }
   };
 
-  // Arrived from a search result: open that file at that place. Runs once per
-  // target — reopening it on every render would fight the reader's own paging.
-  const openedAtRef = useRef<string | null>(null);
-  // Survives until the document is loaded, which is when the page is chosen.
-  const openAtPageRef = useRef<number | null>(null);
-  const videoAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
-  const [videoStartSeconds, setVideoStartSeconds] = useState<number | null>(null);
+  // The effect that acts on `openAt`. Its state is declared far above, next to
+  // the embed builder that reads it — see the comment there.
   useEffect(() => {
     if (!openAt?.url) return;
     const key = `${openAt.url}#${openAt.page ?? openAt.second ?? ''}`;

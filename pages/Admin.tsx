@@ -1079,6 +1079,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [openCheck, setOpenCheck] = useState(false);
   const [openIndex, setOpenIndex] = useState(true);
   const [openQueue, setOpenQueue] = useState(false);
+  const queueWasActive = useRef(false);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobTotals, setJobTotals] = useState<JobTotals>({ queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 });
   const jobsActiveRef = useRef(false);
@@ -1108,13 +1109,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   }, [activeTab, isAdmin]);
 
   useEffect(() => {
-    if (activeTab !== 'scan' || !isAdmin) return;
+    // Also on the content list: its cards open the editor, and the editor shows
+    // the progress of work started from inside it.
+    if ((activeTab !== 'scan' && activeTab !== 'items') || !isAdmin) return;
     let cancelled = false;
     const tick = async () => {
       const { jobs: rows, totals } = await loadJobs();
       if (cancelled) return;
       // Poll only while something is actually moving.
-      jobsActiveRef.current = totals.queued + totals.running > 0;
+      const active = totals.queued + totals.running > 0;
+      // The moment the queue empties, whatever it produced is not on screen yet.
+      if (jobsActiveRef.current && !active) refreshIndex();
+      jobsActiveRef.current = active;
       setJobs(rows);
       setJobTotals(totals);
     };
@@ -1212,6 +1218,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     try {
       const { queued } = await queueTranscribe(method, scope);
       jobsActiveRef.current = true;
+      // Unfold the queue: a task nobody can watch is a task nobody trusts.
+      if (queued > 0) setOpenQueue(true);
       await refreshJobs();
       toast.success(`${ta.scan.queuedN}: ${queued}`);
     } catch { /* writeRequest already raised a toast */ }
@@ -3596,6 +3604,49 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                               </button>
                             )}
                           </div>
+
+                          {(() => {
+                            const mine = jobs.filter(j => j.item_id === editingItem.id
+                              && ['queued', 'running', 'failed'].includes(j.state));
+                            const recent = jobs.filter(j => j.item_id === editingItem.id && j.state === 'done').slice(0, 2);
+                            const shown = [...mine, ...recent];
+                            if (!shown.length) return null;
+                            return (
+                              <div className="space-y-2 pt-1">
+                                {shown.map(j => (
+                                  <div key={j.id} className="p-2.5 rounded-xl bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest
+                                        ${j.state === 'running' ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400'
+                                          : j.state === 'queued' ? 'bg-slate-100 text-slate-500 dark:bg-white/5 dark:text-slate-400'
+                                          : j.state === 'failed' ? 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400'
+                                          : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'}`}>
+                                        {j.state === 'running' ? s.queueRunning : j.state === 'queued' ? s.queueQueued
+                                          : j.state === 'failed' ? s.queueFailed : s.queueDone}
+                                      </span>
+                                      <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 truncate min-w-0 flex-1">{j.label}</span>
+                                      {j.state === 'running' && (
+                                        <div className="w-20 h-1.5 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden shrink-0">
+                                          <div className="h-full bg-red-600 rounded-full transition-all duration-500" style={{ width: `${Math.round(j.progress * 100)}%` }} />
+                                        </div>
+                                      )}
+                                      {j.state === 'failed' && (
+                                        <button type="button" onClick={() => handleJobAction(j.id, 'retry')}
+                                          className="px-2 py-1 rounded-lg border border-slate-300 dark:border-white/15 text-[8px] font-black uppercase tracking-widest text-slate-500 hover:border-red-400 hover:text-red-600 transition-colors">
+                                          {s.queueRetry}
+                                        </button>
+                                      )}
+                                    </div>
+                                    {j.detail && (
+                                      <p className={`text-[9px] font-bold leading-snug mt-1 break-words ${j.state === 'failed' ? 'text-red-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                                        {j.detail}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
 
                           <input
                             ref={subtitleInputRef}

@@ -49,6 +49,35 @@ const YouTubeTrackedPlayer: React.FC<Props> = ({ videoId, url, userId, itemId, s
   const playerRef = useRef<any>(null);
   const pollRef = useRef<number | null>(null);
   const lastSaveRef = useRef<number>(0);
+  // The player is built once, when the page opens. The second to jump to
+  // arrives later — the search result is handled after this component has
+  // already mounted — so onReady must read the current value rather than the
+  // one captured when the effect ran, and a second that arrives after the
+  // player is ready needs an effect of its own. Without both, the player sat
+  // at zero and never started.
+  const startRef = useRef<number | null>(startSeconds);
+  const readyRef = useRef(false);
+  const seekedToRef = useRef<number | null>(null);
+
+  const jumpTo = (second: number) => {
+    const p = playerRef.current;
+    if (!p?.seekTo || seekedToRef.current === second) return;
+    seekedToRef.current = second;
+    p.seekTo(second, true);
+    // Playback may be refused — a mobile browser only lets a video start from
+    // a gesture, and by now the tap is several async steps in the past. The
+    // seek is what matters: refused or not, the reader's play button starts at
+    // the moment the search found, not at the beginning.
+    try { p.playVideo?.(); } catch { /* the reader will press play */ }
+  };
+
+  useEffect(() => { startRef.current = startSeconds; }, [startSeconds]);
+
+  useEffect(() => {
+    if (!startSeconds || startSeconds <= 0) return;
+    if (readyRef.current) jumpTo(startSeconds);
+    // Not ready yet: onReady reads startRef and does the same thing.
+  }, [startSeconds]);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,11 +124,12 @@ const YouTubeTrackedPlayer: React.FC<Props> = ({ videoId, url, userId, itemId, s
         events: {
           onReady: async () => {
             const p = playerRef.current;
+            readyRef.current = true;
             const d = p?.getDuration?.() || 0;
             if (d > 0) setVideoDuration(url, d);
-            if (startSeconds && startSeconds > 0) {
-              p?.seekTo?.(startSeconds, true);
-              p?.playVideo?.();
+            const wanted = startRef.current;
+            if (wanted && wanted > 0) {
+              jumpTo(wanted);
               return;
             }
             try {
@@ -121,6 +151,8 @@ const YouTubeTrackedPlayer: React.FC<Props> = ({ videoId, url, userId, itemId, s
 
     return () => {
       cancelled = true;
+      readyRef.current = false;
+      seekedToRef.current = null;
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       flush();
       try { playerRef.current?.destroy?.(); } catch { /* noop */ }

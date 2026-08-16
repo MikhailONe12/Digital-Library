@@ -883,14 +883,30 @@ const Home: React.FC<HomeProps> = ({
             ))}
           </div>
 
+          {/* The cards above match a name — title, tags, author, description.
+              When a question matched none of them, "nothing here yet" is a lie
+              by omission: the words may well be inside the sources, and the
+              answer to that is a screen further down. So the empty state says
+              which search came up empty, points at the one that did not, and
+              stops taking up a screenful while doing it. */}
           {items.length === 0 && (
-            <div className="py-24 text-center">
-              <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
-                {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
-              </div>
+            <div className={insideHits.length > 0 && searchQuery.trim() ? 'py-8 text-center' : 'py-24 text-center'}>
+              {!(insideHits.length > 0 && searchQuery.trim()) && (
+                <div className="inline-flex p-6 bg-slate-100 dark:bg-white/[0.06] rounded-full text-slate-300 dark:text-slate-600 mb-5">
+                  {scope === 'FAVORITES' ? <Heart size={36} /> : scope === 'HISTORY' ? <Clock size={36} /> : scope === 'FINISHED' ? <CheckCircle2 size={36} /> : <Search size={36} />}
+                </div>
+              )}
               <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
-                {scope === 'FAVORITES' ? t.noFavoritesYet : scope === 'HISTORY' ? t.noHistoryYet : scope === 'FINISHED' ? t.noFinishedYet : t.noResults}
+                {scope === 'FAVORITES' ? t.noFavoritesYet
+                  : scope === 'HISTORY' ? t.noHistoryYet
+                  : scope === 'FINISHED' ? t.noFinishedYet
+                  : searchQuery.trim() ? t.noTitleMatches : t.noResults}
               </p>
+              {searchQuery.trim() && insideHits.length > 0 && (
+                <p className="mt-1.5 text-[11.5px] font-bold text-slate-400 dark:text-slate-500">
+                  {t.butFoundInside}
+                </p>
+              )}
             </div>
           )}
         </>

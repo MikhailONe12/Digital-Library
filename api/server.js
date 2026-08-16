@@ -2229,6 +2229,22 @@ const tmpWorkDir = () => {
 const cleanupDir = dir => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* gone */ } };
 
 /** Ask the platform for its own subtitle track. Nothing else is downloaded. */
+// yt-dlp's own wording is written for a terminal, not for whoever runs the
+// library. These two are the failures that actually happen.
+const explainYtDlp = raw => {
+  const text = String(raw || '');
+  if (/Requested format is not available/i.test(text)) {
+    return 'Площадка не отдала ни субтитров, ни пригодного потока. Чаще всего помогает обновление yt-dlp — см. ARG YTDLP_VERSION в api/Dockerfile.';
+  }
+  if (/Sign in to confirm|bot|429|rate/i.test(text)) {
+    return 'Площадка потребовала подтверждения или ограничила частоту запросов. Попробуйте позже или реже.';
+  }
+  if (/Video unavailable|Private video|removed/i.test(text)) {
+    return 'Ролик недоступен: удалён, приватный или ограничен по региону.';
+  }
+  return clip(text, 400);
+};
+
 JOB_HANDLERS['platform-subs'] = async (job, ctx) => {
   const { itemId, targetUrl, langs } = job.payload || {};
   if (!itemId || !targetUrl) throw new Error('Задача без параметров');
@@ -2237,13 +2253,18 @@ JOB_HANDLERS['platform-subs'] = async (job, ctx) => {
     await ctx.report(0.15);
     await execFileAsync('yt-dlp', [
       '--skip-download',            // the video itself is never fetched
+      // Without this, yt-dlp still runs format selection and aborts with
+      // "Requested format is not available" — on a request that wants no format
+      // at all. It is the documented flag for subtitle-only extraction.
+      '--ignore-no-formats-error',
       '--write-subs', '--write-auto-subs',
       '--sub-format', 'vtt',
       '--sub-langs', typeof langs === 'string' && langs ? langs : 'ru,en,ru-orig,en-orig',
       '--no-playlist', '--no-warnings',
       '-o', path.join(dir, 'sub'),
       targetUrl,
-    ], { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
+    ], { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })
+      .catch(e => { throw new Error(explainYtDlp(e?.stderr || e?.message)); });
 
     const files = fs.readdirSync(dir).filter(f => /\.vtt$/i.test(f));
     if (!files.length) throw new Error('У этого ролика площадка субтитров не отдаёт — попробуйте распознавание речи');
@@ -2288,7 +2309,8 @@ JOB_HANDLERS.asr = async (job, ctx) => {
         '--no-playlist', '--no-warnings',
         '-o', path.join(dir, 'audio.%(ext)s'),
         targetUrl,
-      ], { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 });
+      ], { timeout: YTDLP_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024 })
+        .catch(e => { throw new Error(explainYtDlp(e?.stderr || e?.message)); });
       if (!fs.existsSync(wav)) throw new Error('Не удалось получить звуковую дорожку');
     }
     if (await ctx.cancelled()) return 'Отменено';

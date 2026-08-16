@@ -9,11 +9,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends calibre djvulib
 # with timecodes already in it. That is the cheapest transcript there is, and it
 # is why speech recognition is the fallback rather than the plan.
 #
-# Pinned to a release rather than latest: platforms change their internals and
-# yt-dlp follows within days, so an unpinned build would differ between two
-# images built a week apart. Bump it deliberately when something stops working.
-ARG YTDLP_VERSION=2025.01.26
-ADD https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/yt-dlp_linux /usr/local/bin/yt-dlp
+# Latest release by default, and that is a deliberate reversal.
+#
+# Pinning was the wrong instinct for this one tool: platforms change their
+# internals constantly and yt-dlp follows within days, so a pin is not stability
+# — it is a guarantee that the build stops working on a schedule nobody
+# controls. A version fixed in January failed against YouTube on the first real
+# attempt.
+#
+# Reproducibility is still available when it matters: pass
+# --build-arg YTDLP_VERSION=2025.08.11 to freeze a known-good one.
+ARG YTDLP_VERSION=latest
+ADD https://github.com/yt-dlp/yt-dlp/releases/${YTDLP_VERSION}/download/yt-dlp_linux /usr/local/bin/yt-dlp
 RUN chmod a+rx /usr/local/bin/yt-dlp
 COPY server.js init.sql ./
 EXPOSE 3001

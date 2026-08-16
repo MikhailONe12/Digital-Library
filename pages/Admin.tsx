@@ -10,7 +10,7 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory } from '../services/db';
 import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -1225,6 +1225,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     } catch { /* writeRequest already raised a toast */ }
   };
 
+  const handleClearHistory = async (itemId?: string) => {
+    try { await clearJobHistory(itemId); await refreshJobs(); }
+    catch { /* writeRequest already raised a toast */ }
+  };
+
   const handleUnindex = async (itemId: string) => {
     if (!confirm(ta.scan.unindexConfirm)) return;
     try {
@@ -1575,6 +1580,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
             className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
           >
             <Video size={13} strokeWidth={3} /> {s.subsFromPlatform}
+          </button>
+          <button
+            onClick={() => handleClearHistory()}
+            className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+          >
+            <Trash2 size={13} strokeWidth={3} /> {s.clearHistory}
           </button>
           <button
             onClick={() => handleTranscribe('asr')}
@@ -3522,7 +3533,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                       <span className="text-[11px] font-black text-slate-800 dark:text-slate-100 truncate min-w-0 flex-1">{t.name}</span>
                                       {r?.state === 'indexed' && (
                                         <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums">
-                                          {num(r.pages || 0)} {s.pages} · {num(r.chunk_count || 0)} {s.indexChunks}
+                                          {num(r.pages || 0)} {r.method === 'subtitles' || r.method === 'asr' ? s.cues : s.pages}
+                                          {' · '}{num(r.chunk_count || 0)} {s.indexChunks}
                                           {r.quality !== null && ` · ${r.quality.toFixed(2)}`}
                                         </span>
                                       )}
@@ -3536,6 +3548,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                         transcript. Cheap one first, and each says
                                         what it costs, so the choice is informed
                                         rather than a coin toss. */}
+                                    {r?.state === 'indexed' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openPages(r)}
+                                        className="mt-2 px-3 py-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 transition-colors"
+                                      >
+                                        {s.indexPages}
+                                      </button>
+                                    )}
                                     {(t.kind === s.targetVideo || /\.(mp4|webm|mkv|mp3|m4a|m4b|ogg|oga|opus|wav)$/i.test(t.url.split(/[?#]/)[0])) && (
                                       <div className="flex flex-wrap gap-2 mt-2.5">
                                         {t.kind === s.targetVideo && (
@@ -3613,6 +3634,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                             if (!shown.length) return null;
                             return (
                               <div className="space-y-2 pt-1">
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleClearHistory(editingItem.id)}
+                                    className="text-[9px] font-black uppercase tracking-widest text-slate-400 hover:text-red-600 transition-colors"
+                                  >
+                                    {s.clearHistory}
+                                  </button>
+                                </div>
                                 {shown.map(j => (
                                   <div key={j.id} className="p-2.5 rounded-xl bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10">
                                     <div className="flex items-center gap-2 flex-wrap">

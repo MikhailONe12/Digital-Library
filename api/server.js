@@ -119,6 +119,13 @@ const initDb = async () => {
   ).catch(() => ({ rowCount: 0 }));
   if (requeued.rowCount) console.log(`DB: requeued ${requeued.rowCount} job(s) interrupted by a restart`);
 
+  // Finished work older than a month is history nobody reads; the running and
+  // queued rows are never touched.
+  await pool.query(
+    `DELETE FROM jobs WHERE state IN ('done','failed','cancelled')
+       AND COALESCE(finished_at, created_at) < NOW() - INTERVAL '30 days'`
+  ).catch(() => {/* housekeeping */});
+
   console.log('DB: schema initialized');
 };
 
@@ -2183,6 +2190,18 @@ const workerTick = async () => {
         WHERE id = $1 AND state <> 'cancelled'`,
       [job.id, clip(detail || null, 500)],
     );
+    // The same target just succeeded, so its earlier failures are no longer
+    // something anyone needs to act on. Leaving them on screen means the card
+    // shows a red error above a green result and the reader has to work out
+    // which one is current.
+    if (job.format_url) {
+      await pool.query(
+        `DELETE FROM jobs
+          WHERE id <> $1 AND item_id = $2 AND format_url = $3
+            AND state IN ('failed', 'cancelled')`,
+        [job.id, job.item_id, job.format_url],
+      ).catch(() => {/* tidying, never fatal */});
+    }
   } catch (e) {
     const message = clip(e?.message || String(e), 500);
     // Retry is the default because most failures here are transient — a busy
@@ -2545,6 +2564,22 @@ app.post('/api/admin/jobs/:id/:action', requireApiKey, async (req, res) => {
 });
 
 // Stop a whole batch at once — the point of batches being a thing.
+// Clear finished history — everything, or one material's. Running and queued
+// work is never touched: this is a tidy-up, not a stop button.
+app.delete('/api/admin/jobs/history', requireApiKey, async (req, res) => {
+  const itemId = typeof req.query.item === 'string' ? req.query.item : null;
+  try {
+    const { rowCount } = itemId
+      ? await pool.query(
+          `DELETE FROM jobs WHERE item_id = $1 AND state IN ('done','failed','cancelled')`, [itemId])
+      : await pool.query(
+          `DELETE FROM jobs WHERE state IN ('done','failed','cancelled')`);
+    res.json({ deleted: rowCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/admin/jobs/batch/:id/cancel', requireApiKey, async (req, res) => {
   const id = parseInt(req.params.id, 10);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid batch id' });

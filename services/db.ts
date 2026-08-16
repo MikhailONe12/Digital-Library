@@ -1021,6 +1021,16 @@ export const jobAction = async (id: number, action: 'cancel' | 'retry'): Promise
     `/api/admin/jobs/${id}/${action}`, { method: 'POST', headers: authHeaders() });
 };
 
+/** Clear finished job history — one material's, or all of it. */
+export const clearJobHistory = async (itemId?: string): Promise<number> => {
+  const qs = itemId ? `?item=${encodeURIComponent(itemId)}` : '';
+  const res = await writeRequest('Очистка истории задач', `/api/admin/jobs/history${qs}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  return (await res.json()).deleted || 0;
+};
+
 export const cancelBatch = async (batchId: number): Promise<void> => {
   await writeRequest('Отмена пачки', `/api/admin/jobs/batch/${batchId}/cancel`, {
     method: 'POST', headers: authHeaders(),

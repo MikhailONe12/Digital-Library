@@ -876,6 +876,65 @@ export const savePageText = async (
   });
 };
 
+// ── Job queue ───────────────────────────────────────────────────────────────
+
+export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface JobRow {
+  id: number;
+  batch_id: number | null;
+  kind: string;
+  item_id: string | null;
+  label: string | null;
+  state: JobState;
+  progress: number;
+  attempts: number;
+  max_attempts: number;
+  detail: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+}
+
+export interface JobTotals {
+  queued: number; running: number; done: number; failed: number; cancelled: number;
+}
+
+const EMPTY_JOB_TOTALS: JobTotals = { queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 };
+
+export const loadJobs = async (): Promise<{ jobs: JobRow[]; totals: JobTotals }> => {
+  try {
+    const res = await fetch('/api/admin/jobs', { headers: authHeaders() });
+    if (!res.ok) return { jobs: [], totals: EMPTY_JOB_TOTALS };
+    const data = await res.json();
+    return { jobs: data.jobs || [], totals: { ...EMPTY_JOB_TOTALS, ...(data.totals || {}) } };
+  } catch {
+    return { jobs: [], totals: EMPTY_JOB_TOTALS };
+  }
+};
+
+/** Queue a subtitle import for every uploaded .srt/.vtt with an obvious target. */
+export const queueSubtitles = async (itemId?: string): Promise<{ queued: number; skipped: string[] }> => {
+  const res = await writeRequest('Постановка задач', '/api/admin/jobs/subtitles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(itemId ? { itemId } : {}),
+  });
+  const data = await res.json();
+  return { queued: data.queued || 0, skipped: data.skipped || [] };
+};
+
+export const jobAction = async (id: number, action: 'cancel' | 'retry'): Promise<void> => {
+  await writeRequest(action === 'cancel' ? 'Отмена задачи' : 'Повтор задачи',
+    `/api/admin/jobs/${id}/${action}`, { method: 'POST', headers: authHeaders() });
+};
+
+export const cancelBatch = async (batchId: number): Promise<void> => {
+  await writeRequest('Отмена пачки', `/api/admin/jobs/batch/${batchId}/cancel`, {
+    method: 'POST', headers: authHeaders(),
+  });
+};
+
 // ── Analytics excludes (Telegram usernames + IPs not counted in stats) ──────
 
 const cleanUsername = (s: string): string =>

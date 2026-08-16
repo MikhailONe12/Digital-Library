@@ -68,6 +68,14 @@ const initDb = async () => {
     END $$;
   `).catch(e => console.warn('progress PK migration skipped:', e.message));
 
+  // document_text gained seconds when video arrived: a subtitle cue is stored
+  // exactly like a page, so the text viewer, the manual correction and the
+  // re-index protection all work on video without a second code path.
+  await pool.query(`
+    ALTER TABLE document_text ADD COLUMN IF NOT EXISTS second_start INT;
+    ALTER TABLE document_text ADD COLUMN IF NOT EXISTS second_end INT;
+  `).catch(e => console.warn('document_text seconds migration skipped:', e.message));
+
   // visit_logs.ip_hash — added after the table shipped, so existing databases
   // need the column too (CREATE TABLE IF NOT EXISTS won't add it).
   await pool.query(
@@ -96,6 +104,13 @@ const initDb = async () => {
     END $$;
   `).catch(e => console.warn('orphan ip_hash cleanup skipped:', e.message));
 
+  // A deploy kills whatever was running. The checkpoint stays, so requeueing is
+  // resuming, not restarting — that is the whole reason the queue is a table.
+  const requeued = await pool.query(
+    `UPDATE jobs SET state = 'queued', locked_by = NULL, locked_at = NULL WHERE state = 'running'`
+  ).catch(() => ({ rowCount: 0 }));
+  if (requeued.rowCount) console.log(`DB: requeued ${requeued.rowCount} job(s) interrupted by a restart`);
+
   console.log('DB: schema initialized');
 };
 
@@ -108,6 +123,7 @@ const initDbWithRetry = async (attempt = 1) => {
     const client = await pool.connect();
     client.release();
     await initDb();
+    startWorker();
   } catch (err) {
     const delay = Math.min(30_000, 2_000 * attempt);
     console.warn(`DB init attempt ${attempt} failed (${err.message}); retrying in ${delay}ms`);
@@ -413,6 +429,9 @@ const ALLOWED_EXTENSIONS = new Set([
   '.pdf', '.epub', '.mp4', '.webm', '.mkv',
   '.mp3', '.m4a', '.m4b', '.ogg', '.oga', '.opus', '.wav',
   '.fb2', '.djvu', '.djv',
+  // Subtitles. Ready-made ones beat anything we could recognise ourselves —
+  // free, instant and written by someone who knew the terminology.
+  '.srt', '.vtt',
 ]);
 
 const fileStorage = multer.diskStorage({
@@ -1760,6 +1779,7 @@ app.get('/api/search', requireApiKey, async (req, res) => {
                 websearch_to_tsquery('english'::regconfig, $1) AS tsq
        )
        SELECT c.item_id, c.format_url, c.page, c.page_label,
+              c.second_start, c.second_end,
               ts_rank(c.tsv, q.tsq) AS rank,
               ts_headline($3::regconfig, c.text, q.tsq,
                           'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
@@ -1773,6 +1793,405 @@ app.get('/api/search', requireApiKey, async (req, res) => {
       [q, limit, headlineConfig],
     );
     res.json({ results: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Subtitles ────────────────────────────────────────────────────────────────
+//
+// A ready-made subtitle file beats anything we could recognise ourselves: it is
+// free, instant, and written by someone who knew the terminology. So it is the
+// first of the three ways to get a transcript, ahead of downloading the audio
+// and far ahead of capturing playback.
+//
+// A cue is stored exactly like a page of a book — same table, same manual
+// correction, same protection from re-indexing. Only the position differs:
+// seconds instead of a page number.
+
+const srtTime = t => {
+  // 00:12:34,560 and 00:12:34.560 both appear in the wild; so does 12:34.560.
+  const m = t.trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{1,2})[.,](\d{1,3})$/);
+  if (!m) return null;
+  return (parseInt(m[1] || '0', 10) * 3600) + (parseInt(m[2], 10) * 60)
+       + parseInt(m[3], 10) + parseInt(m[4].padEnd(3, '0'), 10) / 1000;
+};
+
+/**
+ * Parse SRT or WebVTT into cues. One parser for both: they differ in a header,
+ * an optional cue id and the decimal separator, none of which is worth a second
+ * implementation.
+ */
+const parseSubtitles = raw => {
+  const text = raw.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const cues = [];
+  for (const blockText of text.split(/\n{2,}/)) {
+    const lines = blockText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (!lines.length) continue;
+    if (/^WEBVTT/i.test(lines[0])) continue;                  // file header
+    let i = lines.findIndex(l => l.includes('-->'));
+    if (i < 0) continue;                                      // NOTE / STYLE block
+    const [from, to] = lines[i].split('-->');
+    const start = srtTime(from);
+    // A cue can carry positioning after the end time: "…  --> 00:00:04.000 line:90%"
+    const end = srtTime((to || '').trim().split(/\s+/)[0] || '');
+    if (start === null || end === null) continue;
+    const body = lines.slice(i + 1)
+      .join(' ')
+      .replace(/<[^>]+>/g, '')                                // <i>, <c.colorE5E5E5>
+      .replace(/\{\\[^}]*\}/g, '')                            // ASS-style overrides
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (body) cues.push({ start, end, text: body });
+  }
+  // Auto-generated tracks repeat the previous line in every cue for a rolling
+  // effect; keeping them would make the same sentence match a dozen times.
+  return cues.filter((c, n) => n === 0 || c.text !== cues[n - 1].text);
+};
+
+// A chunk must cover one continuous stretch of speech, not merely a convenient
+// number of characters. Four short remarks spread across an hour would otherwise
+// become a single chunk stamped "from 0:04", and the search would send the
+// listener an hour away from what it found — while looking entirely correct.
+const CUE_GAP_SECONDS = 30;      // silence this long is a different moment
+const CHUNK_MAX_SECONDS = 180;   // and no chunk spans more than a few minutes
+
+/** Group cues into search-sized chunks, keeping the span each one covers. */
+const chunkCues = cues => {
+  const chunks = [];
+  let buf = [], len = 0;
+  const flush = () => {
+    if (!buf.length) return;
+    chunks.push({
+      text: buf.map(c => c.text).join(' '),
+      second_start: Math.floor(buf[0].start),
+      second_end: Math.ceil(buf[buf.length - 1].end),
+    });
+    buf = []; len = 0;
+  };
+  for (const cue of cues) {
+    const gap = buf.length ? cue.start - buf[buf.length - 1].end : 0;
+    const span = buf.length ? cue.end - buf[0].start : 0;
+    if (buf.length && (len + cue.text.length + 1 > CHUNK_MAX
+                       || gap > CUE_GAP_SECONDS
+                       || span > CHUNK_MAX_SECONDS)) flush();
+    buf.push(cue); len += cue.text.length + 1;
+    if (len >= CHUNK_TARGET) flush();
+  }
+  flush();
+  return chunks;
+};
+
+/**
+ * Store a transcript against a media target: cues as document_text rows,
+ * grouped chunks as search units.
+ *
+ * `target` is what the search result should open — the video link for a
+ * platform video, or the media file for one of ours.
+ */
+const storeTranscript = async (itemId, targetUrl, cues, source, sourceName) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const manual = new Set((await client.query(
+      `SELECT page FROM document_text WHERE item_id = $1 AND format_url = $2 AND source = 'manual'`,
+      [itemId, targetUrl],
+    )).rows.map(r => r.page));
+
+    await client.query(
+      `DELETE FROM document_text WHERE item_id = $1 AND format_url = $2 AND source <> 'manual'`,
+      [itemId, targetUrl],
+    );
+    await client.query('DELETE FROM chunks WHERE item_id = $1 AND format_url = $2', [itemId, targetUrl]);
+
+    for (let i = 0; i < cues.length; i++) {
+      const page = i + 1;                       // cue ordinal — the "page" of a video
+      if (manual.has(page)) continue;
+      const c = cues[i];
+      await client.query(
+        `INSERT INTO document_text
+           (item_id, format_url, page, page_label, source, text, chars, second_start, second_end)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (item_id, format_url, page) DO UPDATE
+           SET page_label = $4, source = $5, text = $6, chars = $7,
+               second_start = $8, second_end = $9, updated_at = NOW()`,
+        [itemId, targetUrl, page, formatSeconds(c.start), source, c.text,
+         scanCountChars(c.text), Math.floor(c.start), Math.ceil(c.end)],
+      );
+    }
+
+    // Chunks come from what is stored, so a corrected cue reaches the index.
+    const stored = (await client.query(
+      `SELECT text, second_start, second_end FROM document_text
+        WHERE item_id = $1 AND format_url = $2 ORDER BY page`,
+      [itemId, targetUrl],
+    )).rows;
+    const grouped = chunkCues(stored.map(r => ({
+      text: r.text, start: r.second_start ?? 0, end: r.second_end ?? 0,
+    })));
+
+    for (const g of grouped) {
+      await client.query(
+        `INSERT INTO chunks (item_id, format_url, text, second_start, second_end)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [itemId, targetUrl, g.text, g.second_start, g.second_end],
+      );
+    }
+
+    const chars = stored.reduce((n, r) => n + scanCountChars(r.text), 0);
+    await client.query(
+      `INSERT INTO index_status
+         (item_id, format_url, filename, state, method, pages, chars, chunk_count, quality, manual_pages, detail, indexed_at)
+       VALUES ($1,$2,$3,'indexed',$4,$5,$6,$7,$8,$9,$10, NOW())
+       ON CONFLICT (item_id, format_url) DO UPDATE SET
+         filename = $3, state = 'indexed', method = $4, pages = $5, chars = $6,
+         chunk_count = $7, quality = $8, manual_pages = $9, detail = $10, indexed_at = NOW()`,
+      [itemId, targetUrl, sourceName, source, stored.length, chars, grouped.length,
+       stored.length ? stored.reduce((sum, r) => sum + textQuality(r.text), 0) / stored.length : 0,
+       manual.size,
+       stored.length
+         ? `Расшифровка: ${stored.length} реплик, до ${formatSeconds(stored[stored.length - 1].second_end || 0)}`
+         : 'Расшифровка пуста'],
+    );
+    await client.query('COMMIT');
+    return { cues: stored.length, chunks: grouped.length };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
+const formatSeconds = total => {
+  const s = Math.max(0, Math.floor(total));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+};
+
+// ── Job queue ────────────────────────────────────────────────────────────────
+
+const WORKER_ID = `api-${process.pid}`;
+const JOB_POLL_MS = 2000;
+const JOB_HANDLERS = {};
+let jobBusy = false;
+
+const jobProgress = (id) => async (progress, checkpoint) => {
+  await pool.query(
+    'UPDATE jobs SET progress = $2, checkpoint = COALESCE($3::jsonb, checkpoint) WHERE id = $1',
+    [id, Math.max(0, Math.min(1, progress)), checkpoint ? JSON.stringify(checkpoint) : null],
+  ).catch(() => {/* progress is advisory; never fail a job over it */});
+};
+
+/** Cancellation is cooperative: long handlers check between segments. */
+const jobCancelled = async id => {
+  const { rows } = await pool.query('SELECT state FROM jobs WHERE id = $1', [id]);
+  return rows[0]?.state === 'cancelled';
+};
+
+const claimJob = async () => {
+  const { rows } = await pool.query(`
+    UPDATE jobs
+       SET state = 'running', attempts = attempts + 1, locked_by = $1,
+           locked_at = NOW(), started_at = COALESCE(started_at, NOW()), detail = NULL
+     WHERE id = (SELECT id FROM jobs
+                  WHERE state = 'queued'
+                  ORDER BY priority, id
+                  FOR UPDATE SKIP LOCKED
+                  LIMIT 1)
+     RETURNING *`, [WORKER_ID]);
+  return rows[0] || null;
+};
+
+const workerTick = async () => {
+  if (jobBusy) return;
+  let job;
+  try { job = await claimJob(); } catch { return; }
+  if (!job) return;
+  jobBusy = true;
+  try {
+    const handler = JOB_HANDLERS[job.kind];
+    if (!handler) throw new Error(`Неизвестный тип задачи: ${job.kind}`);
+    const detail = await handler(job, {
+      report: jobProgress(job.id),
+      cancelled: () => jobCancelled(job.id),
+    });
+    await pool.query(
+      `UPDATE jobs SET state = 'done', progress = 1, detail = $2, finished_at = NOW(),
+                       locked_by = NULL, locked_at = NULL
+        WHERE id = $1 AND state <> 'cancelled'`,
+      [job.id, clip(detail || null, 500)],
+    );
+  } catch (e) {
+    const message = clip(e?.message || String(e), 500);
+    // Retry is the default because most failures here are transient — a busy
+    // CPU, a platform hiccup. A job that has burned its attempts stops and says
+    // why, rather than looping.
+    await pool.query(
+      `UPDATE jobs
+          SET state = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
+              detail = $2, locked_by = NULL, locked_at = NULL,
+              finished_at = CASE WHEN attempts >= max_attempts THEN NOW() ELSE NULL END
+        WHERE id = $1 AND state <> 'cancelled'`,
+      [job.id, message],
+    ).catch(() => {});
+    console.error(`job ${job.id} (${job.kind}) failed:`, message);
+  } finally {
+    jobBusy = false;
+  }
+};
+
+const startWorker = () => {
+  setInterval(() => { workerTick(); }, JOB_POLL_MS).unref?.();
+};
+
+// ── Job: import a subtitle file ──────────────────────────────────────────────
+
+JOB_HANDLERS.subtitles = async (job, ctx) => {
+  const { itemId, targetUrl, filename } = job.payload || {};
+  if (!itemId || !targetUrl || !filename) throw new Error('Задача без параметров');
+  const filePath = path.join(CONTENT_DIR, itemId, filename);
+  if (!fs.existsSync(filePath)) throw new Error('Файл субтитров не найден');
+
+  await ctx.report(0.1);
+  const cues = parseSubtitles(fs.readFileSync(filePath, 'utf8'));
+  if (!cues.length) throw new Error('В файле субтитров нет ни одной реплики');
+  if (await ctx.cancelled()) return 'Отменено';
+
+  await ctx.report(0.5);
+  const { cues: stored, chunks } = await storeTranscript(itemId, targetUrl, cues, 'subtitles', filename);
+  return `${stored} реплик, ${chunks} поисковых кусков`;
+};
+
+/**
+ * Which media a subtitle file belongs to.
+ *
+ * Guessing is worse than asking: a file named ru-a1b2c3.srt says nothing about
+ * which of three lectures it transcribes. So the rule is deliberately narrow —
+ * one obvious candidate or none — and an ambiguous item is reported rather than
+ * silently attached to the wrong video.
+ */
+const subtitleTarget = item => {
+  const videos = (Array.isArray(item.videos) ? item.videos : [])
+    .filter(v => typeof v?.url === 'string' && v.url.trim());
+  const media = (Array.isArray(item.formats) ? item.formats : []).filter(f => {
+    const url = typeof f?.url === 'string' ? f.url.trim() : '';
+    return url && !f.external && SCAN_MEDIA_EXT.has(path.extname(url.split(/[?#]/)[0]).toLowerCase());
+  });
+  const candidates = [...videos.map(v => v.url.trim()), ...media.map(f => f.url.trim())];
+  if (candidates.length === 1) return { url: candidates[0] };
+  return { error: candidates.length ? 'У материала несколько видео — непонятно, к какому субтитры' : 'В материале нет видео или аудио' };
+};
+
+// Queue subtitle imports for every uploaded .srt/.vtt that has an obvious target.
+app.post('/api/admin/jobs/subtitles', requireApiKey, async (req, res) => {
+  const onlyItem = typeof req.body?.itemId === 'string' ? req.body.itemId : null;
+  try {
+    const { rows } = onlyItem
+      ? await pool.query('SELECT id, data FROM items WHERE id = $1', [onlyItem])
+      : await pool.query('SELECT id, data FROM items ORDER BY seq');
+
+    const planned = [];
+    const skipped = [];
+    for (const row of rows) {
+      const item = row.data || {};
+      const subs = (Array.isArray(item.formats) ? item.formats : []).filter(f => {
+        const url = typeof f?.url === 'string' ? f.url.trim() : '';
+        return url && !f.external && /\.(srt|vtt)$/i.test(url.split(/[?#]/)[0]);
+      });
+      if (!subs.length) continue;
+      const target = subtitleTarget(item);
+      const title = item.title?.ru || item.title?.en || item.title?.es || row.id;
+      if (target.error) { skipped.push(`${title}: ${target.error}`); continue; }
+      for (const sub of subs) {
+        const filename = scanFilenameFromUrl(row.id, sub.url.trim());
+        if (!filename) { skipped.push(`${title}: файл субтитров не на нашем сервере`); continue; }
+        planned.push({ itemId: row.id, targetUrl: target.url, filename, label: `${title} · ${sub.name || filename}` });
+      }
+    }
+
+    if (!planned.length) return res.json({ queued: 0, skipped });
+
+    const batch = (await pool.query(
+      `INSERT INTO job_batches (kind, title) VALUES ('subtitles', $1) RETURNING id`,
+      [`Субтитры · ${planned.length}`],
+    )).rows[0];
+
+    for (const p of planned) {
+      await pool.query(
+        `INSERT INTO jobs (batch_id, kind, item_id, format_url, label, payload)
+         VALUES ($1, 'subtitles', $2, $3, $4, $5)`,
+        [batch.id, p.itemId, p.targetUrl, p.label,
+         JSON.stringify({ itemId: p.itemId, targetUrl: p.targetUrl, filename: p.filename })],
+      );
+    }
+    res.json({ queued: planned.length, batchId: batch.id, skipped });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/admin/jobs', requireApiKey, async (req, res) => {
+  try {
+    const jobs = (await pool.query(`
+      SELECT id, batch_id, kind, item_id, label, state, progress, attempts, max_attempts,
+             detail, created_at, started_at, finished_at
+        FROM jobs
+       ORDER BY CASE state WHEN 'running' THEN 1 WHEN 'queued' THEN 2 WHEN 'failed' THEN 3 ELSE 4 END,
+                id DESC
+       LIMIT 200
+    `)).rows;
+    const totals = (await pool.query(`
+      SELECT COUNT(*) FILTER (WHERE state = 'queued')::int    AS queued,
+             COUNT(*) FILTER (WHERE state = 'running')::int   AS running,
+             COUNT(*) FILTER (WHERE state = 'done')::int      AS done,
+             COUNT(*) FILTER (WHERE state = 'failed')::int    AS failed,
+             COUNT(*) FILTER (WHERE state = 'cancelled')::int AS cancelled
+        FROM jobs
+    `)).rows[0];
+    res.json({ jobs, totals });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/jobs/:id/:action', requireApiKey, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const { action } = req.params;
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid job id' });
+  try {
+    if (action === 'cancel') {
+      await pool.query(
+        `UPDATE jobs SET state = 'cancelled', finished_at = NOW() WHERE id = $1 AND state IN ('queued','running')`,
+        [id],
+      );
+    } else if (action === 'retry') {
+      await pool.query(
+        `UPDATE jobs SET state = 'queued', attempts = 0, detail = NULL, finished_at = NULL
+          WHERE id = $1 AND state IN ('failed','cancelled')`,
+        [id],
+      );
+    } else {
+      return res.status(400).json({ error: 'Unknown action' });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Stop a whole batch at once — the point of batches being a thing.
+app.post('/api/admin/jobs/batch/:id/cancel', requireApiKey, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid batch id' });
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE jobs SET state = 'cancelled', finished_at = NOW()
+        WHERE batch_id = $1 AND state IN ('queued','running')`,
+      [id],
+    );
+    res.json({ cancelled: rowCount });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -261,3 +261,48 @@ CREATE TABLE IF NOT EXISTS index_status (
 );
 
 CREATE INDEX IF NOT EXISTS idx_index_status_state ON index_status(state);
+
+-- ── Background jobs ─────────────────────────────────────────────────────────
+--
+-- Recognising a lecture takes hours on a CPU, and capturing one that cannot be
+-- downloaded takes as long as the lecture itself. Two things follow, and both
+-- are why this is a table and not a variable in the API process:
+--
+--   a deploy restarts the container, and in-memory state dies with it;
+--   a job that dies at minute 70 of 90 must not start again from zero.
+--
+-- Postgres is the queue — claimed with FOR UPDATE SKIP LOCKED. No Redis, no
+-- broker; at this size they would be a third moving part for nothing.
+CREATE TABLE IF NOT EXISTS job_batches (
+  id         BIGSERIAL   PRIMARY KEY,
+  kind       TEXT        NOT NULL,
+  title      TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id           BIGSERIAL   PRIMARY KEY,
+  batch_id     BIGINT      REFERENCES job_batches(id) ON DELETE CASCADE,
+  kind         TEXT        NOT NULL,   -- 'subtitles' | 'asr' | 'capture' | 'ocr'
+  item_id      TEXT,
+  format_url   TEXT,
+  label        TEXT,                   -- what to show a human
+  payload      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+  state        TEXT        NOT NULL DEFAULT 'queued',  -- queued|running|done|failed|cancelled
+  priority     INT         NOT NULL DEFAULT 100,
+  attempts     INT         NOT NULL DEFAULT 0,
+  max_attempts INT         NOT NULL DEFAULT 3,
+  progress     REAL        NOT NULL DEFAULT 0,         -- 0..1
+  -- Where the job got to. A capture stores the second it reached, so the next
+  -- attempt seeks the player there instead of listening to the first hour again.
+  checkpoint   JSONB,
+  detail       TEXT,
+  locked_by    TEXT,
+  locked_at    TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  started_at   TIMESTAMPTZ,
+  finished_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority, id);
+CREATE INDEX IF NOT EXISTS idx_jobs_batch ON jobs(batch_id);

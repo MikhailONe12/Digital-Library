@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1078,6 +1078,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   // ── Index (extracted text and search chunks) ─────────────────────────────
   const [openCheck, setOpenCheck] = useState(false);
   const [openIndex, setOpenIndex] = useState(true);
+  const [openQueue, setOpenQueue] = useState(false);
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [jobTotals, setJobTotals] = useState<JobTotals>({ queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 });
+  const jobsActiveRef = useRef(false);
   const [indexReport, setIndexReport] = useState<IndexReport | null>(null);
   const indexRunningRef = useRef(false);
   const [pagesFor, setPagesFor] = useState<IndexRow | null>(null);
@@ -1102,6 +1106,47 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     const id = setInterval(() => { if (indexRunningRef.current) tick(); }, 2000);
     return () => { cancelled = true; clearInterval(id); };
   }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab !== 'scan' || !isAdmin) return;
+    let cancelled = false;
+    const tick = async () => {
+      const { jobs: rows, totals } = await loadJobs();
+      if (cancelled) return;
+      // Poll only while something is actually moving.
+      jobsActiveRef.current = totals.queued + totals.running > 0;
+      setJobs(rows);
+      setJobTotals(totals);
+    };
+    tick();
+    const id = setInterval(() => { if (jobsActiveRef.current) tick(); }, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeTab, isAdmin]);
+
+  const refreshJobs = async () => {
+    const { jobs: rows, totals } = await loadJobs();
+    jobsActiveRef.current = totals.queued + totals.running > 0;
+    setJobs(rows);
+    setJobTotals(totals);
+  };
+
+  const handleQueueSubtitles = async () => {
+    try {
+      const { queued, skipped } = await queueSubtitles();
+      jobsActiveRef.current = true;
+      await refreshJobs();
+      const s = ta.scan;
+      toast.success(skipped.length
+        ? `${s.queueQueuedN}: ${queued}. ${s.queueSkipped}: ${skipped.length}`
+        : `${s.queueQueuedN}: ${queued}`);
+      if (skipped.length) skipped.forEach((line: string) => toast.error(line));
+    } catch { /* writeRequest already raised a toast */ }
+  };
+
+  const handleJobAction = async (id: number, action: 'cancel' | 'retry') => {
+    try { await jobAction(id, action); jobsActiveRef.current = true; await refreshJobs(); }
+    catch { /* writeRequest already raised a toast */ }
+  };
 
   const refreshIndex = async () => {
     const report = await loadIndexReport();
@@ -1364,6 +1409,98 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
         )}
 
         <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed mt-4 max-w-3xl">{s.indexQualityHint}</p>
+      </Panel>
+    );
+  };
+
+  const renderQueuePanel = (s: any, num: (n: number) => string) => {
+    const active = jobTotals.queued + jobTotals.running;
+    const badge = active
+      ? `${num(active)} ${s.queueRunning}`
+      : jobTotals.failed ? `${num(jobTotals.failed)} ${s.queueFailed}` : undefined;
+    const stateStyles: Record<string, string> = {
+      running:   'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+      queued:    'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
+      done:      'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25',
+      failed:    'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+      cancelled: 'bg-slate-100 text-slate-400 border-slate-200 dark:bg-white/5 dark:text-slate-500 dark:border-white/10',
+    };
+    const stateLabel: Record<string, string> = {
+      running: s.queueRunning, queued: s.queueQueued, done: s.queueDone,
+      failed: s.queueFailed, cancelled: s.queueCancelled,
+    };
+
+    return (
+      <Panel
+        icon={<RefreshCw size={18} strokeWidth={2.5} />}
+        title={s.queueTitle}
+        subtitle={s.queueSub}
+        badge={badge}
+        open={openQueue}
+        onToggle={() => setOpenQueue(v => !v)}
+      >
+        <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-6">{s.queueIntro}</p>
+
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <button
+            onClick={handleQueueSubtitles}
+            className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+          >
+            <Play size={13} strokeWidth={3} /> {s.queueSubtitles}
+          </button>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums">
+            {num(jobTotals.queued)} {s.queueQueued} · {num(jobTotals.running)} {s.queueRunning} ·{' '}
+            {num(jobTotals.done)} {s.queueDone}
+            {jobTotals.failed > 0 && <span className="text-red-600"> · {num(jobTotals.failed)} {s.queueFailed}</span>}
+          </p>
+        </div>
+
+        {jobs.length === 0 ? (
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-6 text-center">{s.queueEmpty}</p>
+        ) : (
+          <div className="space-y-2">
+            {jobs.slice(0, 40).map(j => (
+              <div key={j.id} className="p-3 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span className={`shrink-0 w-[6.5rem] truncate text-center px-2 py-1 rounded-lg border text-[8px] font-black uppercase tracking-widest ${stateStyles[j.state]}`}>
+                    {stateLabel[j.state] || j.state}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-black text-slate-800 dark:text-slate-100 truncate">{j.label || j.kind}</p>
+                    <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 truncate">
+                      #{j.id} · {j.kind}
+                      {j.attempts > 1 && ` · ${s.queueAttempt} ${j.attempts}/${j.max_attempts}`}
+                    </p>
+                  </div>
+                  {j.state === 'running' && (
+                    <div className="w-28 h-1.5 bg-slate-200 dark:bg-white/10 rounded-full overflow-hidden shrink-0">
+                      <div className="h-full bg-red-600 rounded-full transition-all duration-500" style={{ width: `${Math.round(j.progress * 100)}%` }} />
+                    </div>
+                  )}
+                  <div className="flex gap-2 shrink-0">
+                    {(j.state === 'queued' || j.state === 'running') && (
+                      <button onClick={() => handleJobAction(j.id, 'cancel')}
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300 hover:border-red-300 hover:text-red-600 transition-colors">
+                        {s.queueCancel}
+                      </button>
+                    )}
+                    {(j.state === 'failed' || j.state === 'cancelled') && (
+                      <button onClick={() => handleJobAction(j.id, 'retry')}
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300 hover:border-red-300 hover:text-red-600 transition-colors">
+                        {s.queueRetry}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {j.detail && (
+                  <p className={`text-[9px] font-bold leading-snug mt-2 break-words ${j.state === 'failed' ? 'text-red-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                    {j.detail}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </Panel>
     );
   };
@@ -1860,6 +1997,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                   </div>
                 )}
               </Panel>
+
+              {renderQueuePanel(s, num)}
 
               {renderPagesModal(s, num)}
             </div>

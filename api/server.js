@@ -68,6 +68,14 @@ const initDb = async () => {
     END $$;
   `).catch(e => console.warn('progress PK migration skipped:', e.message));
 
+  // Everything produced from a source we do not host is flagged, so a later
+  // decision to drop external material is one query rather than an audit.
+  await pool.query(`
+    ALTER TABLE document_text ADD COLUMN IF NOT EXISTS external BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE chunks        ADD COLUMN IF NOT EXISTS external BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE index_status  ADD COLUMN IF NOT EXISTS external BOOLEAN NOT NULL DEFAULT false;
+  `).catch(e => console.warn('external flag migration skipped:', e.message));
+
   // document_text gained seconds when video arrived: a subtitle cue is stored
   // exactly like a page, so the text viewer, the manual correction and the
   // re-index protection all work on video without a second code path.
@@ -1425,6 +1433,46 @@ const extractEpubText = async filePath => {
   }
 };
 
+// The file is fetched only to be read. It is deleted the moment the text is
+// out, so the risk of holding somebody else's document does not accumulate on
+// our disk — the text stays, the copy does not.
+const EXTERNAL_MAX_BYTES = 80 * 1024 * 1024;
+const EXTERNAL_TIMEOUT_MS = 120_000;
+
+const fetchExternalDocument = async url => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), EXTERNAL_TIMEOUT_MS);
+  try {
+    const { response, error } = await fetchWithSsrfGuard(url, controller.signal, {
+      'User-Agent': 'OptionsData-Library/1.0 (indexing)',
+      Accept: 'application/pdf,application/epub+zip,*/*',
+    });
+    if (error) throw new Error(`Не удалось загрузить: ${error}`);
+    if (!response.ok) throw new Error(`Источник ответил ${response.status}`);
+
+    const declared = parseInt(response.headers.get('content-length') || '0', 10);
+    if (declared > EXTERNAL_MAX_BYTES) throw new Error('Файл слишком большой');
+
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > EXTERNAL_MAX_BYTES) throw new Error('Файл слишком большой');
+    if (!buf.length) throw new Error('Источник вернул пустой файл');
+
+    // Trust the bytes, not the URL: a link ending in .pdf that answers with an
+    // HTML "please log in" page must not be indexed as if it were the paper.
+    const head = buf.subarray(0, 5).toString('latin1');
+    const type = head === '%PDF-' ? '.pdf'
+      : buf.subarray(0, 2).toString('latin1') === 'PK' ? '.epub'
+      : null;
+    if (!type) throw new Error('По ссылке не PDF и не EPUB — возможно, страница входа');
+
+    const file = path.join(os.tmpdir(), `ext-${randomBytes(8).toString('hex')}${type}`);
+    fs.writeFileSync(file, buf);
+    return { file, type, bytes: buf.length };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const indexJob = {
   running: false, startedAt: null, finishedAt: null,
   total: 0, done: 0, current: '', error: null, stopRequested: false,
@@ -1434,19 +1482,19 @@ const indexJobView = () => ({ ...indexJob });
 
 // Chunks go in batched: a 300-page book yields ~1000 of them, and a thousand
 // round trips is the difference between a second and a minute.
-const insertChunks = async (client, itemId, formatUrl, rows) => {
+const insertChunks = async (client, itemId, formatUrl, rows, external = false) => {
   const BATCH = 100;
   for (let i = 0; i < rows.length; i += BATCH) {
     const slice = rows.slice(i, i + BATCH);
     const values = [];
     const params = [];
     slice.forEach((r, n) => {
-      const b = n * 6;
-      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6})`);
-      params.push(itemId, formatUrl, r.page, r.pageLabel, r.heading, r.text);
+      const b = n * 7;
+      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7})`);
+      params.push(itemId, formatUrl, r.page, r.pageLabel, r.heading, r.text, external);
     });
     await client.query(
-      `INSERT INTO chunks (item_id, format_url, page, page_label, heading, text)
+      `INSERT INTO chunks (item_id, format_url, page, page_label, heading, text, external)
        VALUES ${values.join(',')}`,
       params,
     );
@@ -1462,16 +1510,28 @@ const insertChunks = async (client, itemId, formatUrl, rows) => {
  */
 const indexOneFile = async (itemId, format) => {
   const url = format.url.trim();
-  if (format.external) return { state: 'skipped', detail: 'Внешний файл — не индексируется' };
+  const ourFilename = scanFilenameFromUrl(itemId, url);
+  // Anything not on our disk is fetched, read and thrown away. That covers both
+  // a file flagged external and a material catalogued as a bare source link.
+  const isExternal = format.external === true || !ourFilename;
 
-  const filename = scanFilenameFromUrl(itemId, url);
-  if (!filename) return { state: 'skipped', detail: 'Ссылка не на наш сервер' };
-
-  const filePath = path.join(CONTENT_DIR, itemId, filename);
-  if (!fs.existsSync(filePath)) return { state: 'failed', filename, detail: 'Файла нет на диске' };
-
-  const ext = path.extname(filename).toLowerCase();
-  if (SCAN_MEDIA_EXT.has(ext)) return { state: 'skipped', filename, detail: 'Аудио и видео — шаг с субтитрами' };
+  let filePath, filename, ext, temporary = false;
+  if (isExternal) {
+    let got;
+    try {
+      got = await fetchExternalDocument(url);
+    } catch (e) {
+      return { state: 'failed', external: true, detail: clip(e?.message || String(e), 300) };
+    }
+    filePath = got.file; ext = got.type; temporary = true;
+    filename = decodeURIComponent((url.split('/').pop() || '').split(/[?#]/)[0]).slice(0, 120) || `external${ext}`;
+  } else {
+    filename = ourFilename;
+    filePath = path.join(CONTENT_DIR, itemId, filename);
+    if (!fs.existsSync(filePath)) return { state: 'failed', filename, detail: 'Файла нет на диске' };
+    ext = path.extname(filename).toLowerCase();
+    if (SCAN_MEDIA_EXT.has(ext)) return { state: 'skipped', filename, detail: 'Аудио и видео — шаг с субтитрами' };
+  }
 
   let pages, method, labels = { labels: [], confident: false, offset: null };
   try {
@@ -1486,7 +1546,10 @@ const indexOneFile = async (itemId, format) => {
       return { state: 'skipped', filename, detail: `Формат ${ext} не извлекаем` };
     }
   } catch (e) {
-    return { state: 'failed', filename, detail: clip(e?.message || String(e), 300) };
+    return { state: 'failed', external: isExternal, filename, detail: clip(e?.message || String(e), 300) };
+  } finally {
+    // The copy has served its only purpose the moment the text is out.
+    if (temporary) { try { fs.unlinkSync(filePath); } catch { /* already gone */ } }
   }
 
   const client = await pool.connect();
@@ -1513,11 +1576,11 @@ const indexOneFile = async (itemId, format) => {
       const text = pages[i];
       if (!text.trim()) continue;
       await client.query(
-        `INSERT INTO document_text (item_id, format_url, page, page_label, source, text, chars)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `INSERT INTO document_text (item_id, format_url, page, page_label, source, text, chars, external)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          ON CONFLICT (item_id, format_url, page) DO UPDATE
-           SET page_label = $4, source = $5, text = $6, chars = $7, updated_at = NOW()`,
-        [itemId, url, page, labels.labels[i] || null, method, text, scanCountChars(text)],
+           SET page_label = $4, source = $5, text = $6, chars = $7, external = $8, updated_at = NOW()`,
+        [itemId, url, page, labels.labels[i] || null, method, text, scanCountChars(text), isExternal],
       );
     }
 
@@ -1537,12 +1600,15 @@ const indexOneFile = async (itemId, format) => {
         chunkRows.push({ page: row.page, pageLabel: row.page_label, heading: null, text });
       }
     }
-    await insertChunks(client, itemId, url, chunkRows);
+    await insertChunks(client, itemId, url, chunkRows, isExternal);
 
     const quality = stored.length
       ? stored.reduce((sum, r) => sum + textQuality(r.text), 0) / stored.length
       : 0;
 
+    const externalNote = isExternal
+      ? 'Внешний источник: файл скачан для индексации и удалён, кнопка ведёт к источнику. '
+      : '';
     const detail = method === 'pdftotext' && !labels.confident
       ? 'Напечатанные номера страниц не определились — показывается номер страницы файла'
       : method === 'epub'
@@ -1551,13 +1617,14 @@ const indexOneFile = async (itemId, format) => {
 
     await client.query(
       `INSERT INTO index_status
-         (item_id, format_url, filename, state, method, pages, chars, chunk_count, quality, manual_pages, detail, indexed_at)
-       VALUES ($1,$2,$3,'indexed',$4,$5,$6,$7,$8,$9,$10, NOW())
+         (item_id, format_url, filename, state, method, pages, chars, chunk_count, quality, manual_pages, detail, external, indexed_at)
+       VALUES ($1,$2,$3,'indexed',$4,$5,$6,$7,$8,$9,$10,$11, NOW())
        ON CONFLICT (item_id, format_url) DO UPDATE SET
          filename = $3, state = 'indexed', method = $4, pages = $5, chars = $6,
-         chunk_count = $7, quality = $8, manual_pages = $9, detail = $10, indexed_at = NOW()`,
+         chunk_count = $7, quality = $8, manual_pages = $9, detail = $10,
+         external = $11, indexed_at = NOW()`,
       [itemId, url, filename, method, stored.length, chars, chunkRows.length,
-       quality, manual.size, detail],
+       quality, manual.size, (externalNote + (detail || '')).trim() || null, isExternal],
     );
 
     await client.query('COMMIT');
@@ -1584,10 +1651,17 @@ const runIndex = async (onlyItemId = null) => {
     for (const row of rows) {
       const item = row.data || {};
       const title = item.title?.ru || item.title?.en || item.title?.es || row.id;
-      for (const format of Array.isArray(item.formats) ? item.formats : []) {
-        if (typeof format?.url === 'string' && format.url.trim()) {
-          targets.push({ itemId: row.id, title, format });
-        }
+      const formats = (Array.isArray(item.formats) ? item.formats : [])
+        .filter(f => typeof f?.url === 'string' && f.url.trim());
+      for (const format of formats) targets.push({ itemId: row.id, title, format });
+      // Only when nothing else stands in for the material — on a hosted PDF the
+      // source link is attribution, not a second thing to index.
+      const sourceUrl = typeof item.source?.url === 'string' ? item.source.url.trim() : '';
+      if (!formats.length && sourceUrl) {
+        targets.push({
+          itemId: row.id, title,
+          format: { url: sourceUrl, name: item.source?.name || 'источник', external: true },
+        });
       }
     }
     indexJob.total = targets.length;
@@ -1636,7 +1710,8 @@ app.get('/api/admin/index', requireApiKey, async (req, res) => {
   try {
     const rows = (await pool.query(`
       SELECT s.item_id, s.format_url, s.filename, s.state, s.method, s.pages,
-             s.chars, s.chunk_count, s.quality, s.manual_pages, s.detail, s.indexed_at,
+             s.chars, s.chunk_count, s.quality, s.manual_pages, s.detail,
+             s.external, s.indexed_at,
              i.data->'title' AS title
         FROM index_status s
         LEFT JOIN items i ON i.id = s.item_id
@@ -1658,12 +1733,23 @@ app.get('/api/admin/index', requireApiKey, async (req, res) => {
 
     // How many files are indexable at all, so "12 of 21" is answerable.
     const indexable = (await pool.query(`
-      SELECT COUNT(*)::int AS n
-        FROM items i, jsonb_array_elements(
-               CASE WHEN jsonb_typeof(i.data->'formats') = 'array'
-                    THEN i.data->'formats' ELSE '[]'::jsonb END) f
-       WHERE COALESCE(f->>'external', 'false') <> 'true'
-         AND f->>'url' LIKE '%/content/%'
+      WITH files AS (
+        SELECT i.id, f->>'url' AS url
+          FROM items i, jsonb_array_elements(
+                 CASE WHEN jsonb_typeof(i.data->'formats') = 'array'
+                      THEN i.data->'formats' ELSE '[]'::jsonb END) f
+         WHERE COALESCE(f->>'url', '') <> ''
+      ), sources AS (
+        -- A material whose only pointer is a source link is indexed too: the
+        -- file is fetched, read and thrown away.
+        SELECT i.id
+          FROM items i
+         WHERE COALESCE(i.data->'source'->>'url', '') <> ''
+           AND NOT EXISTS (SELECT 1 FROM files WHERE files.id = i.id)
+      )
+      SELECT (SELECT COUNT(*) FROM files
+               WHERE url NOT LIKE '%.srt' AND url NOT LIKE '%.vtt')::int
+           + (SELECT COUNT(*) FROM sources)::int AS n
     `)).rows[0]?.n || 0;
 
     res.json({
@@ -1673,6 +1759,25 @@ app.get('/api/admin/index', requireApiKey, async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Drop everything produced from sources we do not host. The point of flagging
+// them at index time: reversing that decision is one query, not an audit.
+app.post('/api/admin/index/purge-external', requireApiKey, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const chunks = await client.query('DELETE FROM chunks WHERE external');
+    await client.query('DELETE FROM document_text WHERE external');
+    const files = await client.query('DELETE FROM index_status WHERE external');
+    await client.query('COMMIT');
+    res.json({ files: files.rowCount, chunks: chunks.rowCount });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
   }
 });
 

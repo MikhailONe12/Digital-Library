@@ -2976,14 +2976,56 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                   <button onClick={handleAddFormat} className="text-[9px] font-black uppercase bg-red-50 text-red-600 px-3 py-1.5 rounded-xl border border-red-100 hover:bg-red-100 transition-colors">{ta.addFile}</button>
                 </div>
                 <div className="space-y-3">
-                  {editingItem.formats && editingItem.formats.map((f) => (
+                  {editingItem.formats && editingItem.formats.map((f) => {
+                  // The index row for this exact file, so the state is answered
+                  // where the file is edited rather than only in the list.
+                  const fileIndex = (indexReport?.rows || []).find(
+                    r => r.item_id === editingItem.id && r.format_url === (f.url || '').trim(),
+                  );
+                  return (
                     <div key={f.id} className="relative p-3 pl-9 bg-slate-50 rounded-2xl border border-slate-100">
                       <button
                         type="button"
                         onClick={() => { if (!f.url) handleRemoveFormat(f.id); }}
                         disabled={!!f.url}
                         title={f.url ? ta.fileUploadedHint : ta.removeBlock}
-                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 dark:text-slate-600 hover:text-red-500'}`}> <X size={14} /> </button> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.nameLabel}</label> <input placeholder="PDF / EPUB / …" className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" value={f.name} onChange={e => handleUpdateFormat(f.id,'name', e.target.value)} /> </div> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.langLabel}</label> <select className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" value={f.language ||'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}> <option value="ru">RU</option> <option value="en">EN</option> <option value="es">ES</option> <option value="it">IT</option> <option value="fr">FR</option> <option value="de">DE</option> </select> </div> <div className="col-span-2"> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.fileUrl}</label> <div className="flex gap-1"> <input placeholder="https://..." className="flex-1 min-w-0 bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" value={f.url} onChange={e => handleUpdateFormatUrl(f.id, e.target.value)} /> <button type="button" onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }} disabled={uploadState !== null || !!stagedContentFile || !!f.external} title={ta.chooseFile} className="px-2 bg-slate-100 dark:bg-white/[0.06] rounded-lg text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"> <Upload size={12} /> </button> </div>
+                        className={`absolute top-3 left-2 p-1 ${f.url ? 'text-slate-200 cursor-not-allowed' : 'text-slate-300 dark:text-slate-600 hover:text-red-500'}`}> <X size={14} /> </button>
+                      {f.url && (
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className={`px-2 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest
+                            ${!fileIndex
+                              ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'
+                              : fileIndex.state === 'indexed'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25'
+                                : fileIndex.state === 'failed'
+                                  ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25'
+                                  : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'}`}>
+                            {!fileIndex ? ta.scan.cardNotIndexed
+                              : fileIndex.state === 'indexed' ? ta.scan.indexStateIndexed
+                              : fileIndex.state === 'failed' ? ta.scan.indexStateFailed
+                              : ta.scan.indexStateSkipped}
+                          </span>
+                          {fileIndex?.state === 'indexed' && (
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums">
+                              {fileIndex.pages || 0} {ta.scan.pages} · {fileIndex.chunk_count || 0} {ta.scan.indexChunks}
+                              {fileIndex.quality !== null && ` · ${ta.scan.indexQuality} ${fileIndex.quality.toFixed(2)}`}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleIndexRun(editingItem.id)}
+                            disabled={indexReport?.job?.running}
+                            className="ml-auto px-3 py-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300 hover:border-red-300 hover:text-red-600 disabled:opacity-40 transition-colors"
+                          >
+                            {ta.scan.cardReindex}
+                          </button>
+                          {fileIndex?.detail && (
+                            <p className={`w-full text-[8px] font-bold leading-snug break-words ${fileIndex.state === 'failed' ? 'text-red-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                              {fileIndex.detail}
+                            </p>
+                          )}
+                        </div>
+                      )} <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.nameLabel}</label> <input placeholder="PDF / EPUB / …" className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" value={f.name} onChange={e => handleUpdateFormat(f.id,'name', e.target.value)} /> </div> <div> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.langLabel}</label> <select className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" value={f.language ||'ru'} onChange={e => handleUpdateFormat(f.id, 'language', e.target.value as any)}> <option value="ru">RU</option> <option value="en">EN</option> <option value="es">ES</option> <option value="it">IT</option> <option value="fr">FR</option> <option value="de">DE</option> </select> </div> <div className="col-span-2"> <label className="text-[7px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.fileUrl}</label> <div className="flex gap-1"> <input placeholder="https://..." className="flex-1 min-w-0 bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" value={f.url} onChange={e => handleUpdateFormatUrl(f.id, e.target.value)} /> <button type="button" onClick={() => { uploadingFormatId.current = f.id; fileInputRef.current?.click(); }} disabled={uploadState !== null || !!stagedContentFile || !!f.external} title={ta.chooseFile} className="px-2 bg-slate-100 dark:bg-white/[0.06] rounded-lg text-slate-500 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors disabled:opacity-40 shrink-0"> <Upload size={12} /> </button> </div>
                           {/* External-source switch. On = we only ever link to
                               this file; uploading is disabled so nothing lands
                               on our disk by accident. */}
@@ -3022,7 +3064,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                         <div>
                           <label className="text-[7px] font-black uppercase text-slate-400 ml-1">{ta.sizeLabel}</label>
                           <input placeholder="2.4 MB" className="w-full dark:bg-black/30 bg-white border border-slate-300 rounded-lg px-2 py-1.5 text-[9px] font-bold outline-none focus:border-red-600 dark:border-white/15 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors"
-                            value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} /> </div> </div> <button type="button" onClick={() => handleDeleteFormat(f)} className="mt-2 w-full py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-colors flex items-center justify-center gap-1.5" > <Trash2 size={11} /> {ta.deleteFileServer} </button> </div> ))} {(!editingItem.formats || editingItem.formats.length === 0) && ( <p className="text-center text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase py-3">{ta.noFiles}</p> )} <input ref={fileInputRef} type="file" accept=".pdf,.epub,.fb2,.djvu,.djv,.mp4,.webm,.mkv,.mp3,.m4a,.m4b,.ogg,.oga,.opus,.wav" className="bg-white dark:bg-black/30 hidden border border-slate-300 dark:border-white/15 focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" onChange={e => { const file = e.target.files?.[0]; const id = uploadingFormatId.current; if (file && id) setStagedContentFile({ file, formatId: id }); }} /> </div> </div>
+                            value={f.size || ''} onChange={e => handleUpdateFormat(f.id, 'size', e.target.value)} /> </div> </div> <button type="button" onClick={() => handleDeleteFormat(f)} className="mt-2 w-full py-2 bg-red-50 text-red-500 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white transition-colors flex items-center justify-center gap-1.5" > <Trash2 size={11} /> {ta.deleteFileServer} </button> </div> ); })} {(!editingItem.formats || editingItem.formats.length === 0) && ( <p className="text-center text-[9px] text-slate-300 dark:text-slate-600 font-bold uppercase py-3">{ta.noFiles}</p> )} <input ref={fileInputRef} type="file" accept=".pdf,.epub,.fb2,.djvu,.djv,.mp4,.webm,.mkv,.mp3,.m4a,.m4b,.ogg,.oga,.opus,.wav" className="bg-white dark:bg-black/30 hidden border border-slate-300 dark:border-white/15 focus:border-red-600 hover:border-red-400 dark:hover:border-red-500/50 dark:focus:border-red-500 transition-colors" onChange={e => { const file = e.target.files?.[0]; const id = uploadingFormatId.current; if (file && id) setStagedContentFile({ file, formatId: id }); }} /> </div> </div>
 
                     <div>
                 <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.sourceSection}</p>

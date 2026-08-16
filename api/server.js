@@ -126,6 +126,23 @@ const initDb = async () => {
        AND COALESCE(finished_at, created_at) < NOW() - INTERVAL '30 days'`
   ).catch(() => {/* housekeeping */});
 
+  // Rows a later success has already replaced. Jobs finished before this ran
+  // kept every success for a target, so a re-index left the previous count
+  // sitting under the new one as if both were true. New runs clear their own
+  // predecessors; this clears the ones that accumulated before they did.
+  await pool.query(
+    `DELETE FROM jobs a
+      WHERE a.state IN ('done','failed','cancelled')
+        AND a.format_url IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM jobs b
+           WHERE b.item_id = a.item_id AND b.format_url = a.format_url
+             AND b.state = 'done'
+             AND (COALESCE(b.finished_at, b.created_at), b.id)
+               > (COALESCE(a.finished_at, a.created_at), a.id)
+        )`
+  ).catch(() => {/* housekeeping */});
+
   console.log('DB: schema initialized');
 };
 
@@ -2258,15 +2275,17 @@ const workerTick = async () => {
         WHERE id = $1 AND state <> 'cancelled'`,
       [job.id, clip(detail || null, 500)],
     );
-    // The same target just succeeded, so its earlier failures are no longer
-    // something anyone needs to act on. Leaving them on screen means the card
-    // shows a red error above a green result and the reader has to work out
-    // which one is current.
+    // A target has one index, so its history has one current row. Everything
+    // finished before this run described what the index held a moment ago —
+    // including an earlier success: re-indexing replaced its text, so "1322
+    // реплик" sitting under "679 реплик" is not history, it is two answers to
+    // one question with nothing saying which is true. Whatever is still queued
+    // or running is left alone; only finished rows are superseded.
     if (job.format_url) {
       await pool.query(
         `DELETE FROM jobs
           WHERE id <> $1 AND item_id = $2 AND format_url = $3
-            AND state IN ('failed', 'cancelled')`,
+            AND state IN ('done', 'failed', 'cancelled')`,
         [job.id, job.item_id, job.format_url],
       ).catch(() => {/* tidying, never fatal */});
     }

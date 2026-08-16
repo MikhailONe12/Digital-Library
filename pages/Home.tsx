@@ -223,17 +223,19 @@ const Home: React.FC<HomeProps> = ({
   // ── Found in the books ────────────────────────────────────────────────────
   const [insideHits, setInsideHits] = useState<SearchHit[]>([]);
   const [insideLogId, setInsideLogId] = useState<number | null>(null);
+  const [insideError, setInsideError] = useState<string | null>(null);
 
   useEffect(() => {
     const q = searchQuery.trim();
-    if (q.length < 3) { setInsideHits([]); setInsideLogId(null); return; }
+    if (q.length < 3) { setInsideHits([]); setInsideLogId(null); setInsideError(null); return; }
     let cancelled = false;
     // Debounced: typing a word should not be a query per keystroke.
     const timer = window.setTimeout(async () => {
-      const { results, logId } = await searchInside(q, 8);
+      const { results, logId, error } = await searchInside(q, 8);
       if (cancelled) return;
       setInsideHits(results);
       setInsideLogId(logId);
+      setInsideError(error);
     }, 350);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [searchQuery]);
@@ -881,6 +883,16 @@ const Home: React.FC<HomeProps> = ({
           "which book says that" — the question the library was failing. It
           appears only when there is something to show, and always below the
           familiar cards, so nothing anyone already relies on moves. */}
+      {/* A search that could not run says so. Silence here is indistinguishable
+          from "nothing found", and that is how a broken search survives. */}
+      {insideError && (
+        <div className="mt-8 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25">
+          <p className="text-[11px] font-bold text-amber-700 dark:text-amber-400">
+            {t.searchUnavailable}: {insideError}
+          </p>
+        </div>
+      )}
+
       {insideHits.length > 0 && (
         <div className="mt-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="flex items-center gap-3 mb-4">

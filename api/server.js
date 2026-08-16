@@ -1928,7 +1928,10 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
          CROSS JOIN q
          LEFT JOIN items i ON i.id = c.item_id
         WHERE c.tsv @@ q.tsq
-          AND ($4::boolean OR COALESCE((i.data->>'isPrivate')::boolean, false) = false)
+          -- Compared as text on purpose. A cast would throw on any item whose
+          -- isPrivate is not a clean boolean — one bad row in the catalogue
+          -- would then empty every search result for everyone.
+          AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
         ORDER BY rank DESC
         LIMIT $2`,
       [q, limit, headlineConfig, maySeePrivate],
@@ -1948,6 +1951,9 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
 
     res.json({ results: rows, logId });
   } catch (e) {
+    // Loud on the server, and honest to the client: a failed search must not
+    // arrive looking like a search that found nothing.
+    console.error('search failed:', e?.message || e);
     res.status(500).json({ error: e.message });
   }
 });

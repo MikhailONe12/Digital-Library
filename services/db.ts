@@ -762,20 +762,33 @@ export interface SearchResponse {
   results: SearchHit[];
   /** Row started for this query; sent back when a result is opened. */
   logId: number | null;
+  /**
+   * Set when the search could not run at all. Empty results and a broken search
+   * look identical on screen otherwise, which is how a real failure spends a
+   * week being mistaken for "nothing indexed".
+   */
+  error: string | null;
 }
 
 /** Full-text search over the indexed books, videos and external sources. */
 export const searchInside = async (query: string, limit = 20): Promise<SearchResponse> => {
   const q = query.trim();
-  if (q.length < 3) return { results: [], logId: null };
+  if (q.length < 3) return { results: [], logId: null, error: null };
   try {
     const qs = new URLSearchParams({ q, limit: String(limit) });
     const res = await fetch(`/api/search?${qs}`, { headers: tgInitDataHeader() });
-    if (!res.ok) return { results: [], logId: null };
+    if (!res.ok) {
+      const reason = res.status === 401 || res.status === 403
+        ? 'нет доступа к поиску'
+        : res.status === 404
+          ? 'поиск не выложен на сервер'
+          : `ошибка сервера ${res.status}`;
+      return { results: [], logId: null, error: reason };
+    }
     const data = await res.json();
-    return { results: data.results || [], logId: data.logId ?? null };
+    return { results: data.results || [], logId: data.logId ?? null, error: null };
   } catch {
-    return { results: [], logId: null };
+    return { results: [], logId: null, error: 'нет связи с сервером' };
   }
 };
 

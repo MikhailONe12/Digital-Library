@@ -939,6 +939,34 @@ export const savePageText = async (
   });
 };
 
+// ── Search metric ───────────────────────────────────────────────────────────
+
+export interface SearchStats {
+  totals: { queries: number; with_results: number; opened: number };
+  /** Repeated questions that found nothing — the list of what to add next. */
+  misses: { query: string; n: number; last_at: string }[];
+  recent: { query: string; results: number; opened_item: string | null; opened_pos: string | null; ts: string }[];
+}
+
+const EMPTY_SEARCH_STATS: SearchStats = {
+  totals: { queries: 0, with_results: 0, opened: 0 }, misses: [], recent: [],
+};
+
+export const loadSearchStats = async (): Promise<SearchStats> => {
+  try {
+    const res = await fetch('/api/admin/search-log', { headers: authHeaders() });
+    if (!res.ok) return EMPTY_SEARCH_STATS;
+    const d = await res.json();
+    return {
+      totals: { ...EMPTY_SEARCH_STATS.totals, ...(d.totals || {}) },
+      misses: d.misses || [],
+      recent: d.recent || [],
+    };
+  } catch {
+    return EMPTY_SEARCH_STATS;
+  }
+};
+
 // ── Job queue ───────────────────────────────────────────────────────────────
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';

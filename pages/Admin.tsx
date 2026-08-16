@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1079,6 +1079,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [openCheck, setOpenCheck] = useState(false);
   const [openIndex, setOpenIndex] = useState(true);
   const [openQueue, setOpenQueue] = useState(false);
+  const [openMetric, setOpenMetric] = useState(false);
+  const [searchStats, setSearchStats] = useState<SearchStats | null>(null);
   const queueWasActive = useRef(false);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobTotals, setJobTotals] = useState<JobTotals>({ queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 });
@@ -1127,6 +1129,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     tick();
     const id = setInterval(() => { if (jobsActiveRef.current) tick(); }, 2000);
     return () => { cancelled = true; clearInterval(id); };
+  }, [activeTab, isAdmin]);
+
+  useEffect(() => {
+    if (activeTab !== 'scan' || !isAdmin) return;
+    loadSearchStats().then(setSearchStats);
   }, [activeTab, isAdmin]);
 
   const refreshJobs = async () => {
@@ -1535,6 +1542,82 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
         )}
 
         <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed mt-4 max-w-3xl">{s.indexQualityHint}</p>
+      </Panel>
+    );
+  };
+
+  const renderMetricPanel = (s: any, num: (n: number) => string) => {
+    const st = searchStats;
+    const t0 = st?.totals || { queries: 0, with_results: 0, opened: 0 };
+    // The share that reached a book. Everything else here is context for it.
+    const rate = t0.queries ? Math.round((t0.opened / t0.queries) * 100) : 0;
+
+    return (
+      <Panel
+        icon={<SearchIcon size={18} strokeWidth={2.5} />}
+        title={s.metricTitle}
+        subtitle={s.metricSub}
+        badge={t0.queries ? `${num(rate)}%` : undefined}
+        open={openMetric}
+        onToggle={() => setOpenMetric(v => !v)}
+      >
+        <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-5">{s.metricIntro}</p>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { v: num(t0.queries),      t: s.metricQueries, tone: 'text-slate-700 dark:text-slate-200' },
+            { v: num(t0.with_results), t: s.metricFound,   tone: 'text-slate-700 dark:text-slate-200' },
+            { v: num(t0.opened),       t: s.metricOpened,  tone: 'text-emerald-600' },
+            { v: `${num(rate)}%`,      t: s.metricRate,    tone: rate >= 25 ? 'text-emerald-600' : 'text-amber-600' },
+          ].map((c, i) => (
+            <div key={i} className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+              <p className={`text-2xl md:text-[26px] font-black tracking-tighter tabular-nums ${c.tone}`}>{c.v}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{c.t}</p>
+            </div>
+          ))}
+        </div>
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-3">{s.metricDays}</p>
+
+        {!t0.queries && (
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-6 text-center">{s.metricEmpty}</p>
+        )}
+
+        {!!st?.misses.length && (
+          <>
+            <div className="h-px bg-slate-100 dark:bg-white/[0.08] my-6" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">{s.metricMisses}</p>
+            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 leading-relaxed mt-1 mb-3 max-w-3xl">{s.metricMissesHint}</p>
+            <div className="flex flex-wrap gap-2">
+              {st.misses.slice(0, 24).map(m => (
+                <span key={m.query} className="px-3 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                  {m.query}{m.n > 1 && <span className="ml-1.5 tabular-nums opacity-70">×{m.n}</span>}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+
+        {!!st?.recent.length && (
+          <>
+            <div className="h-px bg-slate-100 dark:bg-white/[0.08] my-6" />
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mb-3">{s.metricRecent}</p>
+            <div className="space-y-1.5">
+              {st.recent.slice(0, 20).map((r, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 rounded-xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                  <span className="text-[11px] font-bold text-slate-800 dark:text-slate-100 truncate min-w-0 flex-1">{r.query}</span>
+                  <span className={`text-[9px] font-black uppercase tracking-widest tabular-nums ${r.results ? 'text-slate-400 dark:text-slate-500' : 'text-amber-600'}`}>
+                    {num(r.results)}
+                  </span>
+                  {r.opened_item && (
+                    <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 truncate">
+                      → {r.opened_pos || r.opened_item}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </Panel>
     );
   };
@@ -2143,6 +2226,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                   </div>
                 )}
               </Panel>
+
+              {renderMetricPanel(s, num)}
 
               {renderQueuePanel(s, num)}
 

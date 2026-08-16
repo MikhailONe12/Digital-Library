@@ -1317,7 +1317,12 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     // YouTube: use the IFrame API player so we can persist watch position and
     // duration (no Data API key required). Same row schema as books.
     const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^&?]+)/);
-    if (ytMatch) return <YouTubeTrackedPlayer videoId={ytMatch[1]} url={url} userId={userId} itemId={item.id} />;
+    if (ytMatch) return (
+      <YouTubeTrackedPlayer
+        videoId={ytMatch[1]} url={url} userId={userId} itemId={item.id}
+        startSeconds={activeVideoUrl === url ? videoStartSeconds : null}
+      />
+    );
     // RuTube: postMessage-based progress (player:currentTime / setCurrentTime).
     const rtMatch = url.match(/rutube\.ru\/video\/([a-z0-9]+)/i);
     if (rtMatch) return <RuTubeTrackedPlayer videoId={rtMatch[1]} url={url} userId={userId} itemId={item.id} />;
@@ -1521,16 +1526,32 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   const openedAtRef = useRef<string | null>(null);
   // Survives until the document is loaded, which is when the page is chosen.
   const openAtPageRef = useRef<number | null>(null);
+  const videoAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+  const [videoStartSeconds, setVideoStartSeconds] = useState<number | null>(null);
   useEffect(() => {
     if (!openAt?.url) return;
     const key = `${openAt.url}#${openAt.page ?? openAt.second ?? ''}`;
     if (openedAtRef.current === key) return;
     const format = (item.formats || []).find(f => f.url === openAt.url);
-    if (!format) return;
+    if (format) {
+      openedAtRef.current = key;
+      openAtPageRef.current = openAt.page || null;
+      if (openAt.page) setPdfPage(openAt.page);
+      handleRead(format);
+      return;
+    }
+    // A video link: the player is rendered on this page, so open it, hand it
+    // the second and scroll it into view rather than leaving the reader at the
+    // top of a description.
+    const video = (item.videos || []).find(v => v.url === openAt.url);
+    if (!video) return;
     openedAtRef.current = key;
-    openAtPageRef.current = openAt.page || null;
-    if (openAt.page) setPdfPage(openAt.page);
-    handleRead(format);
+    setActiveVideoUrl(openAt.url);
+    setVideoStartSeconds(openAt.second ?? null);
+    window.setTimeout(() => {
+      videoAnchorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 250);
   }, [openAt, item]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Admin preview: jump straight into the content so the admin sees what's
@@ -2087,7 +2108,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
         )}
 
         {playableVideos.length > 0 && (
-          <div className="mt-10">
+          <div className="mt-10" ref={videoAnchorRef}>
             <h2 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-500 mb-4 flex items-center gap-3"><Play size={14} className="text-red-600" /><span className="w-6 h-[2px] bg-red-600" />{t.preview}</h2>
             <div className="space-y-6">
               {playableVideos.map(v => (

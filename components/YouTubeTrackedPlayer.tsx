@@ -13,6 +13,11 @@ interface Props {
   url: string; // canonical URL used as the format_url progress key
   userId: string;
   itemId: string;
+  /**
+   * Second a search result points at. It wins over the saved position: the
+   * player was opened to hear that moment, not to resume watching.
+   */
+  startSeconds?: number | null;
 }
 
 const YT_API_SRC = 'https://www.youtube.com/iframe_api';
@@ -39,7 +44,7 @@ const loadYouTubeApi = (): Promise<void> => {
 
 const SAVE_EVERY_MS = 5000;
 
-const YouTubeTrackedPlayer: React.FC<Props> = ({ videoId, url, userId, itemId }) => {
+const YouTubeTrackedPlayer: React.FC<Props> = ({ videoId, url, userId, itemId, startSeconds = null }) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<any>(null);
   const pollRef = useRef<number | null>(null);
@@ -92,6 +97,11 @@ const YouTubeTrackedPlayer: React.FC<Props> = ({ videoId, url, userId, itemId })
             const p = playerRef.current;
             const d = p?.getDuration?.() || 0;
             if (d > 0) setVideoDuration(url, d);
+            if (startSeconds && startSeconds > 0) {
+              p?.seekTo?.(startSeconds, true);
+              p?.playVideo?.();
+              return;
+            }
             try {
               const prog = await getReadingProgress(userId, itemId, url);
               const t = prog ? parseFloat(prog.position) : NaN;

@@ -669,15 +669,34 @@ export interface ContentScanSummaryRow {
   chars: number;
 }
 
+/** How many of each kind the catalogue holds, and how many the last pass walked. */
+export interface ContentScanCounts {
+  formats: number;
+  videos: number;
+  articles: number;
+}
+
 export interface ContentScanReport {
   job: ContentScanJob;
   rows: ContentScanRow[];
   summary: ContentScanSummaryRow[];
+  /** From the catalogue, live. `items` is the material count. */
+  catalog: ContentScanCounts & { items: number };
+  /** From the last pass. Differs from `catalog` when the pass is out of date. */
+  scanned: ContentScanCounts;
 }
 
 const EMPTY_SCAN_JOB: ContentScanJob = {
   running: false, startedAt: null, finishedAt: null,
   total: 0, done: 0, current: '', error: null, stopRequested: false,
+};
+
+const EMPTY_SCAN_COUNTS = { formats: 0, videos: 0, articles: 0 };
+
+const EMPTY_SCAN_REPORT: ContentScanReport = {
+  job: EMPTY_SCAN_JOB, rows: [], summary: [],
+  catalog: { items: 0, ...EMPTY_SCAN_COUNTS },
+  scanned: { ...EMPTY_SCAN_COUNTS },
 };
 
 /**
@@ -687,15 +706,17 @@ const EMPTY_SCAN_JOB: ContentScanJob = {
 export const loadContentScan = async (): Promise<ContentScanReport> => {
   try {
     const res = await fetch('/api/admin/scan', { headers: authHeaders() });
-    if (!res.ok) return { job: EMPTY_SCAN_JOB, rows: [], summary: [] };
+    if (!res.ok) return EMPTY_SCAN_REPORT;
     const data = await res.json();
     return {
       job: { ...EMPTY_SCAN_JOB, ...(data.job || {}) },
       rows: data.rows || [],
       summary: data.summary || [],
+      catalog: { items: 0, ...EMPTY_SCAN_COUNTS, ...(data.catalog || {}) },
+      scanned: { ...EMPTY_SCAN_COUNTS, ...(data.scanned || {}) },
     };
   } catch {
-    return { job: EMPTY_SCAN_JOB, rows: [], summary: [] };
+    return EMPTY_SCAN_REPORT;
   }
 };
 

@@ -1260,6 +1260,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
           const hint = (st: string) => s[`state${st[0].toUpperCase()}${st.slice(1)}Hint`] || '';
           const num = (n: number) => n.toLocaleString(lang === 'ru' ? 'ru-RU' : lang);
           const pct = job?.total ? Math.round((job.done / job.total) * 100) : 0;
+          const catalog = scanReport?.catalog || { items: 0, formats: 0, videos: 0, articles: 0 };
+          const scanned = scanReport?.scanned || { formats: 0, videos: 0, articles: 0 };
+          // Entries without a URL are never walked, so a small shortfall can be
+          // legitimate — the message says so rather than crying error.
+          const coverageStale = !job?.running && (
+            scanned.formats < catalog.formats ||
+            scanned.videos < catalog.videos ||
+            scanned.articles < catalog.articles
+          );
           const cards = [
             { key: 'ready',     value: scanCounts.ready,     title: s.readyTitle,     desc: s.readyDesc,     tone: 'text-emerald-600' },
             { key: 'ocr',       value: scanCounts.ocr,       title: s.ocrTitle,       desc: s.ocrDesc,       tone: 'text-red-600' },
@@ -1334,6 +1343,29 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                     {num(scanCounts.total)} {s.files} · {num(scanCounts.pages)} {s.pages} · {num(scanCounts.chars)} {s.chars}
                   </p>
                 )}
+
+                {/* What the catalogue holds, against what the last pass walked.
+                    "No article rows" is ambiguous on its own — no articles, or a
+                    pass that predates article support — and those need different
+                    actions, so the screen tells them apart. */}
+                <div className="mt-4 grid gap-1 text-[9px] font-black uppercase tracking-widest">
+                  <p className="text-slate-400 dark:text-slate-500">
+                    <span className="text-slate-600 dark:text-slate-300">{s.coverageCatalog}:</span>{' '}
+                    {num(catalog.items)} {s.coverageItems} · {num(catalog.formats)} {s.coverageFiles} ·{' '}
+                    {num(catalog.videos)} {s.coverageVideos} · {num(catalog.articles)} {s.coverageArticles}
+                  </p>
+                  <p className="text-slate-400 dark:text-slate-500">
+                    <span className="text-slate-600 dark:text-slate-300">{s.coverageScanned}:</span>{' '}
+                    {num(scanned.formats)} {s.coverageFiles} · {num(scanned.videos)} {s.coverageVideos} ·{' '}
+                    {num(scanned.articles)} {s.coverageArticles}
+                  </p>
+                </div>
+                {coverageStale && (
+                  <p className="mt-3 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-2xl px-4 py-3 max-w-3xl">
+                    {s.coverageStale}
+                  </p>
+                )}
+
                 <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed mt-3 max-w-3xl">{s.videoNote}</p>
               </div>
 

@@ -1181,11 +1181,36 @@ app.get('/api/admin/scan', requireApiKey, async (req, res) => {
        GROUP BY state
     `)).rows;
 
+    // What the catalogue holds, next to what the last pass actually walked.
+    //
+    // Without this the tab could only show what it found, and "no article rows"
+    // is ambiguous: it means either "there are no articles" or "the pass that
+    // ran predates article support". Those need different actions — nothing,
+    // versus press the button again — so the screen has to tell them apart
+    // rather than leave it to be guessed at.
+    const catalog = (await pool.query(`
+      SELECT COUNT(*)::int AS items,
+             ${['formats', 'videos', 'articles'].map(k => `
+               COALESCE(SUM(CASE WHEN jsonb_typeof(data->'${k}') = 'array'
+                                 THEN jsonb_array_length(data->'${k}') ELSE 0 END), 0)::int AS ${k}`).join(',')}
+        FROM items
+    `)).rows[0];
+
+    const scanned = (await pool.query(`
+      SELECT COUNT(*) FILTER (WHERE kind = 'article')::int AS articles,
+             COUNT(*) FILTER (WHERE kind IN ('youtube','rutube','vk','twitch','video'))::int AS videos,
+             COUNT(*) FILTER (WHERE kind IS NULL
+                                 OR kind NOT IN ('article','youtube','rutube','vk','twitch','video'))::int AS formats
+        FROM content_scan
+    `)).rows[0];
+
     res.json({
       job: scanJobView(),
       // BIGINT arrives as a string from pg; the UI wants to do arithmetic.
       rows: rows.map(r => ({ ...r, chars: r.chars === null ? null : Number(r.chars) })),
       summary: summary.map(s => ({ ...s, chars: Number(s.chars) })),
+      catalog,
+      scanned,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

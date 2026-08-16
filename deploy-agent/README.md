@@ -12,7 +12,35 @@ Admin panel ──HTTP──> library-api ──writes files──> /mnt/library
 
 The container only reads/writes files in a shared "mailbox" directory. The host
 agent (systemd, root) does all the privileged work: `git pull`, `npm run build`,
-copy `dist`, and `docker compose up -d --build library-api`.
+refresh the API's live code, restart the container, and publish `dist`.
+
+### An ordinary deploy does not build an image
+
+The only repo content inside the API image is `server.js` and `init.sql`, and
+both are bind-mounted at `/app/live` (see `docker-compose.yml`). So a code
+change is a copy plus a restart — no base image to re-resolve, no registry to
+reach, seconds instead of minutes. A registry that is unreachable used to stop
+the deploy dead on a base image that had been in the local store for months.
+
+The image is rebuilt only when its own inputs move — `api/Dockerfile` or
+`api/package.json` — decided by diffing the commit before the pull against the
+one after. When a rebuild is needed and BuildKit cannot reach the registry, the
+legacy builder is tried next; it is content with the local base image.
+
+Two details that are easy to get wrong:
+
+- The mount is a **directory**, not two file mounts. `git pull` replaces a file
+  by writing a new one and renaming it over the old, giving it a new inode; a
+  single-file bind mount follows the *old* inode, so the container would keep
+  serving the previous version while every deploy reported success. The agent
+  copies into `.api-live/`, which overwrites in place and keeps the inode.
+- `dist` is published **last**. In the old order a failed API step left a new
+  frontend talking to an old API — the worst outcome, because it looks
+  deployed.
+
+`.api-live/` is gitignored and empty on a fresh checkout; the container then
+runs the copy baked into the image, so `docker compose up -d --build` still
+works on its own.
 
 - **Manual mode:** deploy runs only when the admin presses the button.
 - **Auto mode:** the agent polls the git remote (default every 60s) and deploys

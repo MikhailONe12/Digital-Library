@@ -42,6 +42,20 @@ services:
       - /mnt/library/content:/mnt/library/content
       # Shared "mailbox" with the host deploy-agent (see deploy-agent/README.md)
       - /mnt/library/app/deploy-control:/deploy-control
+      # Live code. The deploy copies api/server.js and api/init.sql here and
+      # restarts the container instead of rebuilding the image — so an ordinary
+      # code change never touches a registry.
+      #
+      # A directory, not two file mounts, on purpose: git replaces a file by
+      # writing a new one and renaming it over the old, which gives it a new
+      # inode. A single-file bind mount follows the *old* inode, so the
+      # container would keep serving the previous version while every deploy
+      # reported success. Mounting the directory and copying into it in place
+      # sidesteps that entirely.
+      #
+      # Empty on a fresh checkout — the container then runs the copy baked into
+      # the image (see api/Dockerfile).
+      - ./.api-live:/app/live:ro
     ports:
       - "127.0.0.1:3001:3001"   # только localhost, наружу не открыт
     depends_on:

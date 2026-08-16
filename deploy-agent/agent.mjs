@@ -65,25 +65,53 @@ const BACKUP_DIR  = process.env.BACKUP_DIR  || '/mnt/library/app/backups';
 const DB_CONTAINER = process.env.DB_CONTAINER || 'library-db';
 const DB_USER     = process.env.DB_USER || 'library';
 const DB_NAME     = process.env.DB_NAME || 'library';
-// Two things about the order here are deliberate.
+// An ordinary deploy no longer builds an image.
 //
-// The API image is rebuilt BEFORE `dist` is published. The other way round, a
-// failed image build leaves a new frontend talking to an old API — the worst
-// outcome of the three, because it looks deployed. Publishing last means a
-// broken build changes nothing at all.
+// The only repo content that ends up inside the API image is server.js and
+// init.sql, and both are now bind-mounted at /app/live (see docker-compose.yml).
+// So shipping a code change is a copy plus a restart: no base image to
+// re-resolve, no registry to reach, seconds instead of minutes. That matters
+// beyond speed — a registry that is unreachable (an AAAA route the host cannot
+// use, an outage, a block) used to stop the deploy dead on a base image that
+// had been sitting in the local store for months.
 //
-// And the build falls back to the legacy builder. BuildKit re-resolves
-// `node:20` against Docker Hub on every build; when the host has an AAAA route
-// it cannot actually use, that fails with "network is unreachable" even though
-// the base image has been sitting in the local store for months. The legacy
-// builder uses what is already there. This is a fallback, not the default —
-// when the registry is reachable, the first form still gets the newer builder.
-const DEPLOY_CMD  = process.env.DEPLOY_CMD ||
-  `git fetch origin ${BRANCH} && git checkout ${BRANCH} && git pull origin ${BRANCH} ` +
-  `&& npm run build ` +
-  `&& { docker compose up -d --build library-api ` +
-  `|| DOCKER_BUILDKIT=0 docker compose up -d --build library-api; } ` +
-  `&& cp -r dist/* ${DIST_DIR}/`;
+// The image is rebuilt only when its own inputs move: the Dockerfile or the API
+// package.json. That check compares the commit before the pull with the one
+// after, so it costs nothing on the common path.
+//
+// Two details worth keeping:
+//
+//   * `cp` into .api-live overwrites in place, preserving the inode the mount
+//     is bound to. `git pull` does the opposite — new file, rename over the old
+//     one — which is why the mount points at a directory and not at the two
+//     files themselves.
+//
+//   * `dist` is published last. In the old order a failed API step left a new
+//     frontend talking to an old API, the worst of the three outcomes because
+//     it looks deployed. Now a failure anywhere changes nothing.
+const buildApiImage =
+  `{ docker compose up -d --build library-api ` +
+  // BuildKit insists on re-resolving the base image; the legacy builder is
+  // happy with the local one. Fallback only — with a reachable registry the
+  // newer builder still runs first.
+  `|| DOCKER_BUILDKIT=0 docker compose up -d --build library-api; }`;
+
+const DEPLOY_CMD  = process.env.DEPLOY_CMD || [
+  `git fetch origin ${BRANCH}`,
+  `git checkout ${BRANCH}`,
+  `before=$(git rev-parse HEAD)`,
+  `git pull origin ${BRANCH}`,
+  `npm run build`,
+  `mkdir -p .api-live`,
+  `cp api/server.js api/init.sql .api-live/`,
+  `if ! git diff --quiet "$before" HEAD -- api/Dockerfile api/package.json ` +
+    `|| ! docker compose images -q library-api | grep -q .; then ` +
+    `${buildApiImage}; ` +
+  `else ` +
+    `docker compose up -d library-api && docker compose restart library-api; ` +
+  `fi`,
+  `cp -r dist/* ${DIST_DIR}/`,
+].join(' && ');
 
 const STATUS_FILE         = path.join(CONTROL_DIR, 'status.json');
 const MODE_FILE           = path.join(CONTROL_DIR, 'mode.json');

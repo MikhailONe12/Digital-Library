@@ -32,3 +32,6 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+
+# Live API code staged for the container bind mount (see docker-compose.yml)
+.api-live/

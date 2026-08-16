@@ -1105,6 +1105,35 @@ const runContentScan = async () => {
       for (const a of Array.isArray(item.articles) ? item.articles : []) {
         add(a, a?.title || a?.source || 'статья', scanArticleLink);
       }
+
+      // A material catalogued as a bare pointer — no file, no video, no
+      // article, only `source.url` — produced no rows at all, which made it
+      // invisible in a tab whose entire job is answering "what is in the
+      // library, and can it be indexed". It was counted among the materials and
+      // then silently absent from every verdict.
+      //
+      // The source link is only read when nothing else stands in for the
+      // material: on a hosted PDF it is attribution, not a thing to index, and
+      // listing it there would double every row.
+      if (seen.size === 0) {
+        const sourceUrl = typeof item.source?.url === 'string' ? item.source.url.trim() : '';
+        if (sourceUrl) {
+          add({ url: sourceUrl }, item.source?.name || 'источник', () => ({
+            state: 'external', kind: 'source',
+            detail: 'Только ссылка на источник, файла у нас нет. Ждёт шага «Внешние источники».',
+          }));
+        } else {
+          // Keyed by the empty string: one such row per material, and the
+          // primary key keeps it that way.
+          targets.push({
+            itemId: row.id, title, url: '', label: '',
+            probe: () => ({
+              state: 'nothing',
+              detail: 'В материале нет ни файла, ни ссылки — искать нечего.',
+            }),
+          });
+        }
+      }
     }
     scanJob.total = targets.length;
 
@@ -1165,8 +1194,8 @@ app.get('/api/admin/scan', requireApiKey, async (req, res) => {
         LEFT JOIN items i ON i.id = s.item_id
        ORDER BY CASE s.state
                   WHEN 'scan' THEN 1 WHEN 'partial' THEN 2 WHEN 'error' THEN 3
-                  WHEN 'missing' THEN 4 WHEN 'unsupported' THEN 5
-                  WHEN 'media' THEN 6 WHEN 'external' THEN 7 ELSE 8
+                  WHEN 'missing' THEN 4 WHEN 'nothing' THEN 5 WHEN 'unsupported' THEN 6
+                  WHEN 'media' THEN 7 WHEN 'external' THEN 8 ELSE 9
                 END,
                 s.item_id, s.filename
        LIMIT 3000
@@ -1197,10 +1226,12 @@ app.get('/api/admin/scan', requireApiKey, async (req, res) => {
     `)).rows[0];
 
     const scanned = (await pool.query(`
-      SELECT COUNT(*) FILTER (WHERE kind = 'article')::int AS articles,
+      SELECT COUNT(DISTINCT item_id)::int AS items,
+             COUNT(*) FILTER (WHERE kind = 'article')::int AS articles,
              COUNT(*) FILTER (WHERE kind IN ('youtube','rutube','vk','twitch','video'))::int AS videos,
-             COUNT(*) FILTER (WHERE kind IS NULL
-                                 OR kind NOT IN ('article','youtube','rutube','vk','twitch','video'))::int AS formats
+             COUNT(*) FILTER (WHERE state <> 'nothing'
+                                AND (kind IS NULL
+                                 OR kind NOT IN ('article','source','youtube','rutube','vk','twitch','video')))::int AS formats
         FROM content_scan
     `)).rows[0];
 

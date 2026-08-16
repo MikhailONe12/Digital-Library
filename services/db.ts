@@ -634,7 +634,9 @@ export const clearErrorLog = async (): Promise<void> => {
 /** Verdict for one catalogued file. See api/init.sql for what each means. */
 export type ContentScanState =
   | 'text' | 'partial' | 'scan' | 'media'
-  | 'external' | 'missing' | 'unsupported' | 'error';
+  | 'external' | 'missing' | 'unsupported' | 'error'
+  /** The material carries nothing at all — no file, no link. */
+  | 'nothing';
 
 export interface ContentScanRow {
   item_id: string;
@@ -683,7 +685,7 @@ export interface ContentScanReport {
   /** From the catalogue, live. `items` is the material count. */
   catalog: ContentScanCounts & { items: number };
   /** From the last pass. Differs from `catalog` when the pass is out of date. */
-  scanned: ContentScanCounts;
+  scanned: ContentScanCounts & { items: number };
 }
 
 const EMPTY_SCAN_JOB: ContentScanJob = {
@@ -691,11 +693,11 @@ const EMPTY_SCAN_JOB: ContentScanJob = {
   total: 0, done: 0, current: '', error: null, stopRequested: false,
 };
 
-const EMPTY_SCAN_COUNTS = { formats: 0, videos: 0, articles: 0 };
+const EMPTY_SCAN_COUNTS = { items: 0, formats: 0, videos: 0, articles: 0 };
 
 const EMPTY_SCAN_REPORT: ContentScanReport = {
   job: EMPTY_SCAN_JOB, rows: [], summary: [],
-  catalog: { items: 0, ...EMPTY_SCAN_COUNTS },
+  catalog: { ...EMPTY_SCAN_COUNTS },
   scanned: { ...EMPTY_SCAN_COUNTS },
 };
 
@@ -712,7 +714,7 @@ export const loadContentScan = async (): Promise<ContentScanReport> => {
       job: { ...EMPTY_SCAN_JOB, ...(data.job || {}) },
       rows: data.rows || [],
       summary: data.summary || [],
-      catalog: { items: 0, ...EMPTY_SCAN_COUNTS, ...(data.catalog || {}) },
+      catalog: { ...EMPTY_SCAN_COUNTS, ...(data.catalog || {}) },
       scanned: { ...EMPTY_SCAN_COUNTS, ...(data.scanned || {}) },
     };
   } catch {

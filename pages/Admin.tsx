@@ -36,6 +36,7 @@ const SCAN_STATE_STYLES: Record<string, string> = {
   partial:     'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/25',
   scan:        'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
   missing:     'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+  nothing:     'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
   error:       'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
   media:       'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
   external:    'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
@@ -43,7 +44,7 @@ const SCAN_STATE_STYLES: Record<string, string> = {
 };
 
 // Worst first: the filter row should open on what needs a decision.
-const SCAN_STATE_ORDER = ['scan', 'partial', 'error', 'missing', 'unsupported', 'media', 'external', 'text'] as const;
+const SCAN_STATE_ORDER = ['scan', 'partial', 'error', 'missing', 'nothing', 'unsupported', 'media', 'external', 'text'] as const;
 
 // One collapsible group in the item editor. The form used to be twelve flat
 // blocks, so the file upload — the whole point of the screen — sat below
@@ -1028,7 +1029,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
       by, pages, chars,
       ready: sum('text'),
       ocr: sum('scan', 'partial'),
-      attention: sum('missing', 'error', 'unsupported'),
+      attention: sum('missing', 'error', 'unsupported', 'nothing'),
       later: sum('media', 'external'),
       total: Object.values(by).reduce((a, b) => a + b, 0),
     };
@@ -1261,10 +1262,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
           const num = (n: number) => n.toLocaleString(lang === 'ru' ? 'ru-RU' : lang);
           const pct = job?.total ? Math.round((job.done / job.total) * 100) : 0;
           const catalog = scanReport?.catalog || { items: 0, formats: 0, videos: 0, articles: 0 };
-          const scanned = scanReport?.scanned || { formats: 0, videos: 0, articles: 0 };
+          const scanned = scanReport?.scanned || { items: 0, formats: 0, videos: 0, articles: 0 };
           // Entries without a URL are never walked, so a small shortfall can be
           // legitimate — the message says so rather than crying error.
           const coverageStale = !job?.running && (
+            scanned.items < catalog.items ||
             scanned.formats < catalog.formats ||
             scanned.videos < catalog.videos ||
             scanned.articles < catalog.articles
@@ -1356,8 +1358,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                   </p>
                   <p className="text-slate-400 dark:text-slate-500">
                     <span className="text-slate-600 dark:text-slate-300">{s.coverageScanned}:</span>{' '}
-                    {num(scanned.formats)} {s.coverageFiles} · {num(scanned.videos)} {s.coverageVideos} ·{' '}
-                    {num(scanned.articles)} {s.coverageArticles}
+                    {num(scanned.items)} {s.coverageItems} · {num(scanned.formats)} {s.coverageFiles} ·{' '}
+                    {num(scanned.videos)} {s.coverageVideos} · {num(scanned.articles)} {s.coverageArticles}
                   </p>
                 </div>
                 {coverageStale && (
@@ -1399,7 +1401,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                       >
                         {/* Fixed width so the titles line up: a ragged left edge makes
                             a list of verdicts much harder to skim than it needs to be. */}
-                        <span className={`shrink-0 w-[7.5rem] text-center px-2 py-1 rounded-lg border text-[8px] font-black uppercase tracking-widest whitespace-nowrap ${SCAN_STATE_STYLES[r.state] || SCAN_STATE_STYLES.unsupported}`}>
+                        <span className={`shrink-0 w-[7.5rem] truncate text-center px-2 py-1 rounded-lg border text-[8px] font-black uppercase tracking-widest ${SCAN_STATE_STYLES[r.state] || SCAN_STATE_STYLES.unsupported}`}>
                           {label(r.state)}
                         </span>
                         <div className="min-w-0 flex-1">

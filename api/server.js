@@ -1235,8 +1235,16 @@ app.get('/api/admin/scan', requireApiKey, async (req, res) => {
         FROM content_scan
     `)).rows[0];
 
+    // When the last pass finished is a fact about the rows, not about this
+    // process: job state lives in memory and an API restart wipes it, which had
+    // the tab announcing "not run yet" over a full set of results.
+    const lastScanAt = (await pool.query(
+      'SELECT MAX(scanned_at) AS at FROM content_scan'
+    )).rows[0]?.at || null;
+
     res.json({
       job: scanJobView(),
+      lastScanAt,
       // BIGINT arrives as a string from pg; the UI wants to do arithmetic.
       rows: rows.map(r => ({ ...r, chars: r.chars === null ? null : Number(r.chars) })),
       summary: summary.map(s => ({ ...s, chars: Number(s.chars) })),

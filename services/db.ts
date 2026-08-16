@@ -680,6 +680,11 @@ export interface ContentScanCounts {
 
 export interface ContentScanReport {
   job: ContentScanJob;
+  /**
+   * When the last pass wrote its rows. Survives an API restart, unlike
+   * `job.finishedAt`, which only knows about this process.
+   */
+  lastScanAt: string | null;
   rows: ContentScanRow[];
   summary: ContentScanSummaryRow[];
   /** From the catalogue, live. `items` is the material count. */
@@ -696,7 +701,7 @@ const EMPTY_SCAN_JOB: ContentScanJob = {
 const EMPTY_SCAN_COUNTS = { items: 0, formats: 0, videos: 0, articles: 0 };
 
 const EMPTY_SCAN_REPORT: ContentScanReport = {
-  job: EMPTY_SCAN_JOB, rows: [], summary: [],
+  job: EMPTY_SCAN_JOB, lastScanAt: null, rows: [], summary: [],
   catalog: { ...EMPTY_SCAN_COUNTS },
   scanned: { ...EMPTY_SCAN_COUNTS },
 };
@@ -712,6 +717,7 @@ export const loadContentScan = async (): Promise<ContentScanReport> => {
     const data = await res.json();
     return {
       job: { ...EMPTY_SCAN_JOB, ...(data.job || {}) },
+      lastScanAt: data.lastScanAt || null,
       rows: data.rows || [],
       summary: data.summary || [],
       catalog: { ...EMPTY_SCAN_COUNTS, ...(data.catalog || {}) },

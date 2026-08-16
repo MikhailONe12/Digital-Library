@@ -1261,6 +1261,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
           const hint = (st: string) => s[`state${st[0].toUpperCase()}${st.slice(1)}Hint`] || '';
           const num = (n: number) => n.toLocaleString(lang === 'ru' ? 'ru-RU' : lang);
           const pct = job?.total ? Math.round((job.done / job.total) * 100) : 0;
+          // The in-process job knows when *this* process last finished a pass;
+          // the rows know when a pass last happened at all. Prefer the former
+          // while it exists, fall back to the latter across restarts.
+          const lastRunAt = scanReport?.job?.finishedAt || scanReport?.lastScanAt || null;
           const catalog = scanReport?.catalog || { items: 0, formats: 0, videos: 0, articles: 0 };
           const scanned = scanReport?.scanned || { items: 0, formats: 0, videos: 0, articles: 0 };
           // Entries without a URL are never walked, so a small shortfall can be
@@ -1301,14 +1305,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                       onClick={handleScanRun}
                       className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
                     >
-                      <Play size={13} strokeWidth={3} /> {job?.finishedAt ? s.rerun : s.run}
+                      <Play size={13} strokeWidth={3} /> {lastRunAt ? s.rerun : s.run}
                     </button>
                   )}
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
                     {job?.running
                       ? `${s.running} · ${num(job.done)} ${s.progress} ${num(job.total)}`
-                      : job?.finishedAt
-                        ? `${s.lastRun}: ${new Date(job.finishedAt).toLocaleString(lang === 'ru' ? 'ru-RU' : lang)}${job.stopRequested ? ` · ${s.stopped}` : ''}`
+                      : lastRunAt
+                        ? `${s.lastRun}: ${new Date(lastRunAt).toLocaleString(lang === 'ru' ? 'ru-RU' : lang)}${job?.stopRequested ? ` · ${s.stopped}` : ''}`
                         : s.never}
                   </p>
                 </div>
@@ -1342,7 +1346,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
 
                 {scanCounts.total > 0 && (
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-4">
-                    {num(scanCounts.total)} {s.files} · {num(scanCounts.pages)} {s.pages} · {num(scanCounts.chars)} {s.chars}
+                    {num(scanCounts.total)} {s.records} · {num(scanCounts.pages)} {s.pages} · {num(scanCounts.chars)} {s.chars}
                   </p>
                 )}
 

@@ -742,6 +742,56 @@ export const stopContentScan = async (): Promise<void> => {
   });
 };
 
+// ── Search inside the library ───────────────────────────────────────────────
+
+export interface SearchHit {
+  item_id: string;
+  format_url: string;
+  page: number | null;
+  page_label: string | null;
+  second_start: number | null;
+  second_end: number | null;
+  rank: number;
+  /** Text around the match, with <b> around the matched words. */
+  snippet: string;
+  title: MultilingualText | null;
+  author: string | null;
+}
+
+export interface SearchResponse {
+  results: SearchHit[];
+  /** Row started for this query; sent back when a result is opened. */
+  logId: number | null;
+}
+
+/** Full-text search over the indexed books, videos and external sources. */
+export const searchInside = async (query: string, limit = 20): Promise<SearchResponse> => {
+  const q = query.trim();
+  if (q.length < 3) return { results: [], logId: null };
+  try {
+    const qs = new URLSearchParams({ q, limit: String(limit) });
+    const res = await fetch(`/api/search?${qs}`, { headers: tgInitDataHeader() });
+    if (!res.ok) return { results: [], logId: null };
+    const data = await res.json();
+    return { results: data.results || [], logId: data.logId ?? null };
+  } catch {
+    return { results: [], logId: null };
+  }
+};
+
+/**
+ * Record that a result was opened. Fire-and-forget: the reader must open
+ * whether or not the bookkeeping succeeds.
+ */
+export const logSearchOpened = (logId: number | null, itemId: string, position: string): void => {
+  if (logId === null) return;
+  fetch('/api/search/opened', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...tgInitDataHeader() },
+    body: JSON.stringify({ logId, itemId, position }),
+  }).catch(() => {/* never block on a metric */});
+};
+
 // ── Index (extracted text and search chunks) ────────────────────────────────
 
 export type IndexState = 'indexed' | 'failed' | 'skipped';

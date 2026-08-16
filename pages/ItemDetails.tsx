@@ -104,6 +104,12 @@ interface ItemDetailsProps {
   onRefresh: () => void;
   /** Used by the series strip to jump to a sibling without going back home. */
   onOpenItem?: (item: MediaItem) => void;
+  /**
+   * Open straight at a position — a search result knows which file and which
+   * page or second it found, and the whole point of the search is landing
+   * there rather than at the front of the book.
+   */
+  openAt?: { url: string; page?: number | null; second?: number | null } | null;
   /** Used by the clickable author name + "more by this author" strip — go
    *  back home with the author filter pre-applied. */
   onOpenAuthor?: (author: string) => void;
@@ -301,7 +307,7 @@ const AudioPlayerOverlay: React.FC<AudioOverlayProps> = ({ url, itemId, userId, 
   );
 };
 
-const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, onOpenTag, preview = false, lang, t }) => {
+const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOpenItem, onOpenAuthor, onOpenTag, openAt = null, preview = false, lang, t }) => {
   const [activeReaderUrl, setActiveReaderUrl] = useState<string | null>(null);
   const [activeEpubUrl, setActiveEpubUrl]     = useState<string | null>(null);
   // #29 — Audio player overlay (mp3/m4b/etc).
@@ -1499,6 +1505,20 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
       window.open(fileUrl, '_blank');
     }
   };
+
+  // Arrived from a search result: open that file at that place. Runs once per
+  // target — reopening it on every render would fight the reader's own paging.
+  const openedAtRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openAt?.url) return;
+    const key = `${openAt.url}#${openAt.page ?? openAt.second ?? ''}`;
+    if (openedAtRef.current === key) return;
+    const format = (item.formats || []).find(f => f.url === openAt.url);
+    if (!format) return;
+    openedAtRef.current = key;
+    if (openAt.page) setPdfPage(openAt.page);
+    handleRead(format);
+  }, [openAt, item]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Admin preview: jump straight into the content so the admin sees what's
   // inside in one click. Books/PDF/EPUB/audio auto-open their reader; videos

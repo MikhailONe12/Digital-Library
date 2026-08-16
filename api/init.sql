@@ -306,3 +306,26 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority, id);
 CREATE INDEX IF NOT EXISTS idx_jobs_batch ON jobs(batch_id);
+
+-- What people asked and whether it took them to a book.
+--
+-- The only metric that answers the question the whole project exists for: does
+-- search get the library read? A count of queries does not — a query that
+-- returns nothing, or returns something nobody opens, is a miss.
+--
+-- Identified by the same HMAC pseudonym the access log uses, never by a
+-- Telegram id: a query is personal data, and there is no second mechanism here.
+CREATE TABLE IF NOT EXISTS search_log (
+  id         BIGSERIAL   PRIMARY KEY,
+  ts         TIMESTAMPTZ DEFAULT NOW(),
+  query      TEXT        NOT NULL,
+  lang       TEXT,
+  results    INT         NOT NULL DEFAULT 0,
+  visitor    TEXT,                    -- HMAC pseudonym, see visitorHash()
+  -- Filled by a second call when a result is opened, so one row tells the whole
+  -- story: asked → found → opened → at which position.
+  opened_item TEXT,
+  opened_pos  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_search_log_ts ON search_log(ts DESC);

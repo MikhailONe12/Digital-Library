@@ -1893,10 +1893,22 @@ app.put('/api/admin/index/page', requireApiKey, async (req, res) => {
 // Admin-only for now, deliberately. Opening it to readers needs the private-item
 // check the download path already does, and shipping a public endpoint that
 // leaks the contents of a restricted book would be a poor way to find that out.
-app.get('/api/search', requireApiKey, async (req, res) => {
+app.get('/api/search', checkUserAccess, async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  if (!q) return res.json({ results: [] });
+  // Under three characters every keystroke would be a query; and a two-letter
+  // stem matches half the corpus anyway.
+  if (q.length < 3) return res.json({ results: [] });
   const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+
+  // Private material is searchable only by someone who could already open it —
+  // the same rule the download path enforces. Without this, search would happily
+  // quote the contents of a book the reader cannot see.
+  const settings = req.cachedSettings || {};
+  const user = req.telegramUser;
+  const allowed = settings.allowedUsers || [];
+  const maySeePrivate = !!settings.globalAccess
+    || !!(user && (allowed.includes(user.id) || (user.username && allowed.includes(user.username))));
+
   try {
     // Headline in the language the question was asked in — stemming a Russian
     // query with the English dictionary highlights the wrong words.
@@ -1916,11 +1928,25 @@ app.get('/api/search', requireApiKey, async (req, res) => {
          CROSS JOIN q
          LEFT JOIN items i ON i.id = c.item_id
         WHERE c.tsv @@ q.tsq
+          AND ($4::boolean OR COALESCE((i.data->>'isPrivate')::boolean, false) = false)
         ORDER BY rank DESC
         LIMIT $2`,
-      [q, limit, headlineConfig],
+      [q, limit, headlineConfig, maySeePrivate],
     );
-    res.json({ results: rows });
+
+    // One row per question, filled in later if a result is opened. A query that
+    // found nothing is the most valuable row here: it is the list of what the
+    // library cannot answer yet.
+    let logId = null;
+    try {
+      const ins = await pool.query(
+        'INSERT INTO search_log (query, lang, results, visitor) VALUES ($1,$2,$3,$4) RETURNING id',
+        [clip(q, 300), clip(req.query.lang, 8), rows.length, visitorHash(resolveVisitorIp(req))],
+      );
+      logId = ins.rows[0].id;
+    } catch { /* logging must never break search */ }
+
+    res.json({ results: rows, logId });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -2320,6 +2346,50 @@ app.post('/api/admin/jobs/batch/:id/cancel', requireApiKey, async (req, res) => 
       [id],
     );
     res.json({ cancelled: rowCount });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// A result was opened. Completes the row started by the search, so one record
+// says: asked this, found that many, opened this book at that position.
+app.post('/api/search/opened', checkUserAccess, async (req, res) => {
+  const { logId, itemId, position } = req.body || {};
+  if (!Number.isInteger(logId)) return res.status(400).json({ error: 'logId required' });
+  try {
+    await pool.query(
+      `UPDATE search_log SET opened_item = $2, opened_pos = $3
+        WHERE id = $1 AND opened_item IS NULL`,
+      [logId, clip(itemId, 64), clip(position, 32)],
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Search → Source Open Rate: the only number that answers whether search gets
+// the library read. Queries alone would not — one that found nothing, or found
+// something nobody opened, is a miss.
+app.get('/api/admin/search-log', requireApiKey, async (req, res) => {
+  try {
+    const totals = (await pool.query(`
+      SELECT COUNT(*)::int                                   AS queries,
+             COUNT(*) FILTER (WHERE results > 0)::int        AS with_results,
+             COUNT(*) FILTER (WHERE opened_item IS NOT NULL)::int AS opened
+        FROM search_log WHERE ts > NOW() - INTERVAL '30 days'
+    `)).rows[0];
+    const misses = (await pool.query(`
+      SELECT query, COUNT(*)::int AS n, MAX(ts) AS last_at
+        FROM search_log
+       WHERE results = 0 AND ts > NOW() - INTERVAL '30 days'
+       GROUP BY query ORDER BY n DESC, last_at DESC LIMIT 50
+    `)).rows;
+    const recent = (await pool.query(`
+      SELECT query, results, opened_item, opened_pos, ts
+        FROM search_log ORDER BY id DESC LIMIT 50
+    `)).rows;
+    res.json({ totals, misses, recent });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

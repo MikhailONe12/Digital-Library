@@ -58,6 +58,9 @@ const FullscreenSpinner: React.FC = () => (
 
 const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'admin' | 'details'>('home');
+  // Where a search result wants the reader to land. Cleared when the detail page
+  // is opened any other way, so a later normal open does not reopen the reader.
+  const [openAt, setOpenAt] = useState<{ url: string; page?: number | null; second?: number | null } | null>(null);
   const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   // Admin content preview — opened from the Admin items list, rendered as a
   // full-screen overlay on top of Admin (so the dashboard keeps its state) and
@@ -441,7 +444,8 @@ const App: React.FC = () => {
         <Home
           items={filteredItems}
           allItems={accessibleItems}
-          onOpenItem={(item) => { setViewHistory(recordView(item.id)); setSelectedItem(item); setCurrentPage('details'); }}
+          onOpenItem={(item) => { setOpenAt(null); setViewHistory(recordView(item.id)); setSelectedItem(item); setCurrentPage('details'); }}
+          onOpenItemAt={(item, at) => { setOpenAt(at); setViewHistory(recordView(item.id)); setSelectedItem(item); setCurrentPage('details'); }}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           scope={scope}
@@ -469,7 +473,8 @@ const App: React.FC = () => {
             item={selectedItem}
             onBack={() => {setCurrentPage('home'); setSelectedItem(null);}}
             onRefresh={() => setDb(getDb())}
-            onOpenItem={(it) => { setViewHistory(recordView(it.id)); setSelectedItem(it); }}
+            openAt={openAt}
+            onOpenItem={(it) => { setOpenAt(null); setViewHistory(recordView(it.id)); setSelectedItem(it); }}
             onOpenAuthor={(author) => {
               // Jump back to the catalog with the author filter pre-applied.
               // Clear competing filters so the result list shows everything

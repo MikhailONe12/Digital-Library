@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
+import { searchInside, logSearchOpened } from '../services/db';
+import type { SearchHit } from '../services/db';
 import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo, getDisplayedLanguages, isExternallyHosted } from '../utils';
@@ -12,6 +14,8 @@ interface HomeProps {
   items: MediaItem[];
   allItems: MediaItem[]; // Unfiltered — used for the Continue / New shelves
   onOpenItem: (item: MediaItem) => void;
+  /** Open a material straight at a position found by search. */
+  onOpenItemAt?: (item: MediaItem, at: { url: string; page?: number | null; second?: number | null }) => void;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   /** Personal collection axis: Library / Favorites / History / Finished. */
@@ -206,7 +210,7 @@ const CategoryShelf: React.FC<{
 };
 
 const Home: React.FC<HomeProps> = ({
-  items, allItems, onOpenItem, searchQuery, setSearchQuery,
+  items, allItems, onOpenItem, onOpenItemAt, searchQuery, setSearchQuery,
   scope, setScope, category, setCategory,
   contentLangFilter, setContentLangFilter, tagFilter, setTagFilter,
   searchField, setSearchField,
@@ -215,6 +219,40 @@ const Home: React.FC<HomeProps> = ({
 }) => {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const timerRef = useRef<number | null>(null);
+
+  // ── Found in the books ────────────────────────────────────────────────────
+  const [insideHits, setInsideHits] = useState<SearchHit[]>([]);
+  const [insideLogId, setInsideLogId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 3) { setInsideHits([]); setInsideLogId(null); return; }
+    let cancelled = false;
+    // Debounced: typing a word should not be a query per keystroke.
+    const timer = window.setTimeout(async () => {
+      const { results, logId } = await searchInside(q, 8);
+      if (cancelled) return;
+      setInsideHits(results);
+      setInsideLogId(logId);
+    }, 350);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [searchQuery]);
+
+  /** Seconds as a reader would read them: 12:34, or 1:05:02 past the hour. */
+  const formatClock = (total: number) => {
+    const s = Math.max(0, Math.floor(total));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return h ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+  };
+
+  // The server's headline marks matches with <b>; nothing else may survive.
+  // Escaping first and re-allowing only that one tag keeps book text — which we
+  // do not control — from reaching innerHTML as markup.
+  const sanitizeSnippet = (raw: string) =>
+    (raw || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/&lt;b&gt;/g, '<b>').replace(/&lt;\/b&gt;/g, '</b>');
   // Wraps the search input + filter toggle + the expandable panel; we use it
   // to close the panel when the user clicks outside of it.
   const filterWrapRef = useRef<HTMLDivElement | null>(null);
@@ -836,6 +874,69 @@ const Home: React.FC<HomeProps> = ({
             </div>
           )}
         </>
+      )}
+
+      {/* ── Found in the books ──────────────────────────────────────────────
+          The filter above answers "which book is called that". This answers
+          "which book says that" — the question the library was failing. It
+          appears only when there is something to show, and always below the
+          familiar cards, so nothing anyone already relies on moves. */}
+      {insideHits.length > 0 && (
+        <div className="mt-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div className="flex items-center gap-3 mb-4">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
+              {t.foundInBooks}
+            </h3>
+            <span className="text-[10px] font-black text-red-600 tabular-nums">{insideHits.length}</span>
+            <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
+          </div>
+
+          <div className="space-y-2.5">
+            {insideHits.map((hit, n) => {
+              const found = allItems.find(i => i.id === hit.item_id);
+              const where = hit.second_start !== null
+                ? formatClock(hit.second_start)
+                : hit.page_label ? `${t.pageShort} ${hit.page_label}`
+                : hit.page ? `${t.pageShort} ${hit.page}`
+                : '';
+              return (
+                <button
+                  key={`${hit.item_id}-${hit.format_url}-${n}`}
+                  type="button"
+                  onClick={() => {
+                    if (!found) return;
+                    logSearchOpened(insideLogId, hit.item_id, where);
+                    if (onOpenItemAt) {
+                      onOpenItemAt(found, { url: hit.format_url, page: hit.page, second: hit.second_start });
+                    } else {
+                      onOpenItem(found);
+                    }
+                  }}
+                  className="w-full text-left p-3.5 rounded-2xl bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/[0.08] hover:border-red-300 dark:hover:border-red-500/40 active:scale-[0.99] transition-all"
+                >
+                  <p className="text-[13px] font-black text-slate-900 dark:text-white truncate">
+                    {found ? pickText(found.title, lang) : hit.item_id}
+                  </p>
+                  {hit.author && (
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate mt-0.5">{hit.author}</p>
+                  )}
+                  {/* The server's headline wraps matches in <b>; sanitizeSnippet
+                      escapes everything else, so book text cannot reach innerHTML
+                      as markup. */}
+                  <p
+                    className="text-[11.5px] text-slate-600 dark:text-slate-300 leading-relaxed mt-1.5 [&_b]:text-red-600 [&_b]:font-black"
+                    dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
+                  />
+                  {where && (
+                    <span className="inline-block mt-2 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-[9px] font-black tracking-widest text-slate-600 dark:text-slate-300 tabular-nums">
+                      {where}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -1130,9 +1130,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     setJobTotals(totals);
   };
 
-  const handleQueueSubtitles = async () => {
+  const handleQueueSubtitles = async (itemId?: string) => {
     try {
-      const { queued, skipped } = await queueSubtitles();
+      const { queued, skipped } = await queueSubtitles(itemId);
       jobsActiveRef.current = true;
       await refreshJobs();
       const s = ta.scan;
@@ -1210,32 +1210,63 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   }, [indexReport]);
 
   /**
-   * What the content list shows on one material.
+   * What the content list shows on one material, and which actions it offers.
    *
-   * The denominator is computed from the item itself, not from the report: a
-   * file that has never been indexed has no row at all, and counting only rows
-   * would report "1 of 1" on a material where half the files were never touched.
+   * The denominator comes from the item, not from the report: a target that has
+   * never been indexed has no row at all, and counting only rows would report
+   * "1 of 1" on a material where half of it was never touched.
+   *
+   * "Indexable" has to mean exactly what the server will attempt, or the card
+   * hides a button for work that would in fact have run. That includes files
+   * flagged external and a material catalogued as a bare source link — both are
+   * fetched, read and thrown away — and excludes subtitle files, which are not
+   * documents but transcripts of something else.
    */
+  const isSubtitleUrl = (url: string) => /\.(srt|vtt)$/i.test(url.split(/[?#]/)[0]);
+
   const itemIndexState = (item: MediaItem) => {
-    const indexable = (item.formats || []).filter(
-      f => !f.external && typeof f.url === 'string' && f.url.includes('/content/')
-    ).length;
+    const formats = (item.formats || []).filter(f => typeof f.url === 'string' && f.url.trim());
+    const docs = formats.filter(f => !isSubtitleUrl(f.url));
+    const subtitleFiles = formats.filter(f => isSubtitleUrl(f.url));
+    // A source link stands in for the material only when nothing else does.
+    const sourceUrl = !formats.length ? (item.source?.url || '').trim() : '';
+    const videos = (item.videos || []).filter(v => typeof v?.url === 'string' && v.url.trim());
+    const mediaFiles = docs.filter(f => /\.(mp4|webm|mkv|mp3|m4a|m4b|ogg|oga|opus|wav)$/i.test(f.url.split(/[?#]/)[0]));
+
+    const documents = docs.length - mediaFiles.length + (sourceUrl ? 1 : 0);
+    const spoken = videos.length + mediaFiles.length;
+    const total = documents + spoken;
+
     const rows = indexByItem.get(item.id) || [];
     const indexed = rows.filter(r => r.state === 'indexed');
     const failed = rows.filter(r => r.state === 'failed');
-    if (!indexable) return { kind: 'none' as const, indexable, done: 0 };
-    if (failed.length) {
-      return { kind: 'failed' as const, indexable, done: indexed.length, detail: failed[0].detail };
-    }
-    if (indexed.length >= indexable) {
+
+    // Subtitles attach to exactly one obvious target, same rule as the server.
+    const canImportSubtitles = subtitleFiles.length > 0 && spoken === 1;
+    const canIndexDocuments = documents > 0;
+
+    const base = {
+      total, documents, spoken, done: indexed.length,
+      canIndexDocuments, canImportSubtitles,
+      hasSubtitleFile: subtitleFiles.length > 0,
+    };
+
+    if (!total) return { ...base, kind: 'none' as const };
+    if (failed.length) return { ...base, kind: 'failed' as const, detail: failed[0].detail };
+    if (indexed.length >= total) {
       return {
-        kind: 'ok' as const, indexable, done: indexed.length,
+        ...base, kind: 'ok' as const,
         chunks: indexed.reduce((n, r) => n + (r.chunk_count || 0), 0),
         manual: indexed.reduce((n, r) => n + (r.manual_pages || 0), 0),
         quality: Math.min(...indexed.map(r => r.quality ?? 1)),
       };
     }
-    return { kind: indexed.length ? ('partial' as const) : ('missing' as const), indexable, done: indexed.length };
+    // Nothing indexed, nothing to press: a video with no transcript and no
+    // subtitle file. Say what is missing instead of "nothing to index".
+    if (!indexed.length && !canIndexDocuments && !canImportSubtitles) {
+      return { ...base, kind: 'needsSubtitles' as const };
+    }
+    return { ...base, kind: indexed.length ? ('partial' as const) : ('missing' as const) };
   };
 
   // Green above clean-typeset level, amber where formulas or conversion damage
@@ -2843,13 +2874,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                               ok:      'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25',
                               partial: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/25',
                               missing: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
+                              needsSubtitles: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/25',
                               failed:  'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
                               none:    'bg-slate-100 text-slate-400 border-slate-200 dark:bg-white/5 dark:text-slate-500 dark:border-white/10',
                             } as const;
                             const text =
                               st.kind === 'ok'      ? `${ta.scan.indexStateIndexed} · ${st.chunks.toLocaleString(lang === 'ru' ? 'ru-RU' : lang)} ${ta.scan.indexChunks}`
-                            : st.kind === 'partial' ? `${ta.scan.cardPartial} ${st.done}/${st.indexable}`
+                            : st.kind === 'partial' ? `${ta.scan.cardPartial} ${st.done}/${st.total}`
                             : st.kind === 'failed'  ? ta.scan.indexStateFailed
+                            : st.kind === 'needsSubtitles' ? ta.scan.cardNeedsSubtitles
                             : st.kind === 'none'    ? ta.scan.cardNothing
                             : ta.scan.cardNotIndexed;
                             return (
@@ -2870,7 +2903,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                       </div>
                     </div>
                     <div className="flex gap-2 shrink-0">
-                      {idx8.kind !== 'none' && (
+                      {idx8.canIndexDocuments && (
                         <button
                           onClick={() => handleIndexRun(i.id)}
                           disabled={indexReport?.job?.running}
@@ -2879,6 +2912,16 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                           className="p-2 bg-slate-50 dark:bg-white/[0.06] rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 disabled:opacity-40 transition-colors"
                         >
                           <RefreshCw size={16} className={indexReport?.job?.running ? 'animate-spin' : ''} />
+                        </button>
+                      )}
+                      {idx8.canImportSubtitles && (
+                        <button
+                          onClick={() => handleQueueSubtitles(i.id)}
+                          title={ta.scan.queueSubtitles}
+                          aria-label={ta.scan.queueSubtitles}
+                          className="p-2 bg-slate-50 dark:bg-white/[0.06] rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 transition-colors"
+                        >
+                          <Video size={16} />
                         </button>
                       )}
                       <button onClick={() => setEditingItem(i)} className="p-2 bg-slate-50 rounded-xl hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><Edit2 size={16}/></button>

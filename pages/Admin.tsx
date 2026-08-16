@@ -1436,13 +1436,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
           </p>
         )}
 
-        {/* The check counts every record; only files can be indexed. Saying which
-            ones are left out, and why, stops "24 records but 21 indexed" reading
-            as a shortfall. */}
-        {(scanCounts.by.media || scanCounts.by.external) ? (
+        {/* Only spoken material stays outside now — external sources are fetched
+            and indexed like everything else, and saying otherwise next to
+            "23 of 23" is a contradiction on the same screen. */}
+        {scanCounts.by.media ? (
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-2">
-            {s.indexOutside}: {num(scanCounts.by.media || 0)} {s.stateMedia} ·{' '}
-            {num(scanCounts.by.external || 0)} {s.stateExternal} — {s.indexOutsideWhy}
+            {s.indexOutside}: {num(scanCounts.by.media)} {s.stateMedia} — {s.indexOutsideWhy}
           </p>
         ) : null}
 

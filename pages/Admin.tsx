@@ -1143,6 +1143,71 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     } catch { /* writeRequest already raised a toast */ }
   };
 
+  const subtitleInputRef = useRef<HTMLInputElement | null>(null);
+  const [subtitleBusy, setSubtitleBusy] = useState(false);
+
+  /**
+   * Upload a subtitle file and put it to work in one gesture.
+   *
+   * The queue button only ever processed files that were already uploaded, so
+   * "Импортировать субтитры" opened nothing and, with no such file anywhere,
+   * silently queued zero. Uploading, cataloguing and queueing are one intention;
+   * splitting them across two screens was the mistake.
+   *
+   * The item is saved before the job is queued: the planner reads the catalogue
+   * from the database, and a file that exists only in this form is invisible to it.
+   */
+  const uploadSubtitleFile = (file: File) => {
+    if (!editingItem?.id) return;
+    const itemId = editingItem.id;
+    const format: FileFormat = {
+      id: Date.now().toString(),
+      name: ta.scan.targetSubtitles,
+      url: '',
+      size: '0MB',
+      language: (editingItem.contentLanguages?.[0] as any) || 'ru',
+      allowDownload: false,
+      allowReading: false,
+    };
+    const formData = new FormData();
+    formData.append('lang', format.language || 'ru');
+    formData.append('file', file);
+    const xhr = new XMLHttpRequest();
+    setSubtitleBusy(true);
+    xhr.onload = async () => {
+      if (subtitleInputRef.current) subtitleInputRef.current.value = '';
+      if (xhr.status !== 200) {
+        setSubtitleBusy(false);
+        toast.error(ta.fileUploadError + xhr.status);
+        return;
+      }
+      try {
+        const res = JSON.parse(xhr.responseText);
+        const next = {
+          ...editingItem,
+          formats: [...(editingItem.formats || []), { ...format, url: res.url, size: res.size }],
+        } as MediaItem;
+        setEditingItem(next);
+        await updateItem(next);
+        const { queued, skipped } = await queueSubtitles(itemId);
+        await refreshJobs();
+        await refreshIndex();
+        onUpdate();
+        toast.success(`${ta.scan.queueQueuedN}: ${queued}`);
+        skipped.forEach((line: string) => toast.error(line));
+      } catch (e: any) {
+        toast.error(e?.message || String(e));
+      } finally {
+        setSubtitleBusy(false);
+      }
+    };
+    xhr.onerror = () => { setSubtitleBusy(false); toast.error(ta.fileUploadError); };
+    xhr.open('POST', `/api/upload/${itemId}/file`);
+    const key = getServerApiKey();
+    if (key) xhr.setRequestHeader('x-api-key', key);
+    xhr.send(formData);
+  };
+
   const handleUnindex = async (itemId: string) => {
     if (!confirm(ta.scan.unindexConfirm)) return;
     try {
@@ -3454,6 +3519,16 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                                 <RefreshCw size={12} strokeWidth={3} className={indexReport?.job?.running ? 'animate-spin' : ''} /> {s.runIndexHere}
                               </button>
                             )}
+                            {st.spoken > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => subtitleInputRef.current?.click()}
+                                disabled={subtitleBusy}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 disabled:opacity-40 active:scale-95 transition-all"
+                              >
+                                <Upload size={12} strokeWidth={3} /> {s.uploadSubs}
+                              </button>
+                            )}
                             {st.canImportSubtitles && (
                               <button
                                 type="button"
@@ -3473,6 +3548,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                               </button>
                             )}
                           </div>
+
+                          <input
+                            ref={subtitleInputRef}
+                            type="file"
+                            accept=".srt,.vtt"
+                            className="hidden"
+                            onChange={e => { const f = e.target.files?.[0]; if (f) uploadSubtitleFile(f); }}
+                          />
 
                           {st.kind === 'needsSubtitles' && (
                             <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-2xl px-4 py-3">

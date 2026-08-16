@@ -881,6 +881,16 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
             if (saved > 0 && saved <= doc.numPages) startPage = saved;
           }
         } catch { /* progress is best-effort */ }
+
+        // A page asked for by a search result wins over where reading stopped:
+        // the reader was opened to see that passage, not to resume. Setting it
+        // before the document loaded was not enough — this is where the page is
+        // decided, and saved progress used to overwrite it every time.
+        if (openAtPageRef.current) {
+          const wanted = openAtPageRef.current;
+          openAtPageRef.current = null;
+          if (wanted > 0 && wanted <= doc.numPages) startPage = wanted;
+        }
         if (cancelled) return;
 
         // Set total + page together so the render effect runs once, settled.
@@ -1509,6 +1519,8 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
   // Arrived from a search result: open that file at that place. Runs once per
   // target — reopening it on every render would fight the reader's own paging.
   const openedAtRef = useRef<string | null>(null);
+  // Survives until the document is loaded, which is when the page is chosen.
+  const openAtPageRef = useRef<number | null>(null);
   useEffect(() => {
     if (!openAt?.url) return;
     const key = `${openAt.url}#${openAt.page ?? openAt.second ?? ''}`;
@@ -1516,6 +1528,7 @@ const ItemDetails: React.FC<ItemDetailsProps> = ({ item, onBack, onRefresh, onOp
     const format = (item.formats || []).find(f => f.url === openAt.url);
     if (!format) return;
     openedAtRef.current = key;
+    openAtPageRef.current = openAt.page || null;
     if (openAt.page) setPdfPage(openAt.page);
     handleRead(format);
   }, [openAt, item]); // eslint-disable-line react-hooks/exhaustive-deps

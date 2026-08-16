@@ -2106,7 +2106,20 @@ const parseSubtitles = raw => {
 // become a single chunk stamped "from 0:04", and the search would send the
 // listener an hour away from what it found — while looking entirely correct.
 const CUE_GAP_SECONDS = 30;      // silence this long is a different moment
-const CHUNK_MAX_SECONDS = 180;   // and no chunk spans more than a few minutes
+const CHUNK_MAX_SECONDS = 90;    // and no chunk spans more than a minute and a half
+
+// Speech is measured in minutes, not in characters, and a page number forgives
+// what a timecode does not: landing on page 143 you see the word, landing at
+// 12:34 you wait. A book's 700-character chunk is a paragraph or two; the same
+// 700 characters of speech is most of a minute, which is both a long wait and
+// enough room for two separate mentions to collapse into one result.
+//
+// This mattered less while auto-captions padded every cue with the previous
+// one's words: the padding made chunks cover half as much time, and stripping
+// it made the granularity honest — and coarse. So speech gets its own, smaller
+// size, and the timecode stays close to the words.
+const CUE_CHUNK_TARGET = 380;
+const CUE_CHUNK_MAX    = 600;
 
 /** Group cues into search-sized chunks, keeping the span each one covers. */
 const chunkCues = cues => {
@@ -2124,11 +2137,11 @@ const chunkCues = cues => {
   for (const cue of cues) {
     const gap = buf.length ? cue.start - buf[buf.length - 1].end : 0;
     const span = buf.length ? cue.end - buf[0].start : 0;
-    if (buf.length && (len + cue.text.length + 1 > CHUNK_MAX
+    if (buf.length && (len + cue.text.length + 1 > CUE_CHUNK_MAX
                        || gap > CUE_GAP_SECONDS
                        || span > CHUNK_MAX_SECONDS)) flush();
     buf.push(cue); len += cue.text.length + 1;
-    if (len >= CHUNK_TARGET) flush();
+    if (len >= CUE_CHUNK_TARGET) flush();
   }
   flush();
   return chunks;

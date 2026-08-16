@@ -7,10 +7,11 @@ import {
   Percent, Database, Upload, Video,
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4,
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
-  HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon
+  HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
+  ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey } from '../services/db';
-import type { ErrorLogRow } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -26,6 +27,23 @@ import CardCover from '../components/CardCover';
 import AuthorsEditor from '../components/AuthorsEditor';
 import { toast } from '../services/toast';
 import { Search as SearchIcon } from 'lucide-react';
+
+// Verdict colours for the recognition tab. Red means "cannot be searched at
+// all", amber "worth a look", slate "not this step's problem" — so the two
+// things that cost money stand out from the things that don't.
+const SCAN_STATE_STYLES: Record<string, string> = {
+  text:        'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25',
+  partial:     'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/25',
+  scan:        'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+  missing:     'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+  error:       'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25',
+  media:       'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
+  external:    'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
+  unsupported: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10',
+};
+
+// Worst first: the filter row should open on what needs a decision.
+const SCAN_STATE_ORDER = ['scan', 'partial', 'error', 'missing', 'unsupported', 'media', 'external', 'text'] as const;
 
 // One collapsible group in the item editor. The form used to be twelve flat
 // blocks, so the file upload — the whole point of the screen — sat below
@@ -75,7 +93,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const ta = t.admin;
   const [apiKeyInput, setApiKeyInput] = useState('');
   // Removed 'users' from activeTab type as it is merged into security
-  const [activeTab, setActiveTab] = useState<'stats' | 'items' | 'types' | 'data' | 'security'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'items' | 'types' | 'data' | 'security' | 'scan'>('stats');
   const [editingItem, setEditingItem] = useState<Partial<MediaItem> | null>(null);
   // Publication date can be a full ISO date ("2021-05-29") or just a year
   // ("2021"). The mode is derived from the stored value whenever a different
@@ -948,6 +966,79 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     }
   };
 
+  // ── Content scan (what can actually be indexed) ──────────────────────────
+  const [scanReport, setScanReport] = useState<ContentScanReport | null>(null);
+  const [scanFilter, setScanFilter] = useState<'all' | ContentScanState>('all');
+  // Kept in a ref, not state: the polling interval closes over its own copy of
+  // state and would keep asking forever after a pass has finished.
+  const scanRunningRef = useRef(false);
+
+  useEffect(() => {
+    if (activeTab !== 'scan' || !isAdmin) return;
+    let cancelled = false;
+    const tick = async () => {
+      const report = await loadContentScan();
+      if (cancelled) return;
+      scanRunningRef.current = report.job.running;
+      setScanReport(report);
+    };
+    tick();
+    // Poll only while a pass is in flight — an idle tab has no reason to talk
+    // to the server every two seconds.
+    const id = setInterval(() => { if (scanRunningRef.current) tick(); }, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeTab, isAdmin]);
+
+  const refreshScan = async () => {
+    const report = await loadContentScan();
+    scanRunningRef.current = report.job.running;
+    setScanReport(report);
+  };
+
+  const handleScanRun = async () => {
+    try {
+      await startContentScan();
+      // Start polling immediately: the first pass over a large library takes a
+      // while to report anything, and a dead-looking button invites a second click.
+      scanRunningRef.current = true;
+      await refreshScan();
+    } catch { /* writeRequest already raised a toast */ }
+  };
+
+  const handleScanStop = async () => {
+    try {
+      await stopContentScan();
+      await refreshScan();
+    } catch { /* writeRequest already raised a toast */ }
+  };
+
+  // Four questions the numbers have to answer: what can be indexed today, what
+  // needs OCR money spent on it, what is simply broken, and what belongs to a
+  // later step. Every verdict lands in exactly one of them.
+  const scanCounts = useMemo(() => {
+    const by: Record<string, number> = {};
+    let pages = 0, chars = 0;
+    for (const s of scanReport?.summary || []) {
+      by[s.state] = s.files;
+      pages += s.pages;
+      chars += s.chars;
+    }
+    const sum = (...states: string[]) => states.reduce((n, k) => n + (by[k] || 0), 0);
+    return {
+      by, pages, chars,
+      ready: sum('text'),
+      ocr: sum('scan', 'partial'),
+      attention: sum('missing', 'error', 'unsupported'),
+      later: sum('media', 'external'),
+      total: Object.values(by).reduce((a, b) => a + b, 0),
+    };
+  }, [scanReport]);
+
+  const scanRows = useMemo(() => {
+    const rows = scanReport?.rows || [];
+    return scanFilter === 'all' ? rows : rows.filter(r => r.state === scanFilter);
+  }, [scanReport, scanFilter]);
+
   // ── Error log (built-in monitoring) ──────────────────────────────────────
   const [errorRows, setErrorRows] = useState<ErrorLogRow[]>([]);
   const [errorsLoading, setErrorsLoading] = useState(false);
@@ -1141,7 +1232,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
            ref={menuRef}
          >
           {/* REMOVED 'users' from list */}
-          {(['stats', 'security', 'items', 'types', 'data'] as const).map(tab => (
+          {(['stats', 'security', 'items', 'scan', 'types', 'data'] as const).map(tab => (
             <button 
               key={tab} 
               data-active={activeTab === tab}
@@ -1162,6 +1253,151 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
       </div>
 
       <div className="max-w-7xl mx-auto">
+        {activeTab === 'scan' && (() => {
+          const s = ta.scan;
+          const job = scanReport?.job;
+          const label = (st: string) => s[`state${st[0].toUpperCase()}${st.slice(1)}`] || st;
+          const hint = (st: string) => s[`state${st[0].toUpperCase()}${st.slice(1)}Hint`] || '';
+          const num = (n: number) => n.toLocaleString(lang === 'ru' ? 'ru-RU' : lang);
+          const pct = job?.total ? Math.round((job.done / job.total) * 100) : 0;
+          const cards = [
+            { key: 'ready',     value: scanCounts.ready,     title: s.readyTitle,     desc: s.readyDesc,     tone: 'text-emerald-600' },
+            { key: 'ocr',       value: scanCounts.ocr,       title: s.ocrTitle,       desc: s.ocrDesc,       tone: 'text-red-600' },
+            { key: 'attention', value: scanCounts.attention, title: s.attentionTitle, desc: s.attentionDesc, tone: 'text-amber-600' },
+            { key: 'later',     value: scanCounts.later,     title: s.laterTitle,     desc: s.laterDesc,     tone: 'text-slate-400' },
+          ];
+
+          return (
+            <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+
+              {/* Run control + headline numbers */}
+              <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                <h3 className="text-xs md:text-sm font-black mb-3 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
+                  <ScanLine size={16} /> {s.title}
+                </h3>
+                <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-6">{s.intro}</p>
+
+                <div className="flex flex-wrap items-center gap-3 mb-4">
+                  {job?.running ? (
+                    <button
+                      onClick={handleScanStop}
+                      className="flex items-center gap-2 px-5 py-3 bg-slate-800 dark:bg-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+                    >
+                      <Square size={13} strokeWidth={3} /> {s.stop}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleScanRun}
+                      className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+                    >
+                      <Play size={13} strokeWidth={3} /> {job?.finishedAt ? s.rerun : s.run}
+                    </button>
+                  )}
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+                    {job?.running
+                      ? `${s.running} · ${num(job.done)} ${s.progress} ${num(job.total)}`
+                      : job?.finishedAt
+                        ? `${s.lastRun}: ${new Date(job.finishedAt).toLocaleString(lang === 'ru' ? 'ru-RU' : lang)}${job.stopRequested ? ` · ${s.stopped}` : ''}`
+                        : s.never}
+                  </p>
+                </div>
+
+                {job?.running && (
+                  <>
+                    <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden mb-2">
+                      <div className="h-full bg-red-600 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    {job.current && (
+                      <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold truncate mb-4">{job.current}</p>
+                    )}
+                  </>
+                )}
+
+                {job?.error && (
+                  <p className="text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 rounded-2xl px-4 py-3 mb-4 break-words">
+                    {s.failed}: {job.error}
+                  </p>
+                )}
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  {cards.map(c => (
+                    <div key={c.key} className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                      <p className={`text-2xl md:text-3xl font-black tracking-tighter tabular-nums ${c.tone}`}>{num(c.value)}</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{c.title}</p>
+                      <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-snug mt-1">{c.desc}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {scanCounts.total > 0 && (
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-4">
+                    {num(scanCounts.total)} {s.files} · {num(scanCounts.pages)} {s.pages} · {num(scanCounts.chars)} {s.chars}
+                  </p>
+                )}
+                <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed mt-3 max-w-3xl">{s.videoNote}</p>
+              </div>
+
+              {/* Per-file verdicts */}
+              <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-4">
+                  {(['all', ...SCAN_STATE_ORDER] as const)
+                    .filter(st => st === 'all' || (scanCounts.by[st] || 0) > 0)
+                    .map(st => (
+                      <button
+                        key={st}
+                        onClick={() => setScanFilter(st as 'all' | ContentScanState)}
+                        className={`flex-shrink-0 px-4 py-2 rounded-2xl text-[9px] font-black uppercase tracking-widest border transition-all whitespace-nowrap
+                          ${scanFilter === st
+                            ? 'bg-red-600 border-red-600 text-white shadow-md'
+                            : 'bg-white dark:bg-black/30 border-slate-200 dark:border-white/10 text-slate-400 dark:text-slate-500 hover:border-red-300 hover:text-red-600'}`}
+                      >
+                        {st === 'all' ? `${s.all} · ${num(scanCounts.total)}` : `${label(st)} · ${num(scanCounts.by[st] || 0)}`}
+                      </button>
+                    ))}
+                </div>
+
+                {scanRows.length === 0 ? (
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-6 text-center">{s.empty}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {scanRows.map((r: ContentScanRow) => (
+                      <div
+                        key={`${r.item_id}::${r.format_url}`}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 p-3 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]"
+                      >
+                        {/* Fixed width so the titles line up: a ragged left edge makes
+                            a list of verdicts much harder to skim than it needs to be. */}
+                        <span className={`shrink-0 w-[7.5rem] text-center px-2 py-1 rounded-lg border text-[8px] font-black uppercase tracking-widest whitespace-nowrap ${SCAN_STATE_STYLES[r.state] || SCAN_STATE_STYLES.unsupported}`}>
+                          {label(r.state)}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-black text-slate-800 dark:text-slate-100 truncate">
+                            {pickText(r.title || undefined, lang, r.item_id)}
+                          </p>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 truncate">
+                            {r.filename || r.format_url}
+                          </p>
+                        </div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
+                          {r.pages ? `${num(r.pages)} ${s.pages}` : ''}
+                          {r.pages && r.chars ? ' · ' : ''}
+                          {r.chars ? `${num(r.chars)} ${s.chars}` : ''}
+                          {r.pages && r.chars ? ` · ${num(Math.round(r.chars / r.pages))} ${s.perPage}` : ''}
+                        </p>
+                        {(r.detail || hint(r.state)) && (
+                          <p className="w-full text-[9px] font-bold text-slate-400 dark:text-slate-500 leading-snug break-words">
+                            {r.detail || hint(r.state)}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {activeTab === 'security' && (
           <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
              

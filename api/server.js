@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import dns from 'dns/promises';
 import net from 'net';
+import os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
@@ -864,6 +865,271 @@ app.put('/api/admin/backup/config', requireApiKey, (req, res) => {
     res.json({ config: maskBackupConfig(next) });
   } catch (e) {
     res.status(500).json({ error: 'Could not save config: ' + (e?.message || String(e)) });
+  }
+});
+
+// ── Content scan ─────────────────────────────────────────────────────────────
+//
+// Answers one question per catalogued file: is there a text layer we can read?
+//
+// This is step zero of the search plan, and it exists because the two decisions
+// that follow — whether OCR is needed at all, and how big the indexing job is —
+// currently rest on nobody's guess. A book whose pages are pictures cannot be
+// searched, and finding that out for three files is a different project from
+// finding it out for a third of the library.
+//
+// It runs as a background job: extracting text from a few hundred books takes
+// minutes, and an HTTP request held open that long is a request that dies.
+
+const SCAN_MEDIA_EXT = new Set([
+  '.mp4', '.webm', '.mkv', '.mp3', '.m4a', '.m4b', '.ogg', '.oga', '.opus', '.wav',
+]);
+
+// A typeset page carries a couple of thousand characters. A scanned page with
+// only a stamped folio carries a handful. The band between is a book that is
+// part text, part image — usually formula-heavy pages set as pictures — and it
+// is worth a human look rather than being rounded to either verdict.
+const SCAN_TEXT_PER_PAGE = 200;
+const SCAN_PARTIAL_PER_PAGE = 20;
+
+// Single job: one library, one operator, and two concurrent passes would only
+// fight over the same CPU and rows.
+const scanJob = {
+  running: false,
+  startedAt: null,
+  finishedAt: null,
+  total: 0,
+  done: 0,
+  current: '',
+  error: null,
+  stopRequested: false,
+};
+
+const scanJobView = () => ({
+  running: scanJob.running,
+  startedAt: scanJob.startedAt,
+  finishedAt: scanJob.finishedAt,
+  total: scanJob.total,
+  done: scanJob.done,
+  current: scanJob.current,
+  error: scanJob.error,
+  stopRequested: scanJob.stopRequested,
+});
+
+// Our own files are stored as <base>/content/<itemId>/<filename>. Anything that
+// doesn't match that shape is somebody else's URL, which is a fact worth
+// reporting rather than a path worth guessing at.
+const scanFilenameFromUrl = (itemId, url) => {
+  if (typeof url !== 'string') return null;
+  const m = url.match(/\/content\/([^/]+)\/([^/?#]+)(?:[?#].*)?$/);
+  if (!m) return null;
+  let dir, filename;
+  try {
+    dir = decodeURIComponent(m[1]);
+    filename = decodeURIComponent(m[2]);
+  } catch {
+    return null;
+  }
+  if (dir !== itemId) return null;
+  // Same charset the upload and download paths enforce — a name outside it
+  // never came from us, so it must not be turned into a filesystem path.
+  return /^[a-zA-Z0-9._-]+$/.test(filename) ? filename : null;
+};
+
+// Whitespace excluded: line breaks and indentation differ wildly between
+// extractors and would make two copies of the same book look different.
+const scanCountChars = text => text.replace(/\s+/g, '').length;
+
+const scanPdf = async filePath => {
+  let pages = null;
+  try {
+    const { stdout } = await execFileAsync('pdfinfo', [filePath], { timeout: 30_000 });
+    const m = stdout.match(/^Pages:\s+(\d+)/m);
+    if (m) pages = parseInt(m[1], 10);
+  } catch {
+    // Damaged or encrypted header. pdftotext often still manages, and a
+    // missing page count only costs us the per-page test.
+  }
+  const { stdout } = await execFileAsync(
+    'pdftotext', ['-q', '-enc', 'UTF-8', filePath, '-'],
+    { timeout: 300_000, maxBuffer: 128 * 1024 * 1024 },
+  );
+  return { pages, chars: scanCountChars(stdout) };
+};
+
+const scanEbook = async filePath => {
+  const out = path.join(os.tmpdir(), `scan-${randomBytes(6).toString('hex')}.txt`);
+  try {
+    await execFileAsync('ebook-convert', [filePath, out], { timeout: 300_000 });
+    return { pages: null, chars: scanCountChars(fs.readFileSync(out, 'utf8')) };
+  } finally {
+    try { fs.unlinkSync(out); } catch { /* never created */ }
+  }
+};
+
+const scanClassify = (pages, chars) => {
+  if (!pages) {
+    // No page count (EPUB, or a PDF with an unreadable header): fall back to a
+    // flat floor, so a good book isn't called a scan for want of a header.
+    return chars > 2000 ? 'text' : chars > 200 ? 'partial' : 'scan';
+  }
+  const perPage = chars / pages;
+  if (perPage >= SCAN_TEXT_PER_PAGE) return 'text';
+  if (perPage >= SCAN_PARTIAL_PER_PAGE) return 'partial';
+  return 'scan';
+};
+
+const scanOneFile = async (itemId, format) => {
+  const url = typeof format?.url === 'string' ? format.url.trim() : '';
+  if (!url) return { state: 'error', detail: 'Файл без ссылки' };
+
+  // Flagged external: we deliberately never fetch it. Reporting it as a
+  // separate state keeps "we chose not to" apart from "we failed to".
+  if (format.external) return { state: 'external' };
+
+  const filename = scanFilenameFromUrl(itemId, url);
+  if (!filename) {
+    return {
+      state: 'error',
+      detail: 'Ссылка ведёт не на наш сервер, но файл не отмечен как внешний',
+    };
+  }
+
+  const filePath = path.join(CONTENT_DIR, itemId, filename);
+  let size = null;
+  try {
+    size = fs.statSync(filePath).size;
+  } catch {
+    return { state: 'missing', filename };
+  }
+
+  const ext = path.extname(filename).toLowerCase();
+  const kind = ext.replace('.', '') || null;
+  if (SCAN_MEDIA_EXT.has(ext)) return { state: 'media', filename, size, kind };
+
+  try {
+    if (ext === '.pdf') {
+      const { pages, chars } = await scanPdf(filePath);
+      return { state: scanClassify(pages, chars), filename, size, kind, pages, chars };
+    }
+    if (ext === '.epub' || ext === '.fb2') {
+      const { chars } = await scanEbook(filePath);
+      return { state: scanClassify(null, chars), filename, size, kind, chars };
+    }
+    return { state: 'unsupported', filename, size, kind };
+  } catch (e) {
+    return { state: 'error', filename, size, kind, detail: clip(e?.message || String(e), 300) };
+  }
+};
+
+const runContentScan = async () => {
+  const startedAt = new Date();
+  Object.assign(scanJob, {
+    running: true,
+    startedAt: startedAt.toISOString(),
+    finishedAt: null,
+    total: 0,
+    done: 0,
+    current: '',
+    error: null,
+    stopRequested: false,
+  });
+
+  try {
+    const { rows } = await pool.query('SELECT id, data FROM items ORDER BY seq');
+    const targets = [];
+    for (const row of rows) {
+      const item = row.data || {};
+      const title = item.title?.ru || item.title?.en || item.title?.es || row.id;
+      for (const format of Array.isArray(item.formats) ? item.formats : []) {
+        if (typeof format?.url === 'string' && format.url.trim()) {
+          targets.push({ itemId: row.id, title, format });
+        }
+      }
+    }
+    scanJob.total = targets.length;
+
+    for (const { itemId, title, format } of targets) {
+      if (scanJob.stopRequested) break;
+      scanJob.current = `${title} · ${format.name || ''}`.trim();
+      const r = await scanOneFile(itemId, format);
+      await pool.query(
+        `INSERT INTO content_scan
+           (item_id, format_url, filename, kind, state, pages, chars, size_bytes, detail, scanned_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
+         ON CONFLICT (item_id, format_url) DO UPDATE SET
+           filename = $3, kind = $4, state = $5, pages = $6, chars = $7,
+           size_bytes = $8, detail = $9, scanned_at = NOW()`,
+        [
+          itemId, format.url.trim(), r.filename || null, r.kind || null, r.state,
+          r.pages ?? null, r.chars ?? null, r.size ?? null, r.detail || null,
+        ],
+      );
+      scanJob.done += 1;
+    }
+
+    // Files dropped from the catalogue since the last pass. Only after a run
+    // that went all the way through — a stopped run has simply not reached them.
+    if (!scanJob.stopRequested) {
+      await pool.query('DELETE FROM content_scan WHERE scanned_at < $1', [startedAt]);
+    }
+  } catch (e) {
+    scanJob.error = clip(e?.message || String(e), 300);
+    console.error('content scan failed:', e);
+  } finally {
+    scanJob.running = false;
+    scanJob.finishedAt = new Date().toISOString();
+    scanJob.current = '';
+  }
+};
+
+// Start a pass. Deliberately not awaited: the caller gets an immediate answer
+// and follows progress through GET /api/admin/scan.
+app.post('/api/admin/scan', requireApiKey, (req, res) => {
+  if (scanJob.running) return res.status(409).json({ error: 'Scan already running' });
+  runContentScan();
+  res.json({ started: true });
+});
+
+app.post('/api/admin/scan/stop', requireApiKey, (req, res) => {
+  if (scanJob.running) scanJob.stopRequested = true;
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/scan', requireApiKey, async (req, res) => {
+  try {
+    const rows = (await pool.query(`
+      SELECT s.item_id, s.format_url, s.filename, s.kind, s.state, s.pages,
+             s.chars, s.size_bytes, s.detail, s.scanned_at,
+             i.data->'title' AS title
+        FROM content_scan s
+        LEFT JOIN items i ON i.id = s.item_id
+       ORDER BY CASE s.state
+                  WHEN 'scan' THEN 1 WHEN 'partial' THEN 2 WHEN 'error' THEN 3
+                  WHEN 'missing' THEN 4 WHEN 'unsupported' THEN 5
+                  WHEN 'media' THEN 6 WHEN 'external' THEN 7 ELSE 8
+                END,
+                s.item_id, s.filename
+       LIMIT 3000
+    `)).rows;
+
+    const summary = (await pool.query(`
+      SELECT state,
+             COUNT(*)::int                  AS files,
+             COALESCE(SUM(pages), 0)::int   AS pages,
+             COALESCE(SUM(chars), 0)::bigint AS chars
+        FROM content_scan
+       GROUP BY state
+    `)).rows;
+
+    res.json({
+      job: scanJobView(),
+      // BIGINT arrives as a string from pg; the UI wants to do arithmetic.
+      rows: rows.map(r => ({ ...r, chars: r.chars === null ? null : Number(r.chars) })),
+      summary: summary.map(s => ({ ...s, chars: Number(s.chars) })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

@@ -146,3 +146,37 @@ CREATE TABLE IF NOT EXISTS error_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_error_log_ts ON error_log(ts DESC);
+
+-- Text-extraction audit: one row per catalogued file, written by the
+-- "Recognition" tab in admin (POST /api/admin/scan).
+--
+-- Step zero of the search plan. Before anything is spent on OCR or on
+-- embeddings, this answers the only question that decides the budget: how much
+-- of the library has a text layer we can already read, and how much is
+-- pictures of pages. Planning without these numbers is guessing.
+--
+-- Cheap to rebuild — it is derived entirely from the files on disk — so it is
+-- never migrated, only re-scanned.
+CREATE TABLE IF NOT EXISTS content_scan (
+  item_id     TEXT        NOT NULL,
+  format_url  TEXT        NOT NULL,
+  filename    TEXT,
+  kind        TEXT,                  -- 'pdf' | 'epub' | 'fb2' | file extension
+  -- text        readable text layer, ready to index as-is
+  -- partial     some text, far too little for the page count — mixed scan
+  -- scan        pictures of pages; needs OCR before it can be searched
+  -- media       audio/video; belongs to the subtitles step, not this one
+  -- external    hosted by someone else, deliberately not fetched
+  -- missing     catalogued but absent from disk
+  -- unsupported extension we do not extract from
+  -- error       extraction failed; `detail` says why
+  state       TEXT        NOT NULL,
+  pages       INT,
+  chars       BIGINT,                -- whitespace excluded
+  size_bytes  BIGINT,
+  detail      TEXT,
+  scanned_at  TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (item_id, format_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_scan_state ON content_scan(state);

@@ -1,4 +1,4 @@
-import { AppState, MediaItem, Bookmark, ReadingProgress, Annotation, HighlightColor, CustomType } from '../types';
+import { AppState, MediaItem, Bookmark, ReadingProgress, Annotation, HighlightColor, CustomType, MultilingualText } from '../types';
 import { toast } from './toast';
 
 // ── Storage keys ─────────────────────────────────────────────────────────────
@@ -624,6 +624,90 @@ export const loadErrorLog = async (): Promise<ErrorLogRow[]> => {
 
 export const clearErrorLog = async (): Promise<void> => {
   await writeRequest('Очистка журнала ошибок', '/api/admin/errors/clear', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+};
+
+// ── Content scan (what can actually be indexed) ─────────────────────────────
+
+/** Verdict for one catalogued file. See api/init.sql for what each means. */
+export type ContentScanState =
+  | 'text' | 'partial' | 'scan' | 'media'
+  | 'external' | 'missing' | 'unsupported' | 'error';
+
+export interface ContentScanRow {
+  item_id: string;
+  format_url: string;
+  filename: string | null;
+  kind: string | null;
+  state: ContentScanState;
+  pages: number | null;
+  /** Characters extracted, whitespace excluded. */
+  chars: number | null;
+  size_bytes: number | null;
+  detail: string | null;
+  scanned_at: string;
+  title: MultilingualText | null;
+}
+
+export interface ContentScanJob {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  total: number;
+  done: number;
+  current: string;
+  error: string | null;
+  stopRequested: boolean;
+}
+
+export interface ContentScanSummaryRow {
+  state: ContentScanState;
+  files: number;
+  pages: number;
+  chars: number;
+}
+
+export interface ContentScanReport {
+  job: ContentScanJob;
+  rows: ContentScanRow[];
+  summary: ContentScanSummaryRow[];
+}
+
+const EMPTY_SCAN_JOB: ContentScanJob = {
+  running: false, startedAt: null, finishedAt: null,
+  total: 0, done: 0, current: '', error: null, stopRequested: false,
+};
+
+/**
+ * Read the last pass. Polled while a pass is running, so a transport failure
+ * returns an empty report rather than throwing at the caller every two seconds.
+ */
+export const loadContentScan = async (): Promise<ContentScanReport> => {
+  try {
+    const res = await fetch('/api/admin/scan', { headers: authHeaders() });
+    if (!res.ok) return { job: EMPTY_SCAN_JOB, rows: [], summary: [] };
+    const data = await res.json();
+    return {
+      job: { ...EMPTY_SCAN_JOB, ...(data.job || {}) },
+      rows: data.rows || [],
+      summary: data.summary || [],
+    };
+  } catch {
+    return { job: EMPTY_SCAN_JOB, rows: [], summary: [] };
+  }
+};
+
+export const startContentScan = async (): Promise<void> => {
+  await writeRequest('Запуск проверки', '/api/admin/scan', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+};
+
+export const stopContentScan = async (): Promise<void> => {
+  await writeRequest('Остановка проверки', '/api/admin/scan/stop', {
     method: 'POST',
     headers: authHeaders(),
   });

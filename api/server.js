@@ -1781,6 +1781,29 @@ app.post('/api/admin/index/purge-external', requireApiKey, async (req, res) => {
   }
 });
 
+// Take one material out of the index without touching the catalogue.
+//
+// The counterpart of the index button: an admin who can put a material in has
+// to be able to take it out, or "try it and see" is a one-way door. This is
+// also the narrow first half of the removal step — same cascade, one material.
+app.delete('/api/admin/index/:itemId', requireApiKey, validateItemId, async (req, res) => {
+  const { itemId } = req.params;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const chunks = await client.query('DELETE FROM chunks WHERE item_id = $1', [itemId]);
+    await client.query('DELETE FROM document_text WHERE item_id = $1', [itemId]);
+    const files = await client.query('DELETE FROM index_status WHERE item_id = $1', [itemId]);
+    await client.query('COMMIT');
+    res.json({ files: files.rowCount, chunks: chunks.rowCount });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
 // Per-page report for one file: what was extracted, how good it looks, and
 // whether a human has already been here.
 app.get('/api/admin/index/pages', requireApiKey, async (req, res) => {

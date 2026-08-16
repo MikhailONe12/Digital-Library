@@ -924,6 +924,16 @@ export const queueSubtitles = async (itemId?: string): Promise<{ queued: number;
   return { queued: data.queued || 0, skipped: data.skipped || [] };
 };
 
+/** Remove one material from the index, leaving the catalogue entry alone. */
+export const unindexItem = async (itemId: string): Promise<{ files: number; chunks: number }> => {
+  const res = await writeRequest('Удаление из индекса', `/api/admin/index/${itemId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  const data = await res.json();
+  return { files: data.files || 0, chunks: data.chunks || 0 };
+};
+
 export const jobAction = async (id: number, action: 'cancel' | 'retry'): Promise<void> => {
   await writeRequest(action === 'cancel' ? 'Отмена задачи' : 'Повтор задачи',
     `/api/admin/jobs/${id}/${action}`, { method: 'POST', headers: authHeaders() });

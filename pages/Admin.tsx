@@ -10,7 +10,7 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem } from '../services/db';
 import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -1140,6 +1140,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
         ? `${s.queueQueuedN}: ${queued}. ${s.queueSkipped}: ${skipped.length}`
         : `${s.queueQueuedN}: ${queued}`);
       if (skipped.length) skipped.forEach((line: string) => toast.error(line));
+    } catch { /* writeRequest already raised a toast */ }
+  };
+
+  const handleUnindex = async (itemId: string) => {
+    if (!confirm(ta.scan.unindexConfirm)) return;
+    try {
+      await unindexItem(itemId);
+      await refreshIndex();
+      toast.success(ta.scan.unindexDone);
     } catch { /* writeRequest already raised a toast */ }
   };
 
@@ -3356,6 +3365,123 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                   )}
                 </div>
               </div>
+                  </EditorGroup>
+
+                  <EditorGroup
+                    n={6}
+                    title={ta.scan.groupIndex}
+                    badge={(indexByItem.get(editingItem.id || '') || []).length || undefined}
+                    open={!!openGroups.groupIndexing}
+                    onToggle={() => toggleGroup('groupIndexing')}
+                  >
+                    {(() => {
+                      const s = ta.scan;
+                      const st = itemIndexState(editingItem as MediaItem);
+                      const rows = indexByItem.get(editingItem.id || '') || [];
+                      const rowFor = (url: string) => rows.find(r => r.format_url === url.trim());
+                      const isSub = (u: string) => /\.(srt|vtt)$/i.test(u.split(/[?#]/)[0]);
+                      const num = (n: number) => n.toLocaleString(lang === 'ru' ? 'ru-RU' : lang);
+
+                      // Everything that can end up in the index, named by what it is.
+                      const formats = (editingItem.formats || []).filter(f => (f.url || '').trim());
+                      const targets: { url: string; name: string; kind: string }[] = [
+                        ...formats.map(f => ({
+                          url: f.url.trim(),
+                          name: f.name || f.url,
+                          kind: isSub(f.url) ? s.targetSubtitles : f.external ? s.targetExternal : s.targetFile,
+                        })),
+                        ...(!formats.length && (editingItem.source?.url || '').trim()
+                          ? [{ url: editingItem.source!.url!.trim(), name: editingItem.source?.name || s.targetSource, kind: s.targetSource }]
+                          : []),
+                        ...((editingItem.videos || []).filter(v => (v.url || '').trim())
+                          .map(v => ({ url: v.url.trim(), name: v.source || s.targetVideo, kind: s.targetVideo }))),
+                      ];
+
+                      return (
+                        <div className="space-y-3">
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold leading-relaxed">{s.groupIndexHint}</p>
+
+                          {targets.length === 0 ? (
+                            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-4 text-center">{s.noTargets}</p>
+                          ) : (
+                            <div className="space-y-2">
+                              {targets.map(t => {
+                                const r = rowFor(t.url);
+                                const tone = !r
+                                  ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'
+                                  : r.state === 'indexed'
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25'
+                                    : r.state === 'failed'
+                                      ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25'
+                                      : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10';
+                                return (
+                                  <div key={t.url} className="p-3 rounded-2xl bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10">
+                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                      <span className={`px-2 py-0.5 rounded-lg border text-[8px] font-black uppercase tracking-widest ${tone}`}>
+                                        {!r ? s.cardNotIndexed
+                                          : r.state === 'indexed' ? s.indexStateIndexed
+                                          : r.state === 'failed' ? s.indexStateFailed
+                                          : s.indexStateSkipped}
+                                      </span>
+                                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">{t.kind}</span>
+                                      <span className="text-[11px] font-black text-slate-800 dark:text-slate-100 truncate min-w-0 flex-1">{t.name}</span>
+                                      {r?.state === 'indexed' && (
+                                        <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums">
+                                          {num(r.pages || 0)} {s.pages} · {num(r.chunk_count || 0)} {s.indexChunks}
+                                          {r.quality !== null && ` · ${r.quality.toFixed(2)}`}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {r?.detail && (
+                                      <p className={`text-[9px] font-bold leading-snug mt-1.5 break-words ${r.state === 'failed' ? 'text-red-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                                        {r.detail}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {st.canIndexDocuments && (
+                              <button
+                                type="button"
+                                onClick={() => handleIndexRun(editingItem.id)}
+                                disabled={indexReport?.job?.running}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md disabled:opacity-40 active:scale-95 transition-all"
+                              >
+                                <RefreshCw size={12} strokeWidth={3} className={indexReport?.job?.running ? 'animate-spin' : ''} /> {s.runIndexHere}
+                              </button>
+                            )}
+                            {st.canImportSubtitles && (
+                              <button
+                                type="button"
+                                onClick={() => handleQueueSubtitles(editingItem.id)}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+                              >
+                                <Video size={12} strokeWidth={3} /> {s.runSubsHere}
+                              </button>
+                            )}
+                            {rows.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => handleUnindex(editingItem.id!)}
+                                className="flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+                              >
+                                <Trash2 size={12} strokeWidth={3} /> {s.unindex}
+                              </button>
+                            )}
+                          </div>
+
+                          {st.kind === 'needsSubtitles' && (
+                            <p className="text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-2xl px-4 py-3">
+                              {s.cardNeedsSubtitles} — {s.stateMediaHint}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </EditorGroup>
               </div> <div className="p-4 bg-slate-50 dark:bg-black/40 border-t border-slate-100"> <button onClick={handleSaveItem} className="w-full py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-red-200">{ta.saveAsset}</button> </div> </div> </div> )} {/* ── Restore confirmation modal ─────────────────────────────────────── */} {restoreTarget && ( <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm"> <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl p-6"> <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center mb-4"> <RotateCcw size={22} className="text-amber-600" /> </div> <h3 className="text-base font-black text-slate-900 mb-1">{ta.backupRestoreConfirm}</h3> <p className="text-xs text-slate-500 leading-relaxed mb-2">{ta.backupRestoreDesc}</p> <p className="text-xs font-mono font-bold text-slate-700 truncate mb-4 bg-slate-50 p-2 rounded-lg">{restoreTarget}</p> <label className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2 block">{ta.backupRestoreConfirmType}</label> <input autoFocus value={restoreConfirm} onChange={e => setRestoreConfirm(e.target.value)} placeholder="RESTORE" className="w-full bg-slate-50 border-2 border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm font-bold focus:border-amber-500 outline-none mb-4" /> <div className="flex gap-3"> <button onClick={() => { setRestoreTarget(null); setRestoreConfirm(''); }} className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-white/10 transition-colors" > {ta.cancel} </button> <button onClick={() => triggerRestore(restoreTarget)} disabled={restoreConfirm.trim().toUpperCase() !=='RESTORE'|| backupBusy} className="flex-1 py-3 rounded-2xl text-xs font-black uppercase tracking-widest bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-40 transition-colors" > {ta.backupRestore} </button> </div> </div> </div> )} {/* ── Backup config modal ────────────────────────────────────────────── */} {showBackupConfig && backupCfgDraft && ( <div className="fixed inset-0 z-[600] bg-slate-900/40 backdrop-blur-xl flex items-end md:items-center justify-center p-0 md:p-5"> <div className="bg-white w-full md:max-w-2xl rounded-t-[2rem] md:rounded-[3rem] border border-white shadow-2xl overflow-hidden h-[90vh] md:max-h-[85vh] flex flex-col"> <div className="p-5 border-b border-slate-100 dark:border-white/[0.08] flex justify-between items-center sticky top-0 bg-white dark:bg-[#1c1c1e] z-10 shrink-0"> <h3 className="text-base font-black uppercase tracking-tighter">{ta.backupConfigure}</h3> <button onClick={() => setShowBackupConfig(false)} className="p-2 bg-slate-50 rounded-full hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600"><X size={20} /></button> </div> <div className="p-5 overflow-y-auto space-y-6 flex-1"> {/* Schedule */} <div> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.backupSchedule}</p> <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 space-y-3"> <label className="flex items-center justify-between cursor-pointer"> <span className="text-xs font-bold text-slate-700">{ta.backupAutomaticBackups}</span> <div className="relative"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.schedule?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), enabled: e.target.checked}})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </div> </label> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupIntervalHours}</label> <input type="number" min="1" max="168" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-xl px-3 py-2 text-xs font-bold focus:border-red-500 outline-none" value={backupCfgDraft.schedule?.intervalHours ?? 6} onChange={e => setBackupCfgDraft({...backupCfgDraft, schedule: {...(backupCfgDraft.schedule || {}), intervalHours: parseInt(e.target.value) || 6}})} /> </div> </div> </div> {/* Target #1 — Local (active by default) */} <div> <div className="flex items-center justify-between mb-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2"> <HardDrive size={11} /> {ta.backupTargetLocal} <span className="text-green-600">●</span> </p> <label className="relative inline-flex items-center cursor-pointer"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.targets?.local?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, local: {...(backupCfgDraft.targets?.local || {}), enabled: e.target.checked}}})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </label> </div> <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed">{ta.backupLocalDesc}</p> </div> {/* Target #2 — Remote VPS (disabled by default) */} <div className="opacity-90"> <div className="flex items-center justify-between mb-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2"> <Server size={11} /> {ta.backupTargetRemote} <span className="text-slate-300">●</span> </p> <label className="relative inline-flex items-center cursor-pointer"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.targets?.remote?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), enabled: e.target.checked}}})} /> <div className="w-10 h-6 bg-slate-200 dark:bg-white/10 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </label> </div> <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed mb-3">{ta.backupRemoteDesc}</p> <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100"> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupRemoteHost}</label> <input type="text" placeholder="backup.example.com" className="w-full bg-white border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.host ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), host: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemoteUser}</label> <input type="text" placeholder="backup" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.user ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), user: e.target.value}}})} /> </div> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemotePath}</label> <input type="text" placeholder="/var/backups/library" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.path ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), path: e.target.value}}})} /> </div> <div className="grid grid-cols-3 gap-2"> <div className="col-span-2"> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemoteKeyPath}</label> <input type="text" placeholder="/root/.ssh/id_ed25519" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.sshKeyPath ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), sshKeyPath: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupRemotePort}</label> <input type="number" placeholder="22" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.remote?.port ?? 22} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, remote: {...(backupCfgDraft.targets?.remote || {}), port: parseInt(e.target.value) || 22}}})} /> </div> </div> </div> </div> {/* Target #3 — S3 (disabled by default) */} <div className="opacity-90"> <div className="flex items-center justify-between mb-3"> <p className="text-[8px] font-black uppercase text-red-600 tracking-widest flex items-center gap-2"> <Cloud size={11} /> {ta.backupTargetS3} <span className="text-slate-300">●</span> </p> <label className="relative inline-flex items-center cursor-pointer"> <input type="checkbox" className="sr-only peer" checked={!!backupCfgDraft.targets?.s3?.enabled} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), enabled: e.target.checked}}})} /> <div className="w-10 h-6 bg-slate-200 rounded-full peer peer-checked:bg-red-600 transition-all after:content-[''] after:absolute after:top-[3px] after:left-[3px] after:bg-white after:rounded-full after:h-[18px] after:w-[18px] after:transition-all peer-checked:after:translate-x-4" /> </label> </div> <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed mb-3">{ta.backupS3Desc}</p> <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100"> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[8px] font-black uppercase text-slate-400 ml-1">{ta.backupS3Endpoint}</label> <input type="text" placeholder="https://storage.yandexcloud.net" className="w-full bg-white border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.endpoint ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), endpoint: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3Region}</label> <input type="text" placeholder="ru-central1" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.region ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), region: e.target.value}}})} /> </div> </div> <div className="grid grid-cols-2 gap-2"> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3Bucket}</label> <input type="text" placeholder="library-backups" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.bucket ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), bucket: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3Prefix}</label> <input type="text" placeholder="prod/" className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.prefix ||''} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), prefix: e.target.value}}})} /> </div> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3AccessKey}</label> <input type="text" placeholder={backupCfgDraft.targets?.s3?.accessKey ==='***' ? ta.backupS3SecretSet : 'AKIA...'} className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.accessKey ==='***' ? '' : (backupCfgDraft.targets?.s3?.accessKey || '')} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), accessKey: e.target.value}}})} /> </div> <div> <label className="text-[8px] font-black uppercase text-slate-400 dark:text-slate-500 ml-1">{ta.backupS3SecretKey}</label> <input type="password" placeholder={backupCfgDraft.targets?.s3?.secretKey ==='***' ? ta.backupS3SecretSet : '••••••••'} className="w-full bg-white dark:bg-[#1c1c1e] border border-slate-200 dark:border-white/10 rounded-lg px-2 py-2 text-[11px] font-mono font-bold focus:border-red-500 outline-none" value={backupCfgDraft.targets?.s3?.secretKey ==='***' ? '' : (backupCfgDraft.targets?.s3?.secretKey || '')} onChange={e => setBackupCfgDraft({...backupCfgDraft, targets: {...backupCfgDraft.targets, s3: {...(backupCfgDraft.targets?.s3 || {}), secretKey: e.target.value}}})} /> </div> </div> </div> <p className="text-[9px] text-slate-400 italic leading-relaxed">{ta.backupSecretsNotice}</p> </div> <div className="p-4 bg-slate-50 border-t border-slate-100 dark:border-white/[0.08] flex gap-3"> <button onClick={() => setShowBackupConfig(false)} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"> {ta.cancel} </button> <button onClick={saveBackupConfig} disabled={backupBusy} className="flex-1 py-3 bg-red-600 text-white rounded-2xl text-xs font-black uppercase tracking-widest shadow-md hover:bg-red-700 disabled:opacity-40 transition-colors"> {ta.save} </button> </div> </div> </div> )} {/* ── Delete confirmation modal ──────────────────────────────────────── */} {itemToDelete && ( <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"> <div className="w-full max-w-sm bg-white dark:bg-[#1c1c1e] rounded-3xl shadow-2xl p-6 animate-in zoom-in-95 duration-200"> <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-600/10 flex items-center justify-center mb-4"> <Trash2 size={22} className="text-red-600" /> </div> <h3 className="text-base font-black text-slate-900 dark:text-white mb-1">{ta.confirmDeleteItem}</h3> <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-2">{ta.confirmDeleteItemDesc}</p> <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate mb-6">«{typeof itemToDelete.title ==='object' ? (itemToDelete.title[lang] || itemToDelete.title.en || itemToDelete.title.ru) : itemToDelete.title}»</p>
             <div className="flex gap-3">

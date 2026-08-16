@@ -1921,26 +1921,45 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // query with the English dictionary highlights the wrong words.
     const headlineConfig = /\p{Script=Cyrillic}/u.test(q) ? 'russian' : 'english';
     const { rows } = await pool.query(
+      // Two orderings, and they do different jobs. Relevance decides *which*
+      // fragments are worth showing — that is the inner query, unchanged. The
+      // outer one decides how they are read: the hits of one material stay
+      // together, and inside it they run from the beginning towards the end.
+      // A video answering at 0:00, 27:21 and 0:28 in that order is a list of
+      // scores, not a place in a recording; sorted by the second it becomes a
+      // route through the video. Books get the same treatment by page.
       `WITH q AS (
          SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
                 websearch_to_tsquery('english'::regconfig, $1) AS tsq
+       ),
+       hits AS (
+         SELECT c.item_id, c.format_url, c.page, c.page_label,
+                c.second_start, c.second_end,
+                ts_rank(c.tsv, q.tsq) AS rank,
+                ts_headline($3::regconfig, c.text, q.tsq,
+                            'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
+                i.data->'title' AS title, i.data->>'author' AS author
+           FROM chunks c
+           CROSS JOIN q
+           LEFT JOIN items i ON i.id = c.item_id
+          WHERE c.tsv @@ q.tsq
+            -- Compared as text on purpose. A cast would throw on any item whose
+            -- isPrivate is not a clean boolean — one bad row in the catalogue
+            -- would then empty every search result for everyone.
+            AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
+          ORDER BY rank DESC
+          LIMIT $2
        )
-       SELECT c.item_id, c.format_url, c.page, c.page_label,
-              c.second_start, c.second_end,
-              ts_rank(c.tsv, q.tsq) AS rank,
-              ts_headline($3::regconfig, c.text, q.tsq,
-                          'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
-              i.data->'title' AS title, i.data->>'author' AS author
-         FROM chunks c
-         CROSS JOIN q
-         LEFT JOIN items i ON i.id = c.item_id
-        WHERE c.tsv @@ q.tsq
-          -- Compared as text on purpose. A cast would throw on any item whose
-          -- isPrivate is not a clean boolean — one bad row in the catalogue
-          -- would then empty every search result for everyone.
-          AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
-        ORDER BY rank DESC
-        LIMIT $2`,
+       SELECT item_id, format_url, page, page_label, second_start, second_end,
+              rank, snippet, title, author
+         FROM hits
+        -- The material with the strongest single hit leads; every other hit of
+        -- that same material follows it immediately, in order of position.
+        ORDER BY MAX(rank) OVER (PARTITION BY item_id) DESC,
+                 item_id,
+                 second_start ASC NULLS LAST,
+                 page ASC NULLS LAST,
+                 rank DESC`,
       [q, limit, headlineConfig, maySeePrivate],
     );
 

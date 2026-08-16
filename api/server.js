@@ -1256,6 +1256,528 @@ app.get('/api/admin/scan', requireApiKey, async (req, res) => {
   }
 });
 
+// ── Indexing ─────────────────────────────────────────────────────────────────
+//
+// Turns the files the scan found into something searchable: text per page,
+// chunks per paragraph, and a per-file report the admin can read.
+//
+// Lives in this file rather than its own module on purpose — the deploy
+// bind-mounts exactly server.js and init.sql, so a third file would turn every
+// code change back into an image rebuild.
+
+const CHUNK_TARGET  = 700;   // characters — where a chunk is happily closed
+const CHUNK_MAX     = 1100;  // …and where it must be
+const CHUNK_OVERLAP = 120;   // carried into the next chunk, so a thought split
+                             // across a boundary is still findable from either side
+
+// Front matter is normally numbered in roman, the body in arabic, and the two
+// runs are what make "page 214 of the file" and "p. 214 of the book" disagree.
+const ROMAN_RE = /^[ivxlcdm]{1,7}$/i;
+
+// A printed folio sits at the very top or the very bottom of the page, alone on
+// its line. Anything else on the page is text, and guessing from it is worse
+// than admitting we don't know.
+const pageFolio = pageText => {
+  const lines = pageText.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  for (const line of [...lines.slice(0, 2), ...lines.slice(-2)]) {
+    const arabic = line.match(/^(\d{1,4})$/);
+    if (arabic) return { arabic: parseInt(arabic[1], 10) };
+    if (ROMAN_RE.test(line)) return { roman: line.toLowerCase() };
+  }
+  return null;
+};
+
+/**
+ * Printed page labels for a whole document, or nulls when the file doesn't
+ * carry enough evidence.
+ *
+ * The offset between printed and physical numbering is constant through the
+ * body, so the most common (printed − physical) difference is the answer. It is
+ * only accepted when a clear majority of the pages that carry a number agree —
+ * a handful of stray figures in a table must not be allowed to renumber a book.
+ */
+const derivePageLabels = pages => {
+  const offsets = new Map();
+  const romans = new Map();
+  pages.forEach((text, i) => {
+    const folio = pageFolio(text);
+    if (!folio) return;
+    if (folio.roman) { romans.set(i, folio.roman); return; }
+    const offset = folio.arabic - (i + 1);
+    offsets.set(offset, (offsets.get(offset) || 0) + 1);
+  });
+
+  let best = 0, bestVotes = 0, votes = 0;
+  for (const [offset, n] of offsets) {
+    votes += n;
+    if (n > bestVotes) { bestVotes = n; best = offset; }
+  }
+  const confident = bestVotes >= 3 && bestVotes / votes >= 0.5;
+
+  return {
+    labels: pages.map((_, i) => {
+      if (romans.has(i)) return romans.get(i);
+      if (!confident) return null;
+      const label = i + 1 + best;
+      return label > 0 ? String(label) : null;
+    }),
+    confident,
+    offset: confident ? best : null,
+  };
+};
+
+/** Share of letters among non-space characters. Low means formulas or bad OCR. */
+const textQuality = text => {
+  const compact = text.replace(/\s+/g, '');
+  if (!compact) return 0;
+  return (compact.match(/\p{L}/gu) || []).length / compact.length;
+};
+
+const splitParagraphs = text =>
+  text.split(/\n\s*\n+/).map(p => p.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+// Only used on a paragraph that is already over the hard limit — a wall of text
+// with no blank lines, which happens in badly converted files.
+const splitLongParagraph = para => {
+  const sentences = para.match(/[^.!?…]+[.!?…]+["»)\]]*\s*|.+$/g) || [para];
+  const out = [];
+  let buf = '';
+  for (const s of sentences) {
+    if (buf && buf.length + s.length > CHUNK_MAX) { out.push(buf.trim()); buf = ''; }
+    buf += s;
+    if (buf.length >= CHUNK_TARGET) { out.push(buf.trim()); buf = ''; }
+  }
+  if (buf.trim()) out.push(buf.trim());
+  return out;
+};
+
+/**
+ * Cut text into search units along paragraph boundaries.
+ *
+ * Not every N characters: in this literature a definition, its formula and the
+ * conditions it holds under live in three consecutive paragraphs, and a counter
+ * that fires mid-sentence turns one idea into three useless fragments.
+ */
+const chunkText = text => {
+  const chunks = [];
+  let buf = '';
+  const flush = () => {
+    const done = buf.trim();
+    if (done) chunks.push(done);
+    buf = done.length > CHUNK_OVERLAP ? done.slice(-CHUNK_OVERLAP) : '';
+  };
+  for (const para of splitParagraphs(text)) {
+    for (const piece of (para.length > CHUNK_MAX ? splitLongParagraph(para) : [para])) {
+      if (buf && buf.length + piece.length + 1 > CHUNK_MAX) flush();
+      buf = buf ? `${buf} ${piece}` : piece;
+      if (buf.length >= CHUNK_TARGET) flush();
+    }
+  }
+  const tail = buf.trim();
+  // The overlap tail alone is not a chunk — it is already inside the previous one.
+  if (tail && !(chunks.length && chunks[chunks.length - 1].endsWith(tail))) chunks.push(tail);
+  return chunks;
+};
+
+// pdftotext separates pages with a form feed, which is the only reason we can
+// keep page numbers at all without parsing the PDF ourselves.
+const extractPdfPages = async filePath => {
+  const { stdout } = await execFileAsync(
+    'pdftotext', ['-q', '-enc', 'UTF-8', filePath, '-'],
+    { timeout: 600_000, maxBuffer: 256 * 1024 * 1024 },
+  );
+  const pages = stdout.split('\f');
+  if (pages.length && !pages[pages.length - 1].trim()) pages.pop();
+  return pages;
+};
+
+// EPUB has no pages — position is a CFI — so this yields one "page 0" holding
+// the whole book. Search and citation work; the reader opens the book rather
+// than the exact spot. Wiring CFI ranges through is a separate piece of work,
+// and doing it badly would be worse than admitting the limit here.
+const extractEpubText = async filePath => {
+  const out = path.join(os.tmpdir(), `idx-${randomBytes(6).toString('hex')}.txt`);
+  try {
+    await execFileAsync('ebook-convert', [filePath, out], { timeout: 600_000 });
+    return [fs.readFileSync(out, 'utf8')];
+  } finally {
+    try { fs.unlinkSync(out); } catch { /* never created */ }
+  }
+};
+
+const indexJob = {
+  running: false, startedAt: null, finishedAt: null,
+  total: 0, done: 0, current: '', error: null, stopRequested: false,
+};
+
+const indexJobView = () => ({ ...indexJob });
+
+// Chunks go in batched: a 300-page book yields ~1000 of them, and a thousand
+// round trips is the difference between a second and a minute.
+const insertChunks = async (client, itemId, formatUrl, rows) => {
+  const BATCH = 100;
+  for (let i = 0; i < rows.length; i += BATCH) {
+    const slice = rows.slice(i, i + BATCH);
+    const values = [];
+    const params = [];
+    slice.forEach((r, n) => {
+      const b = n * 6;
+      values.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6})`);
+      params.push(itemId, formatUrl, r.page, r.pageLabel, r.heading, r.text);
+    });
+    await client.query(
+      `INSERT INTO chunks (item_id, format_url, page, page_label, heading, text)
+       VALUES ${values.join(',')}`,
+      params,
+    );
+  }
+};
+
+/**
+ * Index one file: extract, store per page, re-cut chunks, record the report.
+ *
+ * Pages a human corrected are never overwritten — that is what makes fixing a
+ * mangled formula worth the effort, since the next re-index would otherwise
+ * throw the correction away.
+ */
+const indexOneFile = async (itemId, format) => {
+  const url = format.url.trim();
+  if (format.external) return { state: 'skipped', detail: 'Внешний файл — не индексируется' };
+
+  const filename = scanFilenameFromUrl(itemId, url);
+  if (!filename) return { state: 'skipped', detail: 'Ссылка не на наш сервер' };
+
+  const filePath = path.join(CONTENT_DIR, itemId, filename);
+  if (!fs.existsSync(filePath)) return { state: 'failed', filename, detail: 'Файла нет на диске' };
+
+  const ext = path.extname(filename).toLowerCase();
+  if (SCAN_MEDIA_EXT.has(ext)) return { state: 'skipped', filename, detail: 'Аудио и видео — шаг с субтитрами' };
+
+  let pages, method, labels = { labels: [], confident: false, offset: null };
+  try {
+    if (ext === '.pdf') {
+      pages = await extractPdfPages(filePath);
+      labels = derivePageLabels(pages);
+      method = 'pdftotext';
+    } else if (ext === '.epub' || ext === '.fb2') {
+      pages = await extractEpubText(filePath);
+      method = 'epub';
+    } else {
+      return { state: 'skipped', filename, detail: `Формат ${ext} не извлекаем` };
+    }
+  } catch (e) {
+    return { state: 'failed', filename, detail: clip(e?.message || String(e), 300) };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Which pages a human owns. Everything else is rebuilt from the file.
+    const manual = new Set((await client.query(
+      `SELECT page FROM document_text
+        WHERE item_id = $1 AND format_url = $2 AND source = 'manual'`,
+      [itemId, url],
+    )).rows.map(r => r.page));
+
+    await client.query(
+      `DELETE FROM document_text WHERE item_id = $1 AND format_url = $2 AND source <> 'manual'`,
+      [itemId, url],
+    );
+    await client.query('DELETE FROM chunks WHERE item_id = $1 AND format_url = $2', [itemId, url]);
+
+    const isPaged = method === 'pdftotext';
+    for (let i = 0; i < pages.length; i++) {
+      const page = isPaged ? i + 1 : 0;
+      if (manual.has(page)) continue;
+      const text = pages[i];
+      if (!text.trim()) continue;
+      await client.query(
+        `INSERT INTO document_text (item_id, format_url, page, page_label, source, text, chars)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (item_id, format_url, page) DO UPDATE
+           SET page_label = $4, source = $5, text = $6, chars = $7, updated_at = NOW()`,
+        [itemId, url, page, labels.labels[i] || null, method, text, scanCountChars(text)],
+      );
+    }
+
+    // Chunks are always cut from what is stored, not from what was extracted —
+    // that is how a corrected page reaches the index instead of the raw one.
+    const stored = (await client.query(
+      `SELECT page, page_label, text FROM document_text
+        WHERE item_id = $1 AND format_url = $2 ORDER BY page`,
+      [itemId, url],
+    )).rows;
+
+    const chunkRows = [];
+    let chars = 0;
+    for (const row of stored) {
+      chars += scanCountChars(row.text);
+      for (const text of chunkText(row.text)) {
+        chunkRows.push({ page: row.page, pageLabel: row.page_label, heading: null, text });
+      }
+    }
+    await insertChunks(client, itemId, url, chunkRows);
+
+    const quality = stored.length
+      ? stored.reduce((sum, r) => sum + textQuality(r.text), 0) / stored.length
+      : 0;
+
+    const detail = method === 'pdftotext' && !labels.confident
+      ? 'Напечатанные номера страниц не определились — показывается номер страницы файла'
+      : method === 'epub'
+        ? 'EPUB: позиция внутри книги пока не сохраняется, читалка откроет книгу с начала'
+        : null;
+
+    await client.query(
+      `INSERT INTO index_status
+         (item_id, format_url, filename, state, method, pages, chars, chunk_count, quality, manual_pages, detail, indexed_at)
+       VALUES ($1,$2,$3,'indexed',$4,$5,$6,$7,$8,$9,$10, NOW())
+       ON CONFLICT (item_id, format_url) DO UPDATE SET
+         filename = $3, state = 'indexed', method = $4, pages = $5, chars = $6,
+         chunk_count = $7, quality = $8, manual_pages = $9, detail = $10, indexed_at = NOW()`,
+      [itemId, url, filename, method, stored.length, chars, chunkRows.length,
+       quality, manual.size, detail],
+    );
+
+    await client.query('COMMIT');
+    return { state: 'indexed', filename, pages: stored.length, chunks: chunkRows.length };
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    return { state: 'failed', filename, detail: clip(e?.message || String(e), 300) };
+  } finally {
+    client.release();
+  }
+};
+
+const runIndex = async (onlyItemId = null) => {
+  Object.assign(indexJob, {
+    running: true, startedAt: new Date().toISOString(), finishedAt: null,
+    total: 0, done: 0, current: '', error: null, stopRequested: false,
+  });
+  try {
+    const { rows } = onlyItemId
+      ? await pool.query('SELECT id, data FROM items WHERE id = $1', [onlyItemId])
+      : await pool.query('SELECT id, data FROM items ORDER BY seq');
+
+    const targets = [];
+    for (const row of rows) {
+      const item = row.data || {};
+      const title = item.title?.ru || item.title?.en || item.title?.es || row.id;
+      for (const format of Array.isArray(item.formats) ? item.formats : []) {
+        if (typeof format?.url === 'string' && format.url.trim()) {
+          targets.push({ itemId: row.id, title, format });
+        }
+      }
+    }
+    indexJob.total = targets.length;
+
+    for (const { itemId, title, format } of targets) {
+      if (indexJob.stopRequested) break;
+      indexJob.current = `${title} · ${format.name || ''}`.trim();
+      const r = await indexOneFile(itemId, format);
+      if (r.state !== 'indexed') {
+        await pool.query(
+          `INSERT INTO index_status (item_id, format_url, filename, state, detail, indexed_at)
+           VALUES ($1,$2,$3,$4,$5, NOW())
+           ON CONFLICT (item_id, format_url) DO UPDATE SET
+             filename = $3, state = $4, detail = $5, indexed_at = NOW()`,
+          [itemId, format.url.trim(), r.filename || null, r.state, r.detail || null],
+        );
+      }
+      indexJob.done += 1;
+    }
+  } catch (e) {
+    indexJob.error = clip(e?.message || String(e), 300);
+    console.error('indexing failed:', e);
+  } finally {
+    indexJob.running = false;
+    indexJob.finishedAt = new Date().toISOString();
+    indexJob.current = '';
+  }
+};
+
+app.post('/api/admin/index', requireApiKey, (req, res) => {
+  if (indexJob.running) return res.status(409).json({ error: 'Indexing already running' });
+  const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : null;
+  if (itemId && !/^[a-zA-Z0-9_-]{1,64}$/.test(itemId)) {
+    return res.status(400).json({ error: 'Invalid itemId' });
+  }
+  runIndex(itemId);
+  res.json({ started: true });
+});
+
+app.post('/api/admin/index/stop', requireApiKey, (req, res) => {
+  if (indexJob.running) indexJob.stopRequested = true;
+  res.json({ ok: true });
+});
+
+app.get('/api/admin/index', requireApiKey, async (req, res) => {
+  try {
+    const rows = (await pool.query(`
+      SELECT s.item_id, s.format_url, s.filename, s.state, s.method, s.pages,
+             s.chars, s.chunk_count, s.quality, s.manual_pages, s.detail, s.indexed_at,
+             i.data->'title' AS title
+        FROM index_status s
+        LEFT JOIN items i ON i.id = s.item_id
+       ORDER BY CASE s.state WHEN 'failed' THEN 1 WHEN 'skipped' THEN 2 ELSE 3 END,
+                s.quality NULLS FIRST, s.item_id
+       LIMIT 2000
+    `)).rows;
+
+    const totals = (await pool.query(`
+      SELECT COUNT(*) FILTER (WHERE state = 'indexed')::int AS indexed,
+             COUNT(*) FILTER (WHERE state = 'failed')::int  AS failed,
+             COUNT(*) FILTER (WHERE state = 'skipped')::int AS skipped,
+             COALESCE(SUM(pages) FILTER (WHERE state = 'indexed'), 0)::int   AS pages,
+             COALESCE(SUM(chars) FILTER (WHERE state = 'indexed'), 0)::bigint AS chars,
+             COALESCE(SUM(chunk_count) FILTER (WHERE state = 'indexed'), 0)::int AS chunks,
+             COALESCE(SUM(manual_pages), 0)::int AS manual_pages
+        FROM index_status
+    `)).rows[0];
+
+    // How many files are indexable at all, so "12 of 21" is answerable.
+    const indexable = (await pool.query(`
+      SELECT COUNT(*)::int AS n
+        FROM items i, jsonb_array_elements(
+               CASE WHEN jsonb_typeof(i.data->'formats') = 'array'
+                    THEN i.data->'formats' ELSE '[]'::jsonb END) f
+       WHERE COALESCE(f->>'external', 'false') <> 'true'
+         AND f->>'url' LIKE '%/content/%'
+    `)).rows[0]?.n || 0;
+
+    res.json({
+      job: indexJobView(),
+      rows: rows.map(r => ({ ...r, chars: r.chars === null ? null : Number(r.chars) })),
+      totals: { ...totals, chars: Number(totals.chars), indexable },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Per-page report for one file: what was extracted, how good it looks, and
+// whether a human has already been here.
+app.get('/api/admin/index/pages', requireApiKey, async (req, res) => {
+  const { item, format } = req.query;
+  if (typeof item !== 'string' || typeof format !== 'string') {
+    return res.status(400).json({ error: 'item and format are required' });
+  }
+  const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  try {
+    const rows = (await pool.query(
+      `SELECT page, page_label, source, chars, text, updated_at
+         FROM document_text
+        WHERE item_id = $1 AND format_url = $2
+        ORDER BY page LIMIT $3 OFFSET $4`,
+      [item, format, limit, offset],
+    )).rows;
+    const total = (await pool.query(
+      'SELECT COUNT(*)::int AS n FROM document_text WHERE item_id = $1 AND format_url = $2',
+      [item, format],
+    )).rows[0].n;
+    res.json({
+      total,
+      pages: rows.map(r => ({ ...r, quality: textQuality(r.text) })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Correct one page by hand. Marked 'manual', which makes it survive every later
+// re-index — without that guarantee, fixing a formula would be wasted effort.
+app.put('/api/admin/index/page', requireApiKey, async (req, res) => {
+  const { itemId, formatUrl, page, text } = req.body || {};
+  if (typeof itemId !== 'string' || typeof formatUrl !== 'string'
+      || !Number.isInteger(page) || typeof text !== 'string') {
+    return res.status(400).json({ error: 'itemId, formatUrl, page and text are required' });
+  }
+  if (text.length > 2_000_000) return res.status(400).json({ error: 'Text too large' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const existing = await client.query(
+      'SELECT page_label FROM document_text WHERE item_id = $1 AND format_url = $2 AND page = $3',
+      [itemId, formatUrl, page],
+    );
+    if (!existing.rowCount) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Page not found' });
+    }
+    await client.query(
+      `UPDATE document_text
+          SET text = $4, chars = $5, source = 'manual', updated_at = NOW()
+        WHERE item_id = $1 AND format_url = $2 AND page = $3`,
+      [itemId, formatUrl, page, text, scanCountChars(text)],
+    );
+    // Only this page's chunks are rebuilt; the rest of the book is untouched.
+    await client.query(
+      'DELETE FROM chunks WHERE item_id = $1 AND format_url = $2 AND page = $3',
+      [itemId, formatUrl, page],
+    );
+    const label = existing.rows[0].page_label;
+    await insertChunks(client, itemId, formatUrl,
+      chunkText(text).map(t => ({ page, pageLabel: label, heading: null, text: t })));
+    await client.query(
+      `UPDATE index_status
+          SET manual_pages = (SELECT COUNT(*) FROM document_text
+                               WHERE item_id = $1 AND format_url = $2 AND source = 'manual'),
+              chunk_count = (SELECT COUNT(*) FROM chunks
+                              WHERE item_id = $1 AND format_url = $2)
+        WHERE item_id = $1 AND format_url = $2`,
+      [itemId, formatUrl],
+    );
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Full-text search over the chunks.
+//
+// Admin-only for now, deliberately. Opening it to readers needs the private-item
+// check the download path already does, and shipping a public endpoint that
+// leaks the contents of a restricted book would be a poor way to find that out.
+app.get('/api/search', requireApiKey, async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (!q) return res.json({ results: [] });
+  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  try {
+    // Headline in the language the question was asked in — stemming a Russian
+    // query with the English dictionary highlights the wrong words.
+    const headlineConfig = /\p{Script=Cyrillic}/u.test(q) ? 'russian' : 'english';
+    const { rows } = await pool.query(
+      `WITH q AS (
+         SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
+                websearch_to_tsquery('english'::regconfig, $1) AS tsq
+       )
+       SELECT c.item_id, c.format_url, c.page, c.page_label,
+              ts_rank(c.tsv, q.tsq) AS rank,
+              ts_headline($3::regconfig, c.text, q.tsq,
+                          'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
+              i.data->'title' AS title, i.data->>'author' AS author
+         FROM chunks c
+         CROSS JOIN q
+         LEFT JOIN items i ON i.id = c.item_id
+        WHERE c.tsv @@ q.tsq
+        ORDER BY rank DESC
+        LIMIT $2`,
+      [q, limit, headlineConfig],
+    );
+    res.json({ results: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Upload cover image
 // POST /api/upload/:itemId/cover  (field: file)
 app.post('/api/upload/:itemId/cover',

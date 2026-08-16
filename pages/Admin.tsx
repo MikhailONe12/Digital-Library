@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -27,6 +27,41 @@ import CardCover from '../components/CardCover';
 import AuthorsEditor from '../components/AuthorsEditor';
 import { toast } from '../services/toast';
 import { Search as SearchIcon } from 'lucide-react';
+
+// One collapsible section of the Index tab. The tab holds two jobs — check what
+// can be indexed, and index it — and stacking both open makes a wall nobody
+// reads. Collapsed sections keep the headline numbers visible and the detail one
+// click away.
+const Panel: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  subtitle: string;
+  badge?: string;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}> = ({ icon, title, subtitle, badge, open, onToggle, children }) => (
+  <div className="bg-white dark:bg-[#1c1c1e] rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm overflow-hidden">
+    <button
+      onClick={onToggle}
+      aria-expanded={open}
+      className="w-full flex items-center gap-4 p-5 md:p-6 text-left hover:bg-slate-50/70 dark:hover:bg-white/[0.03] transition-colors"
+    >
+      <div className="p-2.5 bg-red-50 dark:bg-red-600/10 text-red-600 rounded-2xl shrink-0">{icon}</div>
+      <div className="min-w-0 flex-1">
+        <h3 className="text-xs md:text-sm font-black text-slate-900 dark:text-white uppercase tracking-widest">{title}</h3>
+        <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{subtitle}</p>
+      </div>
+      {badge && (
+        <span className="shrink-0 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-white/[0.06] text-[10px] font-black text-slate-600 dark:text-slate-300 tabular-nums whitespace-nowrap">
+          {badge}
+        </span>
+      )}
+      <ChevronDown size={18} strokeWidth={3} className={`shrink-0 text-slate-300 dark:text-slate-600 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+    </button>
+    {open && <div className="px-5 md:px-8 pb-6 md:pb-8">{children}</div>}
+  </div>
+);
 
 // Verdict colours for the recognition tab. Red means "cannot be searched at
 // all", amber "worth a look", slate "not this step's problem" — so the two
@@ -1040,6 +1075,345 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     return scanFilter === 'all' ? rows : rows.filter(r => r.state === scanFilter);
   }, [scanReport, scanFilter]);
 
+  // ── Index (extracted text and search chunks) ─────────────────────────────
+  const [openCheck, setOpenCheck] = useState(false);
+  const [openIndex, setOpenIndex] = useState(true);
+  const [indexReport, setIndexReport] = useState<IndexReport | null>(null);
+  const indexRunningRef = useRef(false);
+  const [pagesFor, setPagesFor] = useState<IndexRow | null>(null);
+  const [pageRows, setPageRows] = useState<IndexPage[]>([]);
+  const [pageTotal, setPageTotal] = useState(0);
+  const [editingPage, setEditingPage] = useState<number | null>(null);
+  const [pageDraft, setPageDraft] = useState('');
+  const [pagesBusy, setPagesBusy] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'scan' || !isAdmin) return;
+    let cancelled = false;
+    const tick = async () => {
+      const report = await loadIndexReport();
+      if (cancelled) return;
+      indexRunningRef.current = report.job.running;
+      setIndexReport(report);
+    };
+    tick();
+    const id = setInterval(() => { if (indexRunningRef.current) tick(); }, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [activeTab, isAdmin]);
+
+  const refreshIndex = async () => {
+    const report = await loadIndexReport();
+    indexRunningRef.current = report.job.running;
+    setIndexReport(report);
+  };
+
+  const handleIndexRun = async (itemId?: string) => {
+    try {
+      await startIndexing(itemId);
+      indexRunningRef.current = true;
+      await refreshIndex();
+    } catch { /* writeRequest already raised a toast */ }
+  };
+
+  const handleIndexStop = async () => {
+    try { await stopIndexing(); await refreshIndex(); }
+    catch { /* writeRequest already raised a toast */ }
+  };
+
+  const openPages = async (row: IndexRow) => {
+    setPagesFor(row);
+    setEditingPage(null);
+    setPageRows([]);
+    setPageTotal(0);
+    const { total, pages } = await loadIndexPages(row.item_id, row.format_url, 0, 50);
+    setPageTotal(total);
+    setPageRows(pages);
+  };
+
+  const loadMorePages = async () => {
+    if (!pagesFor) return;
+    const { pages } = await loadIndexPages(pagesFor.item_id, pagesFor.format_url, pageRows.length, 50);
+    setPageRows(prev => [...prev, ...pages]);
+  };
+
+  const handleSavePage = async (page: number) => {
+    if (!pagesFor) return;
+    setPagesBusy(true);
+    try {
+      await savePageText(pagesFor.item_id, pagesFor.format_url, page, pageDraft);
+      // Re-read rather than patch locally: the server recomputes the character
+      // count, the quality and the chunk total, and a guess here would drift.
+      const { total, pages } = await loadIndexPages(pagesFor.item_id, pagesFor.format_url, 0, Math.max(pageRows.length, 50));
+      setPageTotal(total);
+      setPageRows(pages);
+      setEditingPage(null);
+      await refreshIndex();
+      toast.success(ta.scan.pagesSaved);
+    } catch { /* writeRequest already raised a toast */ }
+    finally { setPagesBusy(false); }
+  };
+
+  // Green above clean-typeset level, amber where formulas or conversion damage
+  // start showing, red where the text is mostly not letters.
+  const qualityTone = (q: number | null) =>
+    q === null ? 'text-slate-400'
+    : q >= 0.85 ? 'text-emerald-600'
+    : q >= 0.6  ? 'text-amber-600'
+    : 'text-red-600';
+
+  const renderIndexPanel = (s: any, num: (n: number) => string) => {
+    const job = indexReport?.job;
+    const totals = indexReport?.totals;
+    const rows = indexReport?.rows || [];
+    const pct = job?.total ? Math.round((job.done / job.total) * 100) : 0;
+    const lastRun = job?.finishedAt || (rows.length ? rows[0].indexed_at : null);
+
+    return (
+      <Panel
+        icon={<Database size={18} strokeWidth={2.5} />}
+        title={s.sectionIndex}
+        subtitle={s.sectionIndexSub}
+        badge={totals ? `${num(totals.indexed)} ${s.indexedOf} ${num(totals.indexable)}` : undefined}
+        open={openIndex}
+        onToggle={() => setOpenIndex(v => !v)}
+      >
+        <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-6">{s.indexIntro}</p>
+
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          {job?.running ? (
+            <button
+              onClick={handleIndexStop}
+              className="flex items-center gap-2 px-5 py-3 bg-slate-800 dark:bg-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+            >
+              <Square size={13} strokeWidth={3} /> {s.stop}
+            </button>
+          ) : (
+            <button
+              onClick={() => handleIndexRun()}
+              className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+            >
+              <Play size={13} strokeWidth={3} /> {rows.length ? s.indexRerun : s.indexRun}
+            </button>
+          )}
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">
+            {job?.running
+              ? `${s.running} · ${num(job.done)} ${s.progress} ${num(job.total)}`
+              : lastRun
+                ? `${s.indexLastRun}: ${new Date(lastRun).toLocaleString(lang === 'ru' ? 'ru-RU' : lang)}`
+                : s.indexNever}
+          </p>
+        </div>
+
+        {job?.running && (
+          <>
+            <div className="h-1.5 w-full bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden mb-2">
+              <div className="h-full bg-red-600 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+            </div>
+            {job.current && <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold truncate mb-4">{job.current}</p>}
+          </>
+        )}
+
+        {job?.error && (
+          <p className="text-[10px] font-bold text-red-600 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/25 rounded-2xl px-4 py-3 mb-4 break-words">
+            {job.error}
+          </p>
+        )}
+
+        {totals && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { k: 'ok',    v: `${num(totals.indexed)} / ${num(totals.indexable)}`, t: s.indexed,      tone: 'text-emerald-600' },
+              { k: 'fail',  v: num(totals.failed),   t: s.indexFailed,  tone: totals.failed ? 'text-red-600' : 'text-slate-400' },
+              { k: 'skip',  v: num(totals.skipped),  t: s.indexSkipped, tone: 'text-slate-400' },
+              { k: 'chunk', v: num(totals.chunks),   t: s.indexChunks,  tone: 'text-slate-700 dark:text-slate-200' },
+            ].map(c => (
+              <div key={c.k} className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                <p className={`text-2xl md:text-[26px] font-black tracking-tighter tabular-nums ${c.tone}`}>{c.v}</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{c.t}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {totals && totals.manual_pages > 0 && (
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-4">
+            {num(totals.pages)} {s.pages} · {num(totals.chars)} {s.chars} · {num(totals.manual_pages)} {s.indexManual}
+          </p>
+        )}
+        {totals && totals.manual_pages === 0 && totals.pages > 0 && (
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-4">
+            {num(totals.pages)} {s.pages} · {num(totals.chars)} {s.chars}
+          </p>
+        )}
+
+        <div className="h-px bg-slate-100 dark:bg-white/[0.08] my-6" />
+
+        {rows.length === 0 ? (
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-6 text-center">{s.indexEmpty}</p>
+        ) : (
+          <div className="space-y-2">
+            {rows.map(r => (
+              <div
+                key={`${r.item_id}::${r.format_url}`}
+                className="p-3 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]"
+              >
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span className={`shrink-0 w-[6.5rem] truncate text-center px-2 py-1 rounded-lg border text-[8px] font-black uppercase tracking-widest
+                    ${r.state === 'indexed'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/25'
+                      : r.state === 'failed'
+                        ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/25'
+                        : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-white/5 dark:text-slate-400 dark:border-white/10'}`}>
+                    {r.state === 'indexed' ? s.indexStateIndexed : r.state === 'failed' ? s.indexStateFailed : s.indexStateSkipped}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-black text-slate-800 dark:text-slate-100 truncate">
+                      {pickText(r.title || undefined, lang, r.item_id)}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 truncate">
+                      {r.filename || r.format_url}
+                      {r.method ? ` · ${r.method}` : ''}
+                    </p>
+                  </div>
+                  {r.state === 'indexed' && (
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 tabular-nums whitespace-nowrap">
+                      {num(r.pages || 0)} {s.pages} · {num(r.chars || 0)} {s.chars} · {num(r.chunk_count || 0)} {s.indexChunks}
+                      {r.quality !== null && (
+                        <span className={`ml-2 ${qualityTone(r.quality)}`}>{s.indexQuality} {r.quality.toFixed(2)}</span>
+                      )}
+                      {r.manual_pages > 0 && (
+                        <span className="ml-2 text-red-600">· {num(r.manual_pages)} {s.indexManual}</span>
+                      )}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handleIndexRun(r.item_id)}
+                      disabled={job?.running}
+                      title={s.indexOne}
+                      className="px-3 py-2 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300 hover:border-red-300 hover:text-red-600 disabled:opacity-40 transition-colors"
+                    >
+                      <RefreshCw size={12} strokeWidth={3} />
+                    </button>
+                    {r.state === 'indexed' && (
+                      <button
+                        onClick={() => openPages(r)}
+                        className="px-3 py-2 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300 hover:border-red-300 hover:text-red-600 transition-colors"
+                      >
+                        {s.indexPages}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {r.detail && (
+                  <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 leading-snug mt-2 break-words">{r.detail}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed mt-4 max-w-3xl">{s.indexQualityHint}</p>
+      </Panel>
+    );
+  };
+
+  const renderPagesModal = (s: any, num: (n: number) => string) => {
+    if (!pagesFor) return null;
+    return (
+      <div className="fixed inset-0 z-[600] flex items-end md:items-center justify-center p-0 md:p-5 bg-slate-900/40 backdrop-blur-xl">
+        <div className="bg-white dark:bg-[#1c1c1e] w-full md:max-w-3xl rounded-t-[2rem] md:rounded-[2rem] border border-white dark:border-white/10 shadow-2xl overflow-hidden h-[90vh] md:max-h-[85vh] flex flex-col">
+          <div className="p-5 border-b border-slate-100 dark:border-white/[0.08] flex justify-between items-start gap-4 shrink-0">
+            <div className="min-w-0">
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white truncate">{s.pagesTitle}</h3>
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                {pickText(pagesFor.title || undefined, lang, pagesFor.item_id)} · {pagesFor.filename}
+              </p>
+            </div>
+            <button onClick={() => { setPagesFor(null); setEditingPage(null); }} className="p-2 bg-slate-50 dark:bg-white/[0.06] rounded-full hover:bg-red-50 dark:hover:bg-red-500/20 hover:text-red-600 shrink-0">
+              <X size={18} />
+            </button>
+          </div>
+
+          <p className="px-5 py-3 text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-black/40 border-b border-slate-100 dark:border-white/[0.08] shrink-0">
+            {s.pagesManualNote}
+          </p>
+
+          <div className="p-4 md:p-5 overflow-y-auto flex-1 space-y-2">
+            {pageRows.length === 0 && (
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-8 text-center">{s.pagesEmpty}</p>
+            )}
+            {pageRows.map(pg => (
+              <div key={pg.page} className="rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] overflow-hidden">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+                  <span className="text-[10px] font-black text-slate-800 dark:text-slate-100 tabular-nums whitespace-nowrap">
+                    {s.pagesPage} {pg.page || '—'}
+                  </span>
+                  {pg.page_label && (
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                      {s.pagesPrinted} «{pg.page_label}»
+                    </span>
+                  )}
+                  {pg.source === 'manual' && (
+                    <span className="px-2 py-0.5 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 text-[8px] font-black uppercase tracking-widest">
+                      {s.indexManual}
+                    </span>
+                  )}
+                  <span className="ml-auto text-[9px] font-black uppercase tracking-widest tabular-nums text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                    {num(pg.chars)} {s.chars}
+                    <span className={`ml-2 ${qualityTone(pg.quality)}`}>{pg.quality.toFixed(2)}</span>
+                  </span>
+                  <button
+                    onClick={() => { setEditingPage(editingPage === pg.page ? null : pg.page); setPageDraft(pg.text); }}
+                    className="px-3 py-1.5 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-200 dark:border-white/10 text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-300 hover:border-red-300 hover:text-red-600 transition-colors"
+                  >
+                    {s.pagesEdit}
+                  </button>
+                </div>
+                {editingPage === pg.page ? (
+                  <div className="px-4 pb-4 space-y-3">
+                    <textarea
+                      value={pageDraft}
+                      onChange={e => setPageDraft(e.target.value)}
+                      className="w-full h-64 resize-y bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-2xl p-4 text-[11px] font-mono leading-relaxed focus:border-red-600 outline-none hover:border-red-400 transition-colors"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSavePage(pg.page)}
+                        disabled={pagesBusy}
+                        className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md disabled:opacity-40 active:scale-95 transition-all"
+                      >
+                        {s.pagesSave}
+                      </button>
+                      <button
+                        onClick={() => setEditingPage(null)}
+                        className="px-5 py-2.5 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest hover:bg-slate-200 dark:hover:bg-white/10 transition-colors"
+                      >
+                        {s.pagesCancel}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="px-4 pb-4 text-[10px] font-mono text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-3 whitespace-pre-wrap break-words">
+                    {pg.text.slice(0, 400)}
+                  </p>
+                )}
+              </div>
+            ))}
+            {pageRows.length < pageTotal && (
+              <button
+                onClick={loadMorePages}
+                className="w-full py-3 rounded-2xl border-2 border-dashed border-slate-200 dark:border-white/10 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:border-red-300 hover:text-red-600 transition-colors"
+              >
+                {pageRows.length} / {pageTotal}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // ── Error log (built-in monitoring) ──────────────────────────────────────
   const [errorRows, setErrorRows] = useState<ErrorLogRow[]>([]);
   const [errorsLoading, setErrorsLoading] = useState(false);
@@ -1283,13 +1657,18 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
           ];
 
           return (
-            <div className="space-y-6 md:space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="space-y-5 md:space-y-6 animate-in slide-in-from-bottom-4 duration-500">
 
-              {/* Run control + headline numbers */}
-              <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
-                <h3 className="text-xs md:text-sm font-black mb-3 flex items-center gap-3 text-slate-900 dark:text-white uppercase tracking-widest underline decoration-red-600 decoration-4 underline-offset-8">
-                  <ScanLine size={16} /> {s.title}
-                </h3>
+              {renderIndexPanel(s, num)}
+
+              <Panel
+                icon={<ScanLine size={18} strokeWidth={2.5} />}
+                title={s.sectionCheck}
+                subtitle={s.sectionCheckSub}
+                badge={scanCounts.total ? `${num(scanCounts.total)} ${s.records}` : undefined}
+                open={openCheck}
+                onToggle={() => setOpenCheck(v => !v)}
+              >
                 <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-6">{s.intro}</p>
 
                 <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -1373,10 +1752,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                 )}
 
                 <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold leading-relaxed mt-3 max-w-3xl">{s.videoNote}</p>
-              </div>
 
-              {/* Per-file verdicts */}
-              <div className="bg-white dark:bg-[#1c1c1e] p-5 md:p-8 rounded-[2rem] border border-slate-100 dark:border-white/[0.08] shadow-sm">
+                <div className="h-px bg-slate-100 dark:bg-white/[0.08] my-6" />
+
                 <div className="flex gap-2 overflow-x-auto no-scrollbar pb-3 mb-4">
                   {(['all', ...SCAN_STATE_ORDER] as const)
                     .filter(st => st === 'all' || (scanCounts.by[st] || 0) > 0)
@@ -1431,7 +1809,9 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                     ))}
                   </div>
                 )}
-              </div>
+              </Panel>
+
+              {renderPagesModal(s, num)}
             </div>
           );
         })()}

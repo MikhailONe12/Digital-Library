@@ -180,3 +180,84 @@ CREATE TABLE IF NOT EXISTS content_scan (
 );
 
 CREATE INDEX IF NOT EXISTS idx_content_scan_state ON content_scan(state);
+
+-- ── Search index ────────────────────────────────────────────────────────────
+--
+-- Extracted text, one row per page. The page number is the point of the whole
+-- exercise: a search result has to be able to open the reader where the answer
+-- is, and that needs two different numbers.
+--
+--   page        the physical page of the file — what the reader opens
+--   page_label  what is printed on that page — what a citation quotes
+--
+-- They differ by however long the front matter is, which is why a PDF page 214
+-- is routinely not "p. 214" of the book.
+--
+-- `source` records how the text got here. It matters because 'manual' is
+-- protected: re-indexing rebuilds everything except pages a human corrected.
+CREATE TABLE IF NOT EXISTS document_text (
+  item_id     TEXT        NOT NULL,
+  format_url  TEXT        NOT NULL,
+  page        INT         NOT NULL,   -- 1-based; 0 when the format has no pages
+  page_label  TEXT,
+  source      TEXT        NOT NULL,   -- 'pdftotext' | 'epub' | 'ocr' | 'manual'
+  text        TEXT        NOT NULL,
+  chars       INT         NOT NULL,   -- whitespace excluded
+  updated_at  TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (item_id, format_url, page)
+);
+
+CREATE INDEX IF NOT EXISTS idx_doctext_item ON document_text(item_id, format_url);
+
+-- Search units, cut from document_text along paragraph boundaries.
+--
+-- The generated tsvector indexes each chunk under both configurations at once:
+-- the corpus is bilingual, and a Russian question about "гамма" and an English
+-- one about "gamma" have to reach the same books.
+CREATE TABLE IF NOT EXISTS chunks (
+  id           BIGSERIAL   PRIMARY KEY,
+  item_id      TEXT        NOT NULL,
+  format_url   TEXT        NOT NULL,
+  page         INT,
+  page_label   TEXT,
+  heading      TEXT,
+  char_start   INT,
+  char_end     INT,
+  spine_item   TEXT,                  -- EPUB
+  cfi_start    TEXT,
+  cfi_end      TEXT,
+  second_start INT,                   -- audio / video
+  second_end   INT,
+  text         TEXT        NOT NULL,
+  tsv          TSVECTOR    GENERATED ALWAYS AS (
+                 to_tsvector('russian'::regconfig, text) ||
+                 to_tsvector('english'::regconfig, text)
+               ) STORED,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_tsv  ON chunks USING GIN (tsv);
+CREATE INDEX IF NOT EXISTS idx_chunks_item ON chunks(item_id, format_url);
+
+-- One row per indexed file: what came out, how, when, and how trustworthy it
+-- looks. This is what the admin's Index panel reads.
+CREATE TABLE IF NOT EXISTS index_status (
+  item_id     TEXT        NOT NULL,
+  format_url  TEXT        NOT NULL,
+  filename    TEXT,
+  state       TEXT        NOT NULL,   -- 'indexed' | 'failed' | 'skipped'
+  method      TEXT,                   -- 'pdftotext' | 'epub' | …
+  pages       INT,
+  chars       BIGINT,
+  chunk_count INT,
+  -- Share of letters among non-space characters, 0..1. Clean type sits near
+  -- 0.85; formula-heavy pages and bad OCR fall far below it, which is how a
+  -- book worth looking at surfaces without anyone proofreading 300 pages.
+  quality     REAL,
+  manual_pages INT NOT NULL DEFAULT 0,
+  detail      TEXT,
+  indexed_at  TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (item_id, format_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_index_status_state ON index_status(state);

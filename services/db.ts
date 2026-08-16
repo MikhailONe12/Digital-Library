@@ -742,6 +742,140 @@ export const stopContentScan = async (): Promise<void> => {
   });
 };
 
+// ── Index (extracted text and search chunks) ────────────────────────────────
+
+export type IndexState = 'indexed' | 'failed' | 'skipped';
+
+export interface IndexRow {
+  item_id: string;
+  format_url: string;
+  filename: string | null;
+  state: IndexState;
+  /** How the text came out: 'pdftotext' | 'epub' | … */
+  method: string | null;
+  pages: number | null;
+  /** Characters stored, whitespace excluded. */
+  chars: number | null;
+  chunk_count: number | null;
+  /** Share of letters among non-space characters, 0..1. Low = formulas or bad OCR. */
+  quality: number | null;
+  /** Pages a human corrected. They survive every re-index. */
+  manual_pages: number;
+  detail: string | null;
+  indexed_at: string;
+  title: MultilingualText | null;
+}
+
+export interface IndexTotals {
+  indexed: number;
+  failed: number;
+  skipped: number;
+  pages: number;
+  chars: number;
+  chunks: number;
+  manual_pages: number;
+  /** Files that could be indexed at all — the denominator for "12 of 21". */
+  indexable: number;
+}
+
+export interface IndexJob {
+  running: boolean;
+  startedAt: string | null;
+  finishedAt: string | null;
+  total: number;
+  done: number;
+  current: string;
+  error: string | null;
+  stopRequested: boolean;
+}
+
+export interface IndexReport {
+  job: IndexJob;
+  rows: IndexRow[];
+  totals: IndexTotals;
+}
+
+export interface IndexPage {
+  page: number;
+  page_label: string | null;
+  source: string;
+  chars: number;
+  text: string;
+  quality: number;
+  updated_at: string;
+}
+
+const EMPTY_INDEX_JOB: IndexJob = {
+  running: false, startedAt: null, finishedAt: null,
+  total: 0, done: 0, current: '', error: null, stopRequested: false,
+};
+
+const EMPTY_INDEX_REPORT: IndexReport = {
+  job: EMPTY_INDEX_JOB,
+  rows: [],
+  totals: { indexed: 0, failed: 0, skipped: 0, pages: 0, chars: 0, chunks: 0, manual_pages: 0, indexable: 0 },
+};
+
+/** Polled while indexing runs, so a transport blip returns empty rather than throwing. */
+export const loadIndexReport = async (): Promise<IndexReport> => {
+  try {
+    const res = await fetch('/api/admin/index', { headers: authHeaders() });
+    if (!res.ok) return EMPTY_INDEX_REPORT;
+    const data = await res.json();
+    return {
+      job: { ...EMPTY_INDEX_JOB, ...(data.job || {}) },
+      rows: data.rows || [],
+      totals: { ...EMPTY_INDEX_REPORT.totals, ...(data.totals || {}) },
+    };
+  } catch {
+    return EMPTY_INDEX_REPORT;
+  }
+};
+
+/** Index everything, or one material when `itemId` is given. */
+export const startIndexing = async (itemId?: string): Promise<void> => {
+  await writeRequest('Запуск индексации', '/api/admin/index', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(itemId ? { itemId } : {}),
+  });
+};
+
+export const stopIndexing = async (): Promise<void> => {
+  await writeRequest('Остановка индексации', '/api/admin/index/stop', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+};
+
+export const loadIndexPages = async (
+  itemId: string, formatUrl: string, offset = 0, limit = 50,
+): Promise<{ total: number; pages: IndexPage[] }> => {
+  const qs = new URLSearchParams({ item: itemId, format: formatUrl, offset: String(offset), limit: String(limit) });
+  try {
+    const res = await fetch(`/api/admin/index/pages?${qs}`, { headers: authHeaders() });
+    if (!res.ok) return { total: 0, pages: [] };
+    const data = await res.json();
+    return { total: data.total || 0, pages: data.pages || [] };
+  } catch {
+    return { total: 0, pages: [] };
+  }
+};
+
+/**
+ * Correct one page by hand. The server marks it 'manual', which is what makes
+ * the correction survive the next re-index instead of being thrown away.
+ */
+export const savePageText = async (
+  itemId: string, formatUrl: string, page: number, text: string,
+): Promise<void> => {
+  await writeRequest('Сохранение страницы', '/api/admin/index/page', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ itemId, formatUrl, page, text }),
+  });
+};
+
 // ── Analytics excludes (Telegram usernames + IPs not counted in stats) ──────
 
 const cleanUsername = (s: string): string =>

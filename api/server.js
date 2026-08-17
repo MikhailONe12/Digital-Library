@@ -1812,8 +1812,8 @@ app.get('/api/admin/index', requireApiKey, async (req, res) => {
     }
     const doneTargets = new Set((await pool.query(
       `SELECT item_id, format_url FROM index_status WHERE state = 'indexed'`,
-    )).rows.map(r => `${r.item_id} ${r.format_url}`));
-    const spokenPending = spoken.filter(t => !doneTargets.has(`${t.itemId} ${t.url}`)).length;
+    )).rows.map(r => `${r.item_id} ${r.format_url}`));
+    const spokenPending = spoken.filter(t => !doneTargets.has(`${t.itemId} ${t.url}`)).length;
 
     // A media file already counts among the files; a platform link does not
     // count anywhere else, so only it is added.
@@ -1964,6 +1964,42 @@ app.put('/api/admin/index/page', requireApiKey, async (req, res) => {
 // Admin-only for now, deliberately. Opening it to readers needs the private-item
 // check the download path already does, and shipping a public endpoint that
 // leaks the contents of a restricted book would be a poor way to find that out.
+// Neighbouring chunks deliberately share their edges — 120 characters carried
+// forward, so a thought split across a boundary is findable from either side.
+// That is right for the index and wrong for the screen: a match that lands in
+// the shared part belongs to both chunks, and the reader gets the same sentence
+// twice, on the same page, one card under the other.
+//
+// The index keeps its overlap; the answer drops the repeat. Two hits are the
+// same place when the words immediately around the match are the same — that is
+// what a reader compares, and it survives the snippets starting at different
+// points, which is exactly how the duplicate presents itself.
+// Only the words *before* the match count. When the overlap falls at the end of
+// a chunk, the first copy has nothing after the match while the second runs on
+// for a line — so what follows differs although the passage is the same.
+const passageKey = snippet => {
+  const words = String(snippet || '').split(/\s+/).filter(Boolean);
+  const at = Math.max(0, words.findIndex(w => /<b>/i.test(w)));
+  return words.slice(Math.max(0, at - 5), at + 1)
+    .map(w => w.replace(/<[^>]*>/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''))
+    .filter(Boolean)
+    .join(' ');
+};
+
+const dropRepeatedPassages = rows => {
+  const seen = new Set();
+  return rows.filter(r => {
+    // Same material, same page, same words leading into the match — all three.
+    // A book may repeat a phrase on page 10 and again on page 200, and those
+    // are two places worth going to. A page is also as far as the overlap can
+    // reach: pages are chunked one at a time.
+    const key = `${r.item_id} ${r.page ?? r.second_start ?? ''} ${passageKey(r.snippet)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 app.get('/api/search', checkUserAccess, async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   // Asking for one material's places rather than the library's: the reader has
@@ -2032,6 +2068,9 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
          -- Three places from any one material, however much room is left. Seven
          -- rows of the same book saying the same sentence is not seven answers,
          -- and the reader who wants the eighth can ask for it.
+         --
+         -- Fetched with room to spare: neighbouring chunks share their edges, so
+         -- some of these rows are the same passage twice and get dropped below.
          SELECT id, rank, item_total FROM ranked
           WHERE $5::text IS NOT NULL OR rn <= 3
           ORDER BY rn, rank DESC, id LIMIT $2
@@ -2053,8 +2092,12 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
                  c.second_start ASC NULLS LAST,
                  c.page ASC NULLS LAST,
                  h.rank DESC`,
-      [q, limit, headlineConfig, maySeePrivate, onlyItem],
+      // Over-fetch, because the duplicates are dropped after the query and the
+      // reader should still get a full list.
+      [q, Math.min(limit * 3, 150), headlineConfig, maySeePrivate, onlyItem],
     );
+
+    const results = dropRepeatedPassages(rows).slice(0, limit);
 
     // One row per question, filled in later if a result is opened. A query that
     // found nothing is the most valuable row here: it is the list of what the
@@ -2067,13 +2110,13 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
       try {
         const ins = await pool.query(
           'INSERT INTO search_log (query, lang, results, visitor) VALUES ($1,$2,$3,$4) RETURNING id',
-          [clip(q, 300), clip(req.query.lang, 8), rows.length, visitorHash(resolveVisitorIp(req))],
+          [clip(q, 300), clip(req.query.lang, 8), results.length, visitorHash(resolveVisitorIp(req))],
         );
         logId = ins.rows[0].id;
       } catch { /* logging must never break search */ }
     }
 
-    res.json({ results: rows, logId });
+    res.json({ results, logId });
   } catch (e) {
     // Loud on the server, and honest to the client: a failed search must not
     // arrive looking like a search that found nothing.

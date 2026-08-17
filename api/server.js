@@ -1987,15 +1987,18 @@ const passageKey = snippet => {
 };
 
 const dropRepeatedPassages = rows => {
-  const seen = new Set();
+  const seen = new Map();
   return rows.filter(r => {
-    // Same material, same page, same words leading into the match — all three.
-    // A book may repeat a phrase on page 10 and again on page 200, and those
-    // are two places worth going to. A page is also as far as the overlap can
-    // reach: pages are chunked one at a time.
-    const key = `${r.item_id} ${r.page ?? r.second_start ?? ''} ${passageKey(r.snippet)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    // Same material, same words leading into the match, and no further than the
+    // neighbouring page. A book may well repeat a phrase on page 10 and again
+    // on page 200 — those are two places worth going to — but the same words at
+    // the same edge of two consecutive pages are one place seen twice: either
+    // the chunk overlap, or a running header the extractor reads on every page.
+    const key = passageKey(r.snippet);
+    const at = r.page ?? r.second_start ?? 0;
+    const near = seen.get(`${r.item_id} ${key}`);
+    if (near !== undefined && Math.abs(near - at) <= 1) return false;
+    seen.set(`${r.item_id} ${key}`, at);
     return true;
   });
 };
@@ -2071,12 +2074,12 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
          --
          -- Fetched with room to spare: neighbouring chunks share their edges, so
          -- some of these rows are the same passage twice and get dropped below.
-         SELECT id, rank, item_total FROM ranked
+         SELECT id, rank, rn, item_total FROM ranked
           WHERE $5::text IS NOT NULL OR rn <= 3
           ORDER BY rn, rank DESC, id LIMIT $2
        )
        SELECT c.item_id, c.format_url, c.page, c.page_label,
-              c.second_start, c.second_end, h.rank, h.item_total,
+              c.second_start, c.second_end, h.rank, h.rn, h.item_total,
               -- Computed only for the rows that survived, never for every match.
               ts_headline($3::regconfig, c.text, q.tsq,
                           'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
@@ -2097,7 +2100,17 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
       [q, Math.min(limit * 3, 150), headlineConfig, maySeePrivate, onlyItem],
     );
 
-    const results = dropRepeatedPassages(rows).slice(0, limit);
+    // Trimming has to keep the breadth rule, and the rows arrive in *reading*
+    // order — grouped by material. Cutting that list at twelve keeps the first
+    // four materials with three places each and throws the other four away
+    // entirely, which is precisely what it did. So the cut is made on the
+    // breadth order (every material's best place first) and the survivors are
+    // then shown in reading order again.
+    const deduped = dropRepeatedPassages(rows);
+    const keep = new Set([...deduped]
+      .sort((a, b) => a.rn - b.rn || b.rank - a.rank)
+      .slice(0, limit));
+    const results = deduped.filter(r => keep.has(r)).map(({ rn, ...row }) => row);
 
     // One row per question, filled in later if a result is opened. A query that
     // found nothing is the most valuable row here: it is the list of what the

@@ -133,6 +133,12 @@ export interface MediaItem {
   source?: SourceInfo;
   /** Distribution licence; absent means "not stated" (treated as ARR). */
   license?: LicenseInfo;
+  /**
+   * Why this material may be here at all — the question a rights complaint
+   * starts with, and the one a licence code does not answer. Absent means
+   * 'unknown', which is a state to be fixed rather than a default to rely on.
+   */
+  rightsBasis?: 'own' | 'permission' | 'license' | 'public-domain' | 'citation' | 'unknown';
   /** Scholarly identifiers; absent for most items (videos, courses, books). */
   publication?: PublicationInfo;
   isPrivate: boolean;

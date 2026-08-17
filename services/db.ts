@@ -993,6 +993,60 @@ export const loadSearchStats = async (): Promise<SearchStats> => {
   }
 };
 
+// ── Withdrawal ──────────────────────────────────────────────────────────────
+
+export type WithdrawAction = 'freeze' | 'unfreeze' | 'purge' | 'delete';
+
+export interface HoldRow {
+  item_id: string;
+  reason: string | null;
+  by_whom: string | null;
+  since: string;
+  title: MultilingualText | null;
+  /** Chunks still stored for it — the measure of what a thaw brings back for free. */
+  chunks: number;
+}
+
+export interface WithdrawalRow {
+  id: number;
+  item_id: string | null;
+  title: string | null;
+  action: WithdrawAction | string;
+  reason: string | null;
+  by_whom: string | null;
+  detail: string | null;
+  at: string;
+}
+
+export interface WithdrawalReport {
+  holds: HoldRow[];
+  log: WithdrawalRow[];
+  /** Indexed materials with no stated basis for being here. */
+  unknownBasis: number;
+}
+
+const EMPTY_WITHDRAWALS: WithdrawalReport = { holds: [], log: [], unknownBasis: 0 };
+
+export const loadWithdrawals = async (): Promise<WithdrawalReport> => {
+  try {
+    const res = await fetch('/api/admin/withdrawals', { headers: authHeaders() });
+    if (!res.ok) return EMPTY_WITHDRAWALS;
+    return { ...EMPTY_WITHDRAWALS, ...(await res.json()) };
+  } catch {
+    return EMPTY_WITHDRAWALS;
+  }
+};
+
+export const withdrawItem = async (
+  itemId: string, action: WithdrawAction, reason: string,
+): Promise<void> => {
+  await writeRequest('Изъятие', '/api/admin/withdraw', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ itemId, action, reason }),
+  });
+};
+
 // ── Vectors and hybrid search ───────────────────────────────────────────────
 
 export interface VectorReport {

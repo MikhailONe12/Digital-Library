@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square, Sparkles
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare, probeSearchSpeed } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport, SpeedProbe } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare, probeSearchSpeed, loadWithdrawals, withdrawItem } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport, SpeedProbe, WithdrawalReport, WithdrawAction } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1086,6 +1086,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [compare, setCompare] = useState<CompareReport | null>(null);
   const [compareBusy, setCompareBusy] = useState(false);
   const [probe, setProbe] = useState<SpeedProbe | null>(null);
+  const [openHolds, setOpenHolds] = useState(false);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalReport | null>(null);
+  const [holdReason, setHoldReason] = useState('');
+  const holds = withdrawals?.holds || [];
+  const frozenIds = useMemo(() => new Set(holds.map(h => h.item_id)), [holds]);
   const queueWasActive = useRef(false);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobTotals, setJobTotals] = useState<JobTotals>({ queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 });
@@ -1140,6 +1145,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     if (activeTab !== 'scan' || !isAdmin) return;
     loadSearchStats().then(setSearchStats);
     loadVectorReport().then(setVectors);
+    loadWithdrawals().then(setWithdrawals);
   }, [activeTab, isAdmin]);
 
   // While an embedding job runs, the coverage number is the progress bar.
@@ -1157,6 +1163,19 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   };
 
   const handleProbe = async () => setProbe(await probeSearchSpeed());
+
+  // Withdrawal is the one action here that can destroy work, so the reason
+  // travels with it and the list of what is currently held reloads immediately.
+  const handleWithdraw = async (itemId: string, action: WithdrawAction) => {
+    if (!itemId) return;
+    try {
+      await withdrawItem(itemId, action, holdReason.trim());
+    } catch { return; }
+    setHoldReason('');
+    setWithdrawals(await loadWithdrawals());
+    setIndexReport(await loadIndexReport());
+    if (action === 'delete') { setEditingItem(null); onUpdate(); }
+  };
 
   const handleCompare = async () => {
     setCompareBusy(true);
@@ -1773,6 +1792,85 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     );
   };
 
+  // Withdrawal, and the record of it. The record is the point: the most useful
+  // row in it is about a material that is no longer here, and the panel exists
+  // so an answer to "why was this removed" does not depend on anyone's memory.
+  const renderHoldsPanel = (s: any, num: (n: number) => string) => {
+    const w = withdrawals;
+    const log = w?.log || [];
+    const label: Record<string, string> = {
+      freeze: s.holdFreeze, unfreeze: s.holdUnfreeze, purge: s.holdPurge, delete: s.holdDelete,
+    };
+    return (
+      <Panel
+        icon={<Lock size={18} strokeWidth={2.5} />}
+        title={s.holdTitle}
+        subtitle={s.holdSub}
+        badge={holds.length ? num(holds.length) : undefined}
+        open={openHolds}
+        onToggle={() => setOpenHolds(o => !o)}
+      >
+        <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-5">{s.holdIntro}</p>
+
+        {!!w?.unknownBasis && (
+          <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-2xl px-4 py-3 mb-4">
+            {num(w.unknownBasis)} {s.holdUnknownBasis}
+          </p>
+        )}
+
+        {holds.length === 0 ? (
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-3">{s.holdNone}</p>
+        ) : (
+          <div className="space-y-2 mb-5">
+            {holds.map(h => (
+              <div key={h.item_id} className="flex flex-wrap items-center gap-3 p-3 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25">
+                <span className="min-w-0 flex-1 text-[11px] font-black text-slate-800 dark:text-slate-100 truncate">
+                  {pickText(h.title as any, lang) || h.item_id}
+                </span>
+                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 tabular-nums">
+                  {num(h.chunks)} {s.holdChunks}
+                </span>
+                {h.reason && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate max-w-[16rem]">{h.reason}</span>}
+                <button
+                  type="button"
+                  onClick={() => handleWithdraw(h.item_id, 'unfreeze')}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 active:scale-95 transition-all"
+                >
+                  {s.holdUnfreeze}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {log.length === 0 ? (
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-3">{s.holdLogEmpty}</p>
+        ) : (
+          <div className="space-y-1.5">
+            {log.slice(0, 30).map(r => (
+              <div key={r.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 p-2.5 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                <span className={`shrink-0 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-widest ${
+                  r.action === 'unfreeze' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+                  : r.action === 'freeze' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+                  : 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400'}`}>
+                  {label[r.action] || r.action}
+                </span>
+                <span className="min-w-0 flex-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate">
+                  {r.title || r.item_id}
+                </span>
+                {r.reason && <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate max-w-[14rem]">{r.reason}</span>}
+                {r.detail && <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500">{r.detail}</span>}
+                <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 tabular-nums">
+                  {new Date(r.at).toLocaleString(lang === 'ru' ? 'ru-RU' : lang)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    );
+  };
+
   const renderQueuePanel = (s: any, num: (n: number) => string) => {
     const active = jobTotals.queued + jobTotals.running;
     const badge = active
@@ -2381,6 +2479,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
               {renderMetricPanel(s, num)}
 
               {renderVectorsPanel(s, num)}
+
+              {renderHoldsPanel(s, num)}
 
               {renderQueuePanel(s, num)}
 
@@ -3629,6 +3729,41 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
               </div>
 
                     <div>
+                <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.scan.basisSection}</p>
+                {/* A licence code says what may be done with the text. This says
+                    why the text is here at all — which is the question a rights
+                    complaint opens with, and the one nobody can reconstruct
+                    later from the catalogue. "Не выяснено" is a state to fix,
+                    not a default to lean on. */}
+                <div className="flex flex-wrap gap-2 mb-5">
+                  {([
+                    ['own', ta.scan.basisOwn],
+                    ['permission', ta.scan.basisPermission],
+                    ['license', ta.scan.basisLicense],
+                    ['public-domain', ta.scan.basisPublicDomain],
+                    ['citation', ta.scan.basisCitation],
+                    ['unknown', ta.scan.basisUnknown],
+                  ] as const).map(([code, label]) => {
+                    const on = (editingItem.rightsBasis || 'unknown') === code;
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => setEditingItem({ ...editingItem, rightsBasis: code })}
+                        className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                          on
+                            ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                            : code === 'unknown'
+                              ? 'bg-white dark:bg-black/30 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-500/30 hover:border-amber-500'
+                              : 'bg-white dark:bg-black/30 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-white/15 hover:border-red-400'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <p className="text-[8px] font-black uppercase text-red-600 tracking-widest mb-3">{ta.licenseSection}</p>
                 <div className="space-y-2 p-3 bg-slate-50 dark:bg-black/40 rounded-2xl border border-slate-100 dark:border-white/[0.08]">
                   <div>
@@ -3929,6 +4064,62 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                               {s.cardNeedsSubtitles} — {s.stateMediaHint}
                             </p>
                           )}
+
+                          {/* Withdrawal, where the index is. Two strengths, and
+                              the reversible one first: freezing takes the
+                              material out of the answers and keeps its text, so
+                              a rights question costs minutes rather than a
+                              re-run of recognition. */}
+                          <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-3">
+                            <p className="text-[8px] font-black uppercase text-red-600 tracking-widest">{s.holdSection}</p>
+                            {frozenIds.has(editingItem.id || '') && (
+                              <p className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-xl px-3 py-2">
+                                {s.holdFrozen} {new Date(holds.find(h => h.item_id === editingItem.id)?.since || Date.now())
+                                  .toLocaleDateString(lang === 'ru' ? 'ru-RU' : lang)}
+                              </p>
+                            )}
+                            <input
+                              type="text"
+                              value={holdReason}
+                              onChange={e => setHoldReason(e.target.value)}
+                              placeholder={s.holdReason}
+                              className="w-full bg-white dark:bg-black/30 border border-slate-300 dark:border-white/15 rounded-xl px-3 py-2 text-[11px] font-bold focus:border-red-600 outline-none"
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              {frozenIds.has(editingItem.id || '') ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleWithdraw(editingItem.id || '', 'unfreeze')}
+                                  className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest hover:bg-emerald-700 active:scale-95 transition-all"
+                                >
+                                  {s.holdUnfreeze}
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleWithdraw(editingItem.id || '', 'freeze')}
+                                  className="px-3 py-2 rounded-xl bg-white dark:bg-white/[0.06] border border-amber-300 dark:border-amber-500/30 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase tracking-widest hover:border-amber-500 active:scale-95 transition-all"
+                                >
+                                  {s.holdFreeze}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => { if (window.confirm(s.holdConfirmPurge)) handleWithdraw(editingItem.id || '', 'purge'); }}
+                                className="px-3 py-2 rounded-xl bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 text-slate-600 dark:text-slate-300 text-[9px] font-black uppercase tracking-widest hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+                              >
+                                {s.holdPurge}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { if (window.confirm(s.holdConfirmDelete)) handleWithdraw(editingItem.id || '', 'delete'); }}
+                                className="px-3 py-2 rounded-xl bg-red-600 text-white text-[9px] font-black uppercase tracking-widest hover:bg-red-700 active:scale-95 transition-all"
+                              >
+                                {s.holdDelete}
+                              </button>
+                            </div>
+                            <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 leading-relaxed">{s.holdHint}</p>
+                          </div>
                         </div>
                       );
                     })()}

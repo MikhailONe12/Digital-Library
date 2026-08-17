@@ -331,6 +331,44 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority, id);
 CREATE INDEX IF NOT EXISTS idx_jobs_batch ON jobs(batch_id);
 
+-- Withdrawal, in two strengths.
+--
+-- A library that indexes what it does not own needs a way back that costs
+-- minutes, not a re-run of everything. There are two different needs behind
+-- "убрать", and collapsing them into one is how a library ends up re-reading a
+-- book because somebody asked a question about its rights:
+--
+--   freeze  — the material stops answering questions, its text stays. Reversible
+--             by deleting one row; nothing is recognised or embedded again.
+--   purge   — the text itself goes. Reversible only by indexing from scratch.
+--
+-- This table holds the first kind. A row here means "in the catalogue, out of
+-- the search".
+CREATE TABLE IF NOT EXISTS index_holds (
+  item_id  TEXT        PRIMARY KEY,
+  reason   TEXT,
+  by_whom  TEXT,
+  since    TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- And the record of every such decision, including the irreversible ones.
+--
+-- Kept deliberately outside the items table: the most valuable row here is the
+-- one about a material that no longer exists, and a cascade would delete
+-- precisely that.
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id       BIGSERIAL   PRIMARY KEY,
+  item_id  TEXT,
+  title    TEXT,                    -- copied, because the item may be gone
+  action   TEXT        NOT NULL,    -- freeze | unfreeze | purge | delete
+  reason   TEXT,
+  by_whom  TEXT,
+  detail   TEXT,                    -- what it cost: rows removed, and so on
+  at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_withdrawals_at ON withdrawals(at DESC);
+
 -- What people asked and whether it took them to a book.
 --
 -- The only metric that answers the question the whole project exists for: does

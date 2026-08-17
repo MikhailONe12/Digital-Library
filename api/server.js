@@ -1959,6 +1959,138 @@ app.put('/api/admin/index/page', requireApiKey, async (req, res) => {
   }
 });
 
+// ── Withdrawal ───────────────────────────────────────────────────────────────
+//
+// The library indexes material it does not own, on the owner's decision. The
+// engineering half of that decision is making the way back cheap: a question
+// about somebody's rights must be answerable in minutes, and answering it must
+// not cost a re-run of recognition and embedding.
+//
+// So "убрать" has two strengths, and they are deliberately not one control:
+//
+//   Заморозка — the material stops answering questions and keeps its text. One
+//               row appears in index_holds; deleting it brings the material
+//               back instantly, with nothing recognised or embedded again.
+//   Вычистить — the text goes: pages, chunks, vectors, extraction status. Back
+//               only by indexing from scratch.
+//
+// Every decision is written down, including the irreversible ones, and the log
+// outlives the material: the most valuable row in it is the one about a book
+// that is no longer here.
+
+const WITHDRAW_ACTIONS = new Set(['freeze', 'unfreeze', 'purge', 'delete']);
+
+const logWithdrawal = async (client, { itemId, title, action, reason, byWhom, detail }) => {
+  await client.query(
+    `INSERT INTO withdrawals (item_id, title, action, reason, by_whom, detail)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [itemId, clip(title || null, 300), action, clip(reason || null, 500),
+     clip(byWhom || null, 120), clip(detail || null, 300)],
+  );
+};
+
+const itemTitleOf = row => {
+  const d = row?.data || {};
+  return d.title?.ru || d.title?.en || d.title?.es || row?.id || null;
+};
+
+app.post('/api/admin/withdraw', requireApiKey, async (req, res) => {
+  const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : '';
+  const action = typeof req.body?.action === 'string' ? req.body.action : '';
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason : '';
+  const byWhom = typeof req.body?.byWhom === 'string' ? req.body.byWhom : 'admin';
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(itemId)) return res.status(400).json({ error: 'Invalid itemId' });
+  if (!WITHDRAW_ACTIONS.has(action)) return res.status(400).json({ error: 'Unknown action' });
+
+  const client = await pool.connect();
+  try {
+    const { rows } = await client.query('SELECT id, data FROM items WHERE id = $1', [itemId]);
+    const title = itemTitleOf(rows[0]);
+    // A material can be withdrawn after it has already been deleted from the
+    // catalogue — the index rows outlive the item when something went wrong —
+    // so a missing item is not an error for anything except freezing.
+    if (!rows.length && action === 'freeze') return res.status(404).json({ error: 'Материала нет в каталоге' });
+
+    await client.query('BEGIN');
+    let detail = '';
+
+    if (action === 'freeze') {
+      await client.query(
+        `INSERT INTO index_holds (item_id, reason, by_whom) VALUES ($1,$2,$3)
+         ON CONFLICT (item_id) DO UPDATE SET reason = $2, by_whom = $3, since = NOW()`,
+        [itemId, clip(reason, 500), clip(byWhom, 120)],
+      );
+      detail = 'текст сохранён';
+    } else if (action === 'unfreeze') {
+      const r = await client.query('DELETE FROM index_holds WHERE item_id = $1', [itemId]);
+      if (!r.rowCount) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Этот материал не заморожен' });
+      }
+      detail = 'вернулся в поиск сразу, без переиндексации';
+    } else if (action === 'purge') {
+      const chunks = await client.query('DELETE FROM chunks WHERE item_id = $1', [itemId]);
+      await client.query('DELETE FROM document_text WHERE item_id = $1', [itemId]);
+      const files = await client.query('DELETE FROM index_status WHERE item_id = $1', [itemId]);
+      // Vectors go with the chunks by cascade; the hold becomes meaningless
+      // once there is nothing left to hold back.
+      await client.query('DELETE FROM index_holds WHERE item_id = $1', [itemId]);
+      detail = `${chunks.rowCount} кусков, ${files.rowCount} файлов`;
+    } else if (action === 'delete') {
+      // The catalogue entry and everything derived from it. Same sweep the
+      // ordinary delete does, kept here so the log records the reason.
+      for (const sql of [
+        'DELETE FROM chunks WHERE item_id = $1',
+        'DELETE FROM document_text WHERE item_id = $1',
+        'DELETE FROM index_status WHERE item_id = $1',
+        'DELETE FROM content_scan WHERE item_id = $1',
+        'DELETE FROM index_holds WHERE item_id = $1',
+        'DELETE FROM items WHERE id = $1',
+      ]) await client.query(sql, [itemId]);
+      try { fs.rmSync(path.join(CONTENT_DIR, itemId), { recursive: true, force: true }); } catch { /* nothing on disk */ }
+      detail = 'материал и файлы удалены';
+    }
+
+    await logWithdrawal(client, { itemId, title, action, reason, byWhom, detail });
+    await client.query('COMMIT');
+    // Frozen or purged, the in-memory vector index is now describing passages
+    // that must not answer: rebuild it on the next search rather than in fifteen
+    // seconds' time.
+    vectorIndex.checkedAt = 0;
+    res.json({ ok: true, action, detail });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
+
+// Which materials are out of the search, and the record of every decision.
+app.get('/api/admin/withdrawals', requireApiKey, async (req, res) => {
+  try {
+    const holds = (await pool.query(
+      `SELECT h.item_id, h.reason, h.by_whom, h.since,
+              i.data->'title' AS title,
+              (SELECT COUNT(*)::int FROM chunks c WHERE c.item_id = h.item_id) AS chunks
+         FROM index_holds h
+         LEFT JOIN items i ON i.id = h.item_id
+        ORDER BY h.since DESC`)).rows;
+    const log = (await pool.query(
+      `SELECT id, item_id, title, action, reason, by_whom, detail, at
+         FROM withdrawals ORDER BY at DESC LIMIT 100`)).rows;
+    // The count that decides where a rights question starts: material in the
+    // index whose basis for being here nobody has written down.
+    const { rows: [{ n: unknownBasis }] } = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM items i
+        WHERE COALESCE(i.data->>'rightsBasis', 'unknown') = 'unknown'
+          AND EXISTS (SELECT 1 FROM chunks c WHERE c.item_id = i.id)`);
+    res.json({ holds, log, unknownBasis });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Vectors ──────────────────────────────────────────────────────────────────
 //
 // Full-text search finds the words that were typed. It cannot find the passage
@@ -2355,6 +2487,10 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
            -- vectors are off, which is how this whole branch disappears.
            LEFT JOIN unnest($6::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
           WHERE (c.tsv @@ q.tsq OR v.vid IS NOT NULL)
+            -- Frozen material is in the catalogue and out of the search. One
+            -- row in index_holds is the whole mechanism, which is what makes
+            -- coming back free.
+            AND NOT EXISTS (SELECT 1 FROM index_holds hh WHERE hh.item_id = c.item_id)
             -- Compared as text on purpose. A cast would throw on any item whose
             -- isPrivate is not a clean boolean — one bad row in the catalogue
             -- would then empty every search result for everyone.
@@ -2977,7 +3113,9 @@ app.get('/api/admin/vectors/probe', requireApiKey, async (req, res) => {
                          websearch_to_tsquery('english'::regconfig, $1) AS tsq)
        SELECT c.id FROM chunks c CROSS JOIN q
         LEFT JOIN unnest($2::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
-        WHERE c.tsv @@ q.tsq OR v.vid IS NOT NULL LIMIT 200`, [asked, near]);
+        WHERE (c.tsv @@ q.tsq OR v.vid IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM index_holds hh WHERE hh.item_id = c.item_id)
+        LIMIT 200`, [asked, near]);
     res.json({
       query: asked,
       vectorMs,
@@ -3015,7 +3153,8 @@ app.get('/api/admin/vectors/compare', requireApiKey, async (req, res) => {
          SELECT c.id, c.item_id, ts_rank(c.tsv, qq.tsq) AS fts, v.ord AS vord
            FROM chunks c CROSS JOIN qq
            LEFT JOIN unnest($2::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
-          WHERE c.tsv @@ qq.tsq OR v.vid IS NOT NULL
+          WHERE (c.tsv @@ qq.tsq OR v.vid IS NOT NULL)
+            AND NOT EXISTS (SELECT 1 FROM index_holds hh WHERE hh.item_id = c.item_id)
        ),
        s AS (SELECT *, RANK() OVER (PARTITION BY (fts > 0) ORDER BY fts DESC) AS fr FROM m)
        SELECT item_id,

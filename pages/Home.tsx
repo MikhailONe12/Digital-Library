@@ -224,14 +224,21 @@ const Home: React.FC<HomeProps> = ({
   const [insideHits, setInsideHits] = useState<SearchHit[]>([]);
   const [insideLogId, setInsideLogId] = useState<number | null>(null);
   const [insideError, setInsideError] = useState<string | null>(null);
+  // One material's full set of places, once the reader asks to see them.
+  const [insideMore, setInsideMore] = useState<Record<string, SearchHit[]>>({});
+  const [insideBusy, setInsideBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const q = searchQuery.trim();
+    setInsideMore({});
     if (q.length < 3) { setInsideHits([]); setInsideLogId(null); setInsideError(null); return; }
     let cancelled = false;
     // Debounced: typing a word should not be a query per keystroke.
     const timer = window.setTimeout(async () => {
-      const { results, logId, error } = await searchInside(q, 8);
+      // Twelve rather than eight: the server now shows at most three places per
+      // material, so the extra room goes to more sources answering rather than
+      // to one source answering more.
+      const { results, logId, error } = await searchInside(q, 12);
       if (cancelled) return;
       setInsideHits(results);
       setInsideLogId(logId);
@@ -239,6 +246,30 @@ const Home: React.FC<HomeProps> = ({
     }, 350);
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [searchQuery]);
+
+  // Results arrive grouped by material and carry how many places that material
+  // holds in total, so a source can say "there are nine more of these" instead
+  // of pretending its one shown line is all it has.
+  const insideGroups = useMemo(() => {
+    const order: string[] = [];
+    const by: Record<string, SearchHit[]> = {};
+    for (const h of insideHits) {
+      if (!by[h.item_id]) { by[h.item_id] = []; order.push(h.item_id); }
+      by[h.item_id].push(h);
+    }
+    return order.map(id => ({
+      id,
+      hits: insideMore[id] || by[id],
+      total: Math.max(Number(by[id][0].item_total || 0), by[id].length),
+    }));
+  }, [insideHits, insideMore]);
+
+  const showAllIn = async (itemId: string) => {
+    setInsideBusy(itemId);
+    const { results } = await searchInside(searchQuery.trim(), 50, itemId);
+    if (results.length) setInsideMore(prev => ({ ...prev, [itemId]: results }));
+    setInsideBusy(null);
+  };
 
   /** Seconds as a reader would read them: 12:34, or 1:05:02 past the hour. */
   const formatClock = (total: number) => {
@@ -933,12 +964,16 @@ const Home: React.FC<HomeProps> = ({
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               {t.foundInSources}
             </h3>
-            <span className="text-[10px] font-black text-red-600 tabular-nums">{insideHits.length}</span>
+            <span className="text-[10px] font-black text-red-600 tabular-nums">
+              {insideGroups.reduce((n, g) => n + g.hits.length, 0)}
+            </span>
             <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
           </div>
 
           <div className="space-y-2.5">
-            {insideHits.map((hit, n) => {
+            {insideGroups.map(group => (
+            <React.Fragment key={group.id}>
+            {group.hits.map((hit, n) => {
               const found = allItems.find(i => i.id === hit.item_id);
               const where = hit.second_start !== null
                 ? formatClock(hit.second_start)
@@ -989,6 +1024,22 @@ const Home: React.FC<HomeProps> = ({
                 </button>
               );
             })}
+            {/* The breadth rule keeps one source from filling the answer, which
+                means a source that speaks about this ten times shows one line.
+                Saying how many are left — and opening them here — is the
+                difference between "it mentions this" and "it is about this". */}
+            {group.total > group.hits.length && (
+              <button
+                type="button"
+                onClick={() => showAllIn(group.id)}
+                disabled={insideBusy === group.id}
+                className="w-full py-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 hover:text-red-600 disabled:opacity-50 transition-colors"
+              >
+                {insideBusy === group.id ? '…' : `${t.morePlacesHere} ${group.total - group.hits.length}`}
+              </button>
+            )}
+            </React.Fragment>
+            ))}
           </div>
         </div>
       )}

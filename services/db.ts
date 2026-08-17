@@ -756,6 +756,11 @@ export interface SearchHit {
   snippet: string;
   title: MultilingualText | null;
   author: string | null;
+  /**
+   * How many places this material has in total for the query, not how many are
+   * shown. The difference is what the "show the rest" line offers.
+   */
+  item_total?: number;
 }
 
 export interface SearchResponse {
@@ -770,12 +775,21 @@ export interface SearchResponse {
   error: string | null;
 }
 
-/** Full-text search over the indexed books, videos and external sources. */
-export const searchInside = async (query: string, limit = 20): Promise<SearchResponse> => {
+/**
+ * Full-text search over the indexed books, videos and external sources.
+ *
+ * `itemId` narrows the answer to one material and lifts the breadth rule: the
+ * reader has already chosen where to look, so every place that material holds
+ * is shown. It is also not logged as a new question — it is the same one.
+ */
+export const searchInside = async (
+  query: string, limit = 20, itemId?: string,
+): Promise<SearchResponse> => {
   const q = query.trim();
   if (q.length < 3) return { results: [], logId: null, error: null };
   try {
     const qs = new URLSearchParams({ q, limit: String(limit) });
+    if (itemId) qs.set('item', itemId);
     const res = await fetch(`/api/search?${qs}`, { headers: tgInitDataHeader() });
     if (!res.ok) {
       const reason = res.status === 401 || res.status === 403

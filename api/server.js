@@ -1919,6 +1919,9 @@ app.put('/api/admin/index/page', requireApiKey, async (req, res) => {
 // leaks the contents of a restricted book would be a poor way to find that out.
 app.get('/api/search', checkUserAccess, async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  // Asking for one material's places rather than the library's: the reader has
+  // already chosen where to look, so everything that material says is fair game.
+  const onlyItem = typeof req.query.item === 'string' && req.query.item ? req.query.item : null;
   // Under three characters every keystroke would be a query; and a two-letter
   // stem matches half the corpus anyway.
   if (q.length < 3) return res.json({ results: [] });
@@ -1938,24 +1941,27 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // query with the English dictionary highlights the wrong words.
     const headlineConfig = /\p{Script=Cyrillic}/u.test(q) ? 'russian' : 'english';
     const { rows } = await pool.query(
-      // Two orderings, and they do different jobs. Relevance decides *which*
-      // fragments are worth showing — that is the inner query, unchanged. The
-      // outer one decides how they are read: the hits of one material stay
-      // together, and inside it they run from the beginning towards the end.
-      // A video answering at 0:00, 27:21 and 0:28 in that order is a list of
-      // scores, not a place in a recording; sorted by the second it becomes a
-      // route through the video. Books get the same treatment by page.
+      // Three decisions, and they are deliberately separate.
+      //
+      // Which fragments count — relevance, as always.
+      //
+      // Which of them fit into one answer — breadth before depth. Ranking the
+      // whole library by relevance hands the list to whoever repeats the word
+      // most often: six books saying it four times each fill every slot, and a
+      // lecture that says it once, in the one place the reader needed, never
+      // appears at all. So a material's second place waits until every other
+      // material has shown its first.
+      //
+      // How they are read — a material's hits stay together and run from the
+      // beginning towards the end. A video answering at 0:00, 27:26 and 0:28 in
+      // relevance order is a list of scores; in time order it is a route
+      // through the recording. Books get the same treatment by page.
       `WITH q AS (
          SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
                 websearch_to_tsquery('english'::regconfig, $1) AS tsq
        ),
-       hits AS (
-         SELECT c.item_id, c.format_url, c.page, c.page_label,
-                c.second_start, c.second_end,
-                ts_rank(c.tsv, q.tsq) AS rank,
-                ts_headline($3::regconfig, c.text, q.tsq,
-                            'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
-                i.data->'title' AS title, i.data->>'author' AS author
+       matched AS (
+         SELECT c.id, c.item_id, ts_rank(c.tsv, q.tsq) AS rank
            FROM chunks c
            CROSS JOIN q
            LEFT JOIN items i ON i.id = c.item_id
@@ -1964,33 +1970,61 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
             -- isPrivate is not a clean boolean — one bad row in the catalogue
             -- would then empty every search result for everyone.
             AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
-          ORDER BY rank DESC
-          LIMIT $2
+            AND ($5::text IS NULL OR c.item_id = $5)
+       ),
+       ranked AS (
+         SELECT id, item_id, rank,
+                ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY rank DESC, id) AS rn,
+                -- How much this material has to say beyond what is shown. It is
+                -- the difference between "the video mentions it once" and "the
+                -- video mentions it eleven times and you are seeing one".
+                COUNT(*)     OVER (PARTITION BY item_id) AS item_total
+           FROM matched
+       ),
+       hits AS (
+         -- Three places from any one material, however much room is left. Seven
+         -- rows of the same book saying the same sentence is not seven answers,
+         -- and the reader who wants the eighth can ask for it.
+         SELECT id, rank, item_total FROM ranked
+          WHERE $5::text IS NOT NULL OR rn <= 3
+          ORDER BY rn, rank DESC, id LIMIT $2
        )
-       SELECT item_id, format_url, page, page_label, second_start, second_end,
-              rank, snippet, title, author
-         FROM hits
+       SELECT c.item_id, c.format_url, c.page, c.page_label,
+              c.second_start, c.second_end, h.rank, h.item_total,
+              -- Computed only for the rows that survived, never for every match.
+              ts_headline($3::regconfig, c.text, q.tsq,
+                          'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
+              i.data->'title' AS title, i.data->>'author' AS author
+         FROM hits h
+         JOIN chunks c ON c.id = h.id
+         CROSS JOIN q
+         LEFT JOIN items i ON i.id = c.item_id
         -- The material with the strongest single hit leads; every other hit of
         -- that same material follows it immediately, in order of position.
-        ORDER BY MAX(rank) OVER (PARTITION BY item_id) DESC,
-                 item_id,
-                 second_start ASC NULLS LAST,
-                 page ASC NULLS LAST,
-                 rank DESC`,
-      [q, limit, headlineConfig, maySeePrivate],
+        ORDER BY MAX(h.rank) OVER (PARTITION BY c.item_id) DESC,
+                 c.item_id,
+                 c.second_start ASC NULLS LAST,
+                 c.page ASC NULLS LAST,
+                 h.rank DESC`,
+      [q, limit, headlineConfig, maySeePrivate, onlyItem],
     );
 
     // One row per question, filled in later if a result is opened. A query that
     // found nothing is the most valuable row here: it is the list of what the
     // library cannot answer yet.
+    //
+    // Opening one material's remaining places is the same question asked again,
+    // not a new one — logging it would inflate every count in the metric panel.
     let logId = null;
-    try {
-      const ins = await pool.query(
-        'INSERT INTO search_log (query, lang, results, visitor) VALUES ($1,$2,$3,$4) RETURNING id',
-        [clip(q, 300), clip(req.query.lang, 8), rows.length, visitorHash(resolveVisitorIp(req))],
-      );
-      logId = ins.rows[0].id;
-    } catch { /* logging must never break search */ }
+    if (!onlyItem) {
+      try {
+        const ins = await pool.query(
+          'INSERT INTO search_log (query, lang, results, visitor) VALUES ($1,$2,$3,$4) RETURNING id',
+          [clip(q, 300), clip(req.query.lang, 8), rows.length, visitorHash(resolveVisitorIp(req))],
+        );
+        logId = ins.rows[0].id;
+      } catch { /* logging must never break search */ }
+    }
 
     res.json({ results: rows, logId });
   } catch (e) {

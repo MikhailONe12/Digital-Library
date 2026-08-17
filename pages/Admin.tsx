@@ -1465,12 +1465,14 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
           </p>
         )}
 
-        {/* Only spoken material stays outside now — external sources are fetched
-            and indexed like everything else, and saying otherwise next to
-            "23 of 23" is a contradiction on the same screen. */}
-        {scanCounts.by.media ? (
+        {/* What is left to do, not what kind of thing it is. The line used to
+            count every video and call it "outside indexing", which stayed on
+            screen after the video had been transcribed and indexed — telling
+            the admin that finished work still needed doing. It now counts only
+            targets with no transcript yet, and disappears when there are none. */}
+        {totals && totals.spoken_pending > 0 ? (
           <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mt-2">
-            {s.indexOutside}: {num(scanCounts.by.media)} {s.stateMedia} — {s.indexOutsideWhy}
+            {s.indexNoTranscript}: {num(totals.spoken_pending)} {s.stateMedia} — {s.indexNoTranscriptWhy}
           </p>
         ) : null}
 

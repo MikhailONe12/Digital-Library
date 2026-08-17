@@ -851,8 +851,12 @@ export interface IndexTotals {
   chars: number;
   chunks: number;
   manual_pages: number;
-  /** Files that could be indexed at all — the denominator for "12 of 21". */
+  /** Everything that could be indexed — the denominator for "12 of 21". */
   indexable: number;
+  /** Video links and media files, i.e. targets that need a transcript. */
+  spoken: number;
+  /** …of which none has been transcribed yet. */
+  spoken_pending: number;
 }
 
 export interface IndexJob {
@@ -890,7 +894,10 @@ const EMPTY_INDEX_JOB: IndexJob = {
 const EMPTY_INDEX_REPORT: IndexReport = {
   job: EMPTY_INDEX_JOB,
   rows: [],
-  totals: { indexed: 0, failed: 0, skipped: 0, pages: 0, chars: 0, chunks: 0, manual_pages: 0, indexable: 0 },
+  totals: {
+    indexed: 0, failed: 0, skipped: 0, pages: 0, chars: 0, chunks: 0,
+    manual_pages: 0, indexable: 0, spoken: 0, spoken_pending: 0,
+  },
 };
 
 /** Polled while indexing runs, so a transport blip returns empty rather than throwing. */

@@ -1705,6 +1705,29 @@ const runIndex = async (onlyItemId = null) => {
       }
       indexJob.done += 1;
     }
+
+    // Rows about targets that no longer exist. A file whose URL was edited, or
+    // a material that was deleted, leaves its old index_status row behind, and
+    // that row keeps being counted — as an indexed file nobody can open, or as
+    // a failure nobody can fix. Only a complete, uninterrupted run knows the
+    // full set of targets, so only it may clean up.
+    if (!onlyItemId && !indexJob.stopRequested) {
+      await pool.query(
+        `DELETE FROM index_status s
+          WHERE NOT EXISTS (
+                  SELECT 1 FROM items i WHERE i.id = s.item_id
+                )
+             OR (s.item_id || ' ' || s.format_url) <> ALL($1::text[])`,
+        [[
+          ...targets.map(t => `${t.itemId} ${t.format.url.trim()}`),
+          // Transcripts are written by the queue, not by this run; their targets
+          // are still real and must not be swept away with the dead ones.
+          ...(await pool.query('SELECT id, data FROM items')).rows.flatMap(row =>
+            spokenTargets({ ...(row.data || {}), id: row.id })
+              .map(t => `${row.id} ${t.url}`)),
+        ]],
+      ).catch(e => console.error('index cleanup failed:', e?.message || e));
+    }
   } catch (e) {
     indexJob.error = clip(e?.message || String(e), 300);
     console.error('indexing failed:', e);
@@ -1755,8 +1778,11 @@ app.get('/api/admin/index', requireApiKey, async (req, res) => {
         FROM index_status
     `)).rows[0];
 
-    // How many files are indexable at all, so "12 of 21" is answerable.
-    const indexable = (await pool.query(`
+    // How much there is to index at all, so "24 of 23" cannot happen. It did:
+    // the denominator counted files and source links while the numerator also
+    // counted transcripts, so indexing a video pushed the count past its own
+    // total. A video link is a source like any other — it belongs in both.
+    const fileCounts = (await pool.query(`
       WITH files AS (
         SELECT i.id, f->>'url' AS url
           FROM items i, jsonb_array_elements(
@@ -1772,14 +1798,35 @@ app.get('/api/admin/index', requireApiKey, async (req, res) => {
            AND NOT EXISTS (SELECT 1 FROM files WHERE files.id = i.id)
       )
       SELECT (SELECT COUNT(*) FROM files
-               WHERE url NOT LIKE '%.srt' AND url NOT LIKE '%.vtt')::int
-           + (SELECT COUNT(*) FROM sources)::int AS n
-    `)).rows[0]?.n || 0;
+               WHERE url NOT LIKE '%.srt' AND url NOT LIKE '%.vtt')::int AS files,
+             (SELECT COUNT(*) FROM sources)::int AS sources
+    `)).rows[0];
+
+    // Spoken targets come from the same function the transcribe queue uses, so
+    // the count can never describe work the server would not actually attempt.
+    const spoken = [];
+    for (const row of (await pool.query('SELECT id, data FROM items')).rows) {
+      for (const target of spokenTargets({ ...(row.data || {}), id: row.id })) {
+        spoken.push({ itemId: row.id, url: target.url, platform: target.platform });
+      }
+    }
+    const doneTargets = new Set((await pool.query(
+      `SELECT item_id, format_url FROM index_status WHERE state = 'indexed'`,
+    )).rows.map(r => `${r.item_id} ${r.format_url}`));
+    const spokenPending = spoken.filter(t => !doneTargets.has(`${t.itemId} ${t.url}`)).length;
+
+    // A media file already counts among the files; a platform link does not
+    // count anywhere else, so only it is added.
+    const indexable = fileCounts.files + fileCounts.sources
+      + spoken.filter(t => t.platform).length;
 
     res.json({
       job: indexJobView(),
       rows: rows.map(r => ({ ...r, chars: r.chars === null ? null : Number(r.chars) })),
-      totals: { ...totals, chars: Number(totals.chars), indexable },
+      totals: {
+        ...totals, chars: Number(totals.chars), indexable,
+        spoken: spoken.length, spoken_pending: spokenPending,
+      },
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -3547,6 +3594,14 @@ app.delete('/api/items/:itemId', requireApiKey, validateItemId, async (req, res)
     await sweep('DELETE FROM user_favorites        WHERE item_id = $1');
     await sweep('DELETE FROM user_ratings          WHERE item_id = $1');
     await sweep('DELETE FROM item_events           WHERE item_id = $1');
+    // 3. And everything the search knows about it. Without this a deleted book
+    //    keeps answering questions — its text is still in the index, quoted to
+    //    readers, pointing at a material that no longer exists.
+    await sweep('DELETE FROM chunks                WHERE item_id = $1');
+    await sweep('DELETE FROM document_text         WHERE item_id = $1');
+    await sweep('DELETE FROM index_status          WHERE item_id = $1');
+    await sweep('DELETE FROM content_scan          WHERE item_id = $1');
+    await sweep(`DELETE FROM jobs WHERE item_id = $1 AND state IN ('done','failed','cancelled')`);
     await pool.query('DELETE FROM items WHERE id = $1', [itemId]);
     res.json({ ok: true });
   } catch (e) {

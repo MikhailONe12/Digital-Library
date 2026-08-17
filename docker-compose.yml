@@ -40,6 +40,11 @@ services:
       DEPLOY_CONTROL_DIR: /deploy-control
     volumes:
       - /mnt/library/content:/mnt/library/content
+      # Models: whisper for speech, the embedding model for meaning search. Kept
+      # out of the image on purpose — they are hundreds of megabytes, they change
+      # on their own schedule, and an operator must be able to drop the files in
+      # by hand on a server that cannot reach a model hub.
+      - /mnt/library/models:/mnt/library/models
       # Shared "mailbox" with the host deploy-agent (see deploy-agent/README.md)
       - /mnt/library/app/deploy-control:/deploy-control
       # Live code. The deploy copies api/server.js and api/init.sql here and

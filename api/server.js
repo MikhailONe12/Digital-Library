@@ -1959,6 +1959,240 @@ app.put('/api/admin/index/page', requireApiKey, async (req, res) => {
   }
 });
 
+// ── Vectors ──────────────────────────────────────────────────────────────────
+//
+// Full-text search finds the words that were typed. It cannot find the passage
+// that says the same thing in other words — "vol crush" for падение
+// волатильности, "theta decay" for временной распад — and the reader who asks
+// in their own words gets silence from a library that holds the answer.
+//
+// A vector is a passage expressed as a point, so passages about one subject sit
+// near each other whatever words they used. Everything below runs on the
+// processor and nothing leaves the server: the model is local, the arithmetic
+// is a dot product, and the only network call is the one an operator configures
+// on purpose.
+//
+// Vectors never replace the word search. They are a second opinion, fused with
+// it — see the search query for how, and why "no vectors" reproduces today's
+// ranking exactly rather than approximately.
+
+const EMBED_MODEL = process.env.EMBED_MODEL || 'Xenova/multilingual-e5-small';
+const EMBED_DIM = parseInt(process.env.EMBED_DIM, 10) || 384;
+const EMBED_BATCH = parseInt(process.env.EMBED_BATCH, 10) || 16;
+// Where the model files live. Same volume as the whisper models, so an operator
+// can drop the files in by hand on a server with no access to a model hub.
+const EMBED_HOME = process.env.EMBED_HOME || '/mnt/library/models/embed';
+// An OpenAI-shaped /embeddings service, when one is already running beside us.
+// Meant for a local address — a remote one would send the library's text to
+// somebody else, which is the one thing this design is built to avoid.
+const EMBED_ENDPOINT = process.env.EMBED_ENDPOINT || '';
+// How close to the best match a passage must be to count as a match at all.
+//
+// Relative, not absolute, because the scale is the model's business: e5 packs
+// everything between 0.7 and 0.9, another model spreads the same distances over
+// 0.1 to 1.0, and a fixed threshold would mean "everything" for one and
+// "nothing" for the other. Nine tenths of the best score is a strong statement
+// in either scale — without it the meaning search hands sixty loosely related
+// passages to every query, and they crowd out the literal answers.
+const EMBED_REL_FLOOR = Number(process.env.EMBED_REL_FLOOR || 0.9);
+
+// e5 models were trained with these prefixes and lose accuracy without them.
+const EMBED_QUERY_PREFIX = process.env.EMBED_QUERY_PREFIX ?? 'query: ';
+const EMBED_PASSAGE_PREFIX = process.env.EMBED_PASSAGE_PREFIX ?? 'passage: ';
+
+// Why a vector search can't run right now, in the operator's words. Held so the
+// admin panel can say it instead of showing an empty coverage bar.
+let embedFault = null;
+
+// A broken embedder must cost one attempt every few minutes, not one per
+// reader. Without this, a missing model file turns every single search into a
+// failed model load — the search still answers, but slowly, and the log fills
+// with the same line forever. The queue job ignores the cooldown: it is the one
+// caller that must hear the real error immediately.
+const EMBED_RETRY_MS = 5 * 60 * 1000;
+let embedColdUntil = 0;
+
+let embedderPromise = null;
+const localEmbedder = () => {
+  if (!embedderPromise) {
+    embedderPromise = (async () => {
+      // Imported at first use, never at boot: a missing or broken install must
+      // cost the library its vector search, not its ability to serve pages.
+      const { pipeline, env } = await import('@xenova/transformers');
+      env.cacheDir = EMBED_HOME;
+      env.localModelPath = EMBED_HOME;
+      return pipeline('feature-extraction', EMBED_MODEL, { quantized: true });
+    })().catch(e => { embedderPromise = null; throw e; });
+  }
+  return embedderPromise;
+};
+
+const l2normalize = v => {
+  let sum = 0;
+  for (let i = 0; i < v.length; i++) sum += v[i] * v[i];
+  const norm = Math.sqrt(sum) || 1;
+  for (let i = 0; i < v.length; i++) v[i] /= norm;
+  return v;
+};
+
+/**
+ * Turn texts into unit vectors. Returns null — never throws — when no embedder
+ * is available, because every caller's correct response to that is to carry on
+ * without vectors.
+ */
+const embedTexts = async (texts, kind = 'passage', force = false) => {
+  if (!texts.length) return [];
+  if (!force && Date.now() < embedColdUntil) return null;
+  const prefix = kind === 'query' ? EMBED_QUERY_PREFIX : EMBED_PASSAGE_PREFIX;
+  const input = texts.map(t => prefix + clip(String(t || '').replace(/\s+/g, ' ').trim(), 4000));
+  try {
+    if (EMBED_ENDPOINT) {
+      const res = await fetch(EMBED_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: EMBED_MODEL, input }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!res.ok) throw new Error(`служба векторов ответила ${res.status}`);
+      const body = await res.json();
+      const out = (body?.data || []).map(d => l2normalize(Float32Array.from(d.embedding || [])));
+      if (out.length !== input.length) throw new Error('служба векторов вернула не столько векторов');
+      embedColdUntil = 0;
+      embedFault = null;
+      return out;
+    }
+    const pipe = await localEmbedder();
+    const out = await pipe(input, { pooling: 'mean', normalize: true });
+    const dim = out.dims[out.dims.length - 1];
+    const flat = out.data;
+    const vectors = [];
+    for (let i = 0; i < input.length; i++) {
+      vectors.push(l2normalize(Float32Array.from(flat.slice(i * dim, (i + 1) * dim))));
+    }
+    embedColdUntil = 0;
+    embedFault = null;
+    return vectors;
+  } catch (e) {
+    embedFault = explainEmbed(e);
+    embedColdUntil = Date.now() + EMBED_RETRY_MS;
+    console.error('embedding failed:', e?.message || e);
+    return null;
+  }
+};
+
+// The three ways this fails on a real server, said plainly.
+const explainEmbed = e => {
+  const text = String(e?.message || e || '');
+  if (/Cannot find (module|package)|ERR_MODULE_NOT_FOUND/i.test(text)) {
+    return 'Модель не установлена в образе: нет пакета @xenova/transformers. Пересоберите образ API.';
+  }
+  if (/Forbidden|ENOTFOUND|EAI_AGAIN|fetch failed|ECONNREFUSED|403|404/i.test(text)) {
+    return `Файлы модели недоступны. Положите их в ${EMBED_HOME} или откройте серверу доступ к хабу моделей. (${clip(text, 120)})`;
+  }
+  return clip(text, 300);
+};
+
+// One query is asked by many readers within a minute, and embedding it costs
+// more than the search itself. Bounded so a flood of distinct queries cannot
+// grow it without limit.
+const queryVectors = new Map();
+const embedQuery = async q => {
+  const key = q.toLowerCase();
+  if (queryVectors.has(key)) return queryVectors.get(key);
+  const [vec] = (await embedTexts([q], 'query')) || [];
+  if (!vec) return null;
+  if (queryVectors.size > 500) queryVectors.clear();
+  queryVectors.set(key, vec);
+  return vec;
+};
+
+// ── The index in memory ──────────────────────────────────────────────────────
+//
+// Loaded whole and scanned in full. At twelve thousand chunks that is 18 MB and
+// about five milliseconds per query — an approximate-neighbour structure would
+// add a moving part and save nothing until this library is twenty times larger.
+
+const vectorIndex = { ids: [], mat: null, dim: 0, model: '', stamp: '', checkedAt: 0 };
+
+const vectorStamp = async () => {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS n, COALESCE(MAX(chunk_id), 0)::text AS max FROM chunk_vectors WHERE model = $1`,
+    [EMBED_MODEL],
+  );
+  return `${rows[0].n}:${rows[0].max}`;
+};
+
+const loadVectorIndex = async () => {
+  const now = Date.now();
+  // Rebuilding is cheap but not free; a query storm should not re-read the
+  // table for every reader.
+  if (vectorIndex.mat && now - vectorIndex.checkedAt < 15_000) return vectorIndex;
+  const stamp = await vectorStamp();
+  vectorIndex.checkedAt = now;
+  if (vectorIndex.mat && stamp === vectorIndex.stamp) return vectorIndex;
+
+  const { rows } = await pool.query(
+    'SELECT chunk_id, dim, vec FROM chunk_vectors WHERE model = $1 ORDER BY chunk_id', [EMBED_MODEL],
+  );
+  const dim = rows.length ? rows[0].dim : EMBED_DIM;
+  const mat = new Float32Array(rows.length * dim);
+  const ids = new Array(rows.length);
+  let n = 0;
+  for (const r of rows) {
+    if (r.dim !== dim) continue;   // a leftover from another model: skip, don't guess
+    const v = new Float32Array(r.vec.buffer, r.vec.byteOffset, dim);
+    mat.set(v, n * dim);
+    ids[n] = String(r.chunk_id);
+    n += 1;
+  }
+  vectorIndex.ids = ids.slice(0, n);
+  vectorIndex.mat = mat.subarray(0, n * dim);
+  vectorIndex.dim = dim;
+  vectorIndex.model = EMBED_MODEL;
+  vectorIndex.stamp = stamp;
+  return vectorIndex;
+};
+
+/** Chunk ids nearest the query vector, closest first. Vectors are unit length, so cosine is a dot product. */
+const nearestChunks = (qvec, k) => {
+  const { ids, mat, dim } = vectorIndex;
+  if (!ids.length || qvec.length !== dim) return [];
+  const best = [];   // small k, so an insertion sort beats sorting everything
+  for (let i = 0; i < ids.length; i++) {
+    let dot = 0;
+    const off = i * dim;
+    for (let d = 0; d < dim; d++) dot += mat[off + d] * qvec[d];
+    if (best.length < k) {
+      best.push({ id: ids[i], dot });
+      if (best.length === k) best.sort((a, b) => b.dot - a.dot);
+    } else if (dot > best[k - 1].dot) {
+      best[k - 1] = { id: ids[i], dot };
+      let j = k - 1;
+      while (j > 0 && best[j].dot > best[j - 1].dot) { const t = best[j]; best[j] = best[j - 1]; best[j - 1] = t; j--; }
+    }
+  }
+  if (best.length < k) best.sort((a, b) => b.dot - a.dot);
+  return best;
+};
+
+/** Candidate chunk ids for a query, or an empty list when vectors are not available. */
+const vectorCandidates = async (q, k) => {
+  try {
+    const index = await loadVectorIndex();
+    if (!index.ids.length) return [];
+    const qvec = await embedQuery(q);
+    if (!qvec) return [];
+    const near = nearestChunks(qvec, k);
+    if (!near.length) return [];
+    const floor = near[0].dot * EMBED_REL_FLOOR;
+    return near.filter(h => h.dot >= floor).map(h => h.id);
+  } catch (e) {
+    embedFault = explainEmbed(e);
+    console.error('vector search unavailable:', e?.message || e);
+    return [];
+  }
+};
+
 // Full-text search over the chunks.
 //
 // Admin-only for now, deliberately. Opening it to readers needs the private-item
@@ -2026,6 +2260,11 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // Headline in the language the question was asked in — stemming a Russian
     // query with the English dictionary highlights the wrong words.
     const headlineConfig = /\p{Script=Cyrillic}/u.test(q) ? 'russian' : 'english';
+
+    // Asked before the query so its answer can travel into it. Sixty is enough
+    // to matter next to the word list without letting a loose association
+    // outrank a literal hit.
+    const near = await vectorCandidates(q, 60);
     const { rows } = await pool.query(
       // Three decisions, and they are deliberately separate.
       //
@@ -2047,16 +2286,39 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
                 websearch_to_tsquery('english'::regconfig, $1) AS tsq
        ),
        matched AS (
-         SELECT c.id, c.item_id, ts_rank(c.tsv, q.tsq) AS rank
+         SELECT c.id, c.item_id, ts_rank(c.tsv, q.tsq) AS fts, v.ord AS vord
            FROM chunks c
            CROSS JOIN q
            LEFT JOIN items i ON i.id = c.item_id
-          WHERE c.tsv @@ q.tsq
+           -- The passages the meaning search brought, in its order. Empty when
+           -- vectors are off, which is how this whole branch disappears.
+           LEFT JOIN unnest($6::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
+          WHERE (c.tsv @@ q.tsq OR v.vid IS NOT NULL)
             -- Compared as text on purpose. A cast would throw on any item whose
             -- isPrivate is not a clean boolean — one bad row in the catalogue
             -- would then empty every search result for everyone.
             AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
             AND ($5::text IS NULL OR c.item_id = $5)
+       ),
+       scored AS (
+         -- Rank inside each of the two lists. Partitioning on "did the words
+         -- match at all" keeps the word ranking free of the vector-only rows.
+         SELECT id, item_id, fts, vord,
+                RANK() OVER (PARTITION BY (fts > 0) ORDER BY fts DESC) AS fts_rank
+           FROM matched
+       ),
+       fused AS (
+         -- Reciprocal rank fusion: each list contributes 1/(60 + place in it).
+         -- Positions, not scores, because a ts_rank and a cosine are not on the
+         -- same scale and pretending otherwise is how one silently wins.
+         --
+         -- With no vectors every row scores 1/(60 + word rank), which is the
+         -- old ordering exactly — not merely close to it. That is the property
+         -- worth having: switching vectors off restores today's search.
+         SELECT id, item_id,
+                (CASE WHEN fts > 0 THEN 1.0 / (60 + fts_rank) ELSE 0 END)
+              + (CASE WHEN vord IS NOT NULL THEN 1.0 / (60 + vord) ELSE 0 END) AS rank
+           FROM scored
        ),
        ranked AS (
          SELECT id, item_id, rank,
@@ -2065,7 +2327,7 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
                 -- the difference between "the video mentions it once" and "the
                 -- video mentions it eleven times and you are seeing one".
                 COUNT(*)     OVER (PARTITION BY item_id) AS item_total
-           FROM matched
+           FROM fused
        ),
        hits AS (
          -- Three places from any one material, however much room is left. Seven
@@ -2097,7 +2359,7 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
                  h.rank DESC`,
       // Over-fetch, because the duplicates are dropped after the query and the
       // reader should still get a full list.
-      [q, Math.min(limit * 3, 150), headlineConfig, maySeePrivate, onlyItem],
+      [q, Math.min(limit * 3, 150), headlineConfig, maySeePrivate, onlyItem, near],
     );
 
     // Trimming has to keep the breadth rule, and the rows arrive in *reading*
@@ -2506,6 +2768,177 @@ const explainYtDlp = raw => {
   }
   return clip(text, 400);
 };
+
+/**
+ * Give every indexed passage a vector.
+ *
+ * Batched through the same queue as recognition, for the same reasons: it takes
+ * minutes to hours on a processor, it must survive a deploy, and the admin
+ * should watch it where every other long job is watched. Progress is measured
+ * against what is left to do, and the checkpoint is simply "vectors already
+ * written" — a re-run picks up whatever is missing, so an interrupted pass
+ * costs nothing but the batch it was in.
+ */
+JOB_HANDLERS.embed = async (job, ctx) => {
+  const onlyItem = job.payload?.itemId || null;
+  const todo = async () => Number((await pool.query(
+    `SELECT COUNT(*)::int AS n
+       FROM chunks c
+       LEFT JOIN chunk_vectors v ON v.chunk_id = c.id AND v.model = $1
+      WHERE v.chunk_id IS NULL AND ($2::text IS NULL OR c.item_id = $2)`,
+    [EMBED_MODEL, onlyItem],
+  )).rows[0].n);
+
+  const total = await todo();
+  if (!total) return 'Все куски уже с векторами';
+  let done = 0;
+
+  for (;;) {
+    if (await ctx.cancelled()) return `Отменено: посчитано ${done} из ${total}`;
+    const { rows } = await pool.query(
+      `SELECT c.id, c.text
+         FROM chunks c
+         LEFT JOIN chunk_vectors v ON v.chunk_id = c.id AND v.model = $1
+        WHERE v.chunk_id IS NULL AND ($2::text IS NULL OR c.item_id = $2)
+        ORDER BY c.id
+        LIMIT $3`,
+      [EMBED_MODEL, onlyItem, EMBED_BATCH],
+    );
+    if (!rows.length) break;
+
+    const vectors = await embedTexts(rows.map(r => r.text), 'passage', true);
+    // Not an empty result — a broken embedder. Failing loudly is right: a job
+    // that "finished" having written nothing is the worst of both worlds.
+    if (!vectors) throw new Error(embedFault || 'Модель векторов недоступна');
+
+    for (let i = 0; i < rows.length; i++) {
+      const v = vectors[i];
+      await pool.query(
+        `INSERT INTO chunk_vectors (chunk_id, model, dim, vec)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (chunk_id) DO UPDATE SET model = $2, dim = $3, vec = $4, created_at = NOW()`,
+        [rows[i].id, EMBED_MODEL, v.length, Buffer.from(v.buffer, v.byteOffset, v.length * 4)],
+      );
+    }
+    done += rows.length;
+    await ctx.report(Math.min(0.99, done / total), { done });
+  }
+  return `Вектора: ${done} кусков, модель ${EMBED_MODEL}`;
+};
+
+// What the vector search has to work with, and why it might have nothing.
+app.get('/api/admin/vectors', requireApiKey, async (req, res) => {
+  try {
+    // Nothing computed and nothing said about why: find out, at most once every
+    // few minutes, so the panel answers the operator's actual question.
+    if (!embedFault && Date.now() >= embedColdUntil) {
+      const { rows: [{ n }] } = await pool.query(
+        'SELECT COUNT(*)::int AS n FROM chunk_vectors WHERE model = $1', [EMBED_MODEL]);
+      if (!n) await embedTexts(['проверка связи'], 'query', true);
+    }
+    const { rows } = await pool.query(
+      `SELECT (SELECT COUNT(*)::int FROM chunks) AS chunks,
+              (SELECT COUNT(*)::int FROM chunk_vectors WHERE model = $1) AS vectors,
+              (SELECT COUNT(*)::int FROM jobs WHERE kind = 'embed' AND state IN ('queued','running')) AS pending`,
+      [EMBED_MODEL],
+    );
+    res.json({
+      model: EMBED_MODEL,
+      dim: EMBED_DIM,
+      home: EMBED_HOME,
+      endpoint: EMBED_ENDPOINT ? EMBED_ENDPOINT.replace(/^(https?:\/\/[^/]+).*/, '$1') : '',
+      chunks: rows[0].chunks,
+      vectors: rows[0].vectors,
+      pending: rows[0].pending,
+      error: embedFault,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/admin/vectors', requireApiKey, async (req, res) => {
+  const itemId = typeof req.body?.itemId === 'string' ? req.body.itemId : null;
+  try {
+    const running = await pool.query(
+      `SELECT id FROM jobs WHERE kind = 'embed' AND state IN ('queued','running') LIMIT 1`);
+    if (running.rowCount) return res.json({ queued: 0, already: true });
+
+    const batch = (await pool.query(
+      `INSERT INTO job_batches (kind, title) VALUES ('embed', $1) RETURNING id`,
+      [itemId ? `Вектора · ${itemId}` : 'Вектора · вся библиотека'],
+    )).rows[0];
+    await pool.query(
+      `INSERT INTO jobs (batch_id, kind, item_id, label, payload)
+       VALUES ($1, 'embed', $2, $3, $4)`,
+      [batch.id, itemId, itemId ? `Вектора · ${itemId}` : 'Вектора · вся библиотека',
+       JSON.stringify({ itemId })],
+    );
+    res.json({ queued: 1, batchId: batch.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Did the second opinion help? Replays real questions from the log through both
+// rankings and reports the difference, because "feels better" is not a reason
+// to keep a moving part.
+app.get('/api/admin/vectors/compare', requireApiKey, async (req, res) => {
+  try {
+    const { rows: asked } = await pool.query(
+      `SELECT query, MAX(ts) AS last, COUNT(*)::int AS times
+         FROM search_log
+        WHERE COALESCE(query, '') <> ''
+        GROUP BY query
+        ORDER BY MAX(ts) DESC
+        LIMIT 40`);
+    if (!asked.length) return res.json({ queries: [], ready: false });
+
+    const rank = async (q, near) => (await pool.query(
+      `WITH qq AS (
+         SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
+                websearch_to_tsquery('english'::regconfig, $1) AS tsq
+       ),
+       m AS (
+         SELECT c.id, c.item_id, ts_rank(c.tsv, qq.tsq) AS fts, v.ord AS vord
+           FROM chunks c CROSS JOIN qq
+           LEFT JOIN unnest($2::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
+          WHERE c.tsv @@ qq.tsq OR v.vid IS NOT NULL
+       ),
+       s AS (SELECT *, RANK() OVER (PARTITION BY (fts > 0) ORDER BY fts DESC) AS fr FROM m)
+       SELECT item_id,
+              (CASE WHEN fts > 0 THEN 1.0/(60 + fr) ELSE 0 END)
+            + (CASE WHEN vord IS NOT NULL THEN 1.0/(60 + vord) ELSE 0 END) AS score
+         FROM s ORDER BY score DESC LIMIT 5`,
+      [q, near],
+    )).rows;
+
+    const queries = [];
+    for (const a of asked) {
+      const near = await vectorCandidates(a.query, 60);
+      const before = await rank(a.query, []);
+      const after = await rank(a.query, near);
+      queries.push({
+        query: a.query,
+        times: a.times,
+        before: before.length,
+        after: after.length,
+        rescued: before.length === 0 && after.length > 0,
+        changedTop: !!(before[0]?.item_id && after[0]?.item_id && before[0].item_id !== after[0].item_id),
+        newSources: after.filter(r => !before.some(b => b.item_id === r.item_id)).length,
+      });
+    }
+    res.json({
+      ready: true,
+      model: EMBED_MODEL,
+      queries,
+      rescued: queries.filter(x => x.rescued).length,
+      changedTop: queries.filter(x => x.changedTop).length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 JOB_HANDLERS['platform-subs'] = async (job, ctx) => {
   const { itemId, targetUrl, langs } = job.payload || {};

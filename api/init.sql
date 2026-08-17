@@ -239,6 +239,30 @@ CREATE TABLE IF NOT EXISTS chunks (
 CREATE INDEX IF NOT EXISTS idx_chunks_tsv  ON chunks USING GIN (tsv);
 CREATE INDEX IF NOT EXISTS idx_chunks_item ON chunks(item_id, format_url);
 
+-- What a chunk means, as against which words it contains.
+--
+-- Full-text search answers "which page has these words". It cannot answer
+-- "which page is about this", and a reader who asks about падение волатильности
+-- while the book says "vol crush" gets nothing. A vector is the same passage
+-- expressed as a point, so passages about one subject end up near each other
+-- whatever words they used.
+--
+-- Deliberately not pgvector. Twelve thousand chunks at 384 dimensions is 18 MB
+-- — it fits in the worker's memory and a full scan takes milliseconds, so the
+-- extension buys nothing here and costs a database image swap. That trade
+-- reverses somewhere in the hundreds of thousands of chunks.
+--
+-- Stored as raw float32 bytes rather than an array: four bytes per dimension,
+-- read straight into a Float32Array with no parsing. The vectors are stored
+-- already normalised, which makes cosine similarity a plain dot product.
+CREATE TABLE IF NOT EXISTS chunk_vectors (
+  chunk_id   BIGINT      PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+  model      TEXT        NOT NULL,
+  dim        INT         NOT NULL,
+  vec        BYTEA       NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- One row per indexed file: what came out, how, when, and how trustworthy it
 -- looks. This is what the admin's Index panel reads.
 CREATE TABLE IF NOT EXISTS index_status (

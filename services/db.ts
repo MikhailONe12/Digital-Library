@@ -988,6 +988,77 @@ export const loadSearchStats = async (): Promise<SearchStats> => {
   }
 };
 
+// ── Vectors and hybrid search ───────────────────────────────────────────────
+
+export interface VectorReport {
+  model: string;
+  dim: number;
+  /** Where the model files are expected on disk. */
+  home: string;
+  /** Set when an external embeddings service is configured instead. */
+  endpoint: string;
+  chunks: number;
+  vectors: number;
+  /** Embedding jobs queued or running right now. */
+  pending: number;
+  /** Why vectors cannot be computed, in the operator's words. */
+  error: string | null;
+}
+
+const EMPTY_VECTORS: VectorReport = {
+  model: '', dim: 0, home: '', endpoint: '', chunks: 0, vectors: 0, pending: 0, error: null,
+};
+
+export const loadVectorReport = async (): Promise<VectorReport> => {
+  try {
+    const res = await fetch('/api/admin/vectors', { headers: authHeaders() });
+    if (!res.ok) return EMPTY_VECTORS;
+    return { ...EMPTY_VECTORS, ...(await res.json()) };
+  } catch {
+    return EMPTY_VECTORS;
+  }
+};
+
+export const startEmbedding = async (itemId?: string): Promise<void> => {
+  await writeRequest('Подсчёт векторов', '/api/admin/vectors', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ itemId: itemId || null }),
+  });
+};
+
+/** One real question, ranked with and without the vectors. */
+export interface CompareRow {
+  query: string;
+  times: number;
+  before: number;
+  after: number;
+  /** Found nothing by words, finds something by meaning. */
+  rescued: boolean;
+  changedTop: boolean;
+  newSources: number;
+}
+
+export interface CompareReport {
+  ready: boolean;
+  model: string;
+  queries: CompareRow[];
+  rescued: number;
+  changedTop: number;
+}
+
+const EMPTY_COMPARE: CompareReport = { ready: false, model: '', queries: [], rescued: 0, changedTop: 0 };
+
+export const loadVectorCompare = async (): Promise<CompareReport> => {
+  try {
+    const res = await fetch('/api/admin/vectors/compare', { headers: authHeaders() });
+    if (!res.ok) return EMPTY_COMPARE;
+    return { ...EMPTY_COMPARE, ...(await res.json()) };
+  } catch {
+    return EMPTY_COMPARE;
+  }
+};
+
 // ── Job queue ───────────────────────────────────────────────────────────────
 
 export type JobState = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';

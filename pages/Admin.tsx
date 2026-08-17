@@ -8,10 +8,10 @@ import {
   Ban, ShieldAlert, Monitor, MousePointer2, Trophy, BarChart4,
   ChevronDown, RefreshCw, GitBranch, CheckCircle2, AlertCircle,
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
-  ScanLine, Play, Square
+  ScanLine, Play, Square, Sparkles
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1080,7 +1080,11 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [openIndex, setOpenIndex] = useState(true);
   const [openQueue, setOpenQueue] = useState(false);
   const [openMetric, setOpenMetric] = useState(false);
+  const [openVectors, setOpenVectors] = useState(false);
   const [searchStats, setSearchStats] = useState<SearchStats | null>(null);
+  const [vectors, setVectors] = useState<VectorReport | null>(null);
+  const [compare, setCompare] = useState<CompareReport | null>(null);
+  const [compareBusy, setCompareBusy] = useState(false);
   const queueWasActive = useRef(false);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobTotals, setJobTotals] = useState<JobTotals>({ queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 });
@@ -1134,7 +1138,27 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   useEffect(() => {
     if (activeTab !== 'scan' || !isAdmin) return;
     loadSearchStats().then(setSearchStats);
+    loadVectorReport().then(setVectors);
   }, [activeTab, isAdmin]);
+
+  // While an embedding job runs, the coverage number is the progress bar.
+  useEffect(() => {
+    if (activeTab !== 'scan' || !isAdmin) return;
+    if (!vectors?.pending && !jobTotals.running) return;
+    const id = setInterval(() => { loadVectorReport().then(setVectors); }, 3000);
+    return () => clearInterval(id);
+  }, [activeTab, isAdmin, vectors?.pending, jobTotals.running]);
+
+  const handleEmbed = async () => {
+    await startEmbedding();
+    await refreshJobs();
+    setVectors(await loadVectorReport());
+  };
+
+  const handleCompare = async () => {
+    setCompareBusy(true);
+    try { setCompare(await loadVectorCompare()); } finally { setCompareBusy(false); }
+  };
 
   const refreshJobs = async () => {
     const { jobs: rows, totals } = await loadJobs();
@@ -1615,6 +1639,113 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                       → {r.opened_pos || r.opened_item}
                     </span>
                   )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Panel>
+    );
+  };
+
+  // Vectors: what the meaning search has to work with, and whether it earns its
+  // keep. Both halves are here on purpose — coverage without a comparison is a
+  // number nobody can act on.
+  const renderVectorsPanel = (s: any, num: (n: number) => string) => {
+    const v = vectors;
+    const covered = v && v.chunks ? Math.round((v.vectors / v.chunks) * 100) : 0;
+
+    return (
+      <Panel
+        icon={<Sparkles size={18} strokeWidth={2.5} />}
+        title={s.vecTitle}
+        subtitle={s.vecSub}
+        badge={v && v.chunks ? `${num(covered)}%` : undefined}
+        open={openVectors}
+        onToggle={() => setOpenVectors(o => !o)}
+      >
+        <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-5">{s.vecIntro}</p>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          {[
+            { v: `${num(v?.vectors || 0)} / ${num(v?.chunks || 0)}`, t: s.vecCovered,
+              tone: covered >= 99 ? 'text-emerald-600' : 'text-slate-700 dark:text-slate-200' },
+            { v: `${num(covered)}%`, t: s.vecShare, tone: covered >= 99 ? 'text-emerald-600' : 'text-amber-600' },
+            { v: String(v?.dim || 0), t: s.vecDim, tone: 'text-slate-400' },
+            { v: v?.pending ? s.vecRunning : s.vecIdle, t: s.vecState, tone: v?.pending ? 'text-red-600' : 'text-slate-400' },
+          ].map((c, i) => (
+            <div key={i} className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+              <p className={`text-xl md:text-2xl font-black tracking-tighter tabular-nums ${c.tone}`}>{c.v}</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{c.t}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* The model is a fact an operator needs when the numbers look wrong. */}
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4 break-all">
+          {s.vecModel}: {v?.model || '—'} · {v?.endpoint || v?.home}
+        </p>
+
+        {v?.error && (
+          <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-2xl px-4 py-3 mb-4 break-words">
+            {v.error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 mb-5">
+          <button
+            onClick={handleEmbed}
+            disabled={!!v?.pending}
+            className="flex items-center gap-2 px-5 py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+          >
+            <Play size={13} strokeWidth={3} /> {s.vecCompute}
+          </button>
+          <button
+            onClick={handleCompare}
+            disabled={compareBusy}
+            className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 disabled:opacity-50 active:scale-95 transition-all"
+          >
+            <SearchIcon size={13} strokeWidth={3} /> {compareBusy ? s.vecComparing : s.vecCompare}
+          </button>
+        </div>
+
+        {compare && !compare.ready && (
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-4 text-center">{s.vecNoLog}</p>
+        )}
+
+        {compare?.ready && (
+          <>
+            {/* Two numbers decide whether this stays: questions that used to
+                come back empty and now do not, and questions whose best source
+                changed. Everything else is detail. */}
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                <p className="text-xl font-black tracking-tighter tabular-nums text-emerald-600">{num(compare.rescued)}</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{s.vecRescued}</p>
+              </div>
+              <div className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                <p className="text-xl font-black tracking-tighter tabular-nums text-slate-700 dark:text-slate-200">{num(compare.changedTop)}</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{s.vecChanged}</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              {compare.queries.slice(0, 20).map((r, i) => (
+                <div key={i} className="flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                  <span className="min-w-0 flex-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate">{r.query}</span>
+                  {r.rescued && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest">
+                      {s.vecFound}
+                    </span>
+                  )}
+                  {r.changedTop && !r.rescued && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-slate-500 dark:text-slate-400 text-[8px] font-black uppercase tracking-widest">
+                      {s.vecOther}
+                    </span>
+                  )}
+                  <span className="shrink-0 text-[10px] font-black tabular-nums text-slate-400 dark:text-slate-500">
+                    {num(r.before)} → {num(r.after)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -2230,6 +2361,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
               </Panel>
 
               {renderMetricPanel(s, num)}
+
+              {renderVectorsPanel(s, num)}
 
               {renderQueuePanel(s, num)}
 

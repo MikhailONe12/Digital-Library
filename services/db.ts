@@ -993,6 +993,104 @@ export const loadSearchStats = async (): Promise<SearchStats> => {
   }
 };
 
+// ── The answer layer ────────────────────────────────────────────────────────
+
+export interface AnswerQuote {
+  n: number;
+  itemId: string;
+  formatUrl: string;
+  page: number | null;
+  second: number | null;
+  /** Page label or timecode, ready to print. */
+  where: string;
+  title: string;
+  author: string;
+  text: string;
+  /** True when the licence forced the quotation to be cut short. */
+  trimmed?: boolean;
+}
+
+export interface LibraryAnswer {
+  available: boolean;
+  enough: boolean;
+  /** The model's explanation, with any sentence that copied a source removed. */
+  answer?: string;
+  quotes: AnswerQuote[];
+  /** Why there is no answer: nothing-found, nothing-verified, llm-unavailable… */
+  reason?: string | null;
+  error?: string | null;
+  tookMs?: number;
+}
+
+const NO_ANSWER: LibraryAnswer = { available: false, enough: false, quotes: [] };
+
+/**
+ * Ask the library rather than search it. Never called on a keystroke: it costs
+ * a model call, so it waits for the reader to ask for it.
+ */
+export const askLibrary = async (query: string): Promise<LibraryAnswer> => {
+  const q = query.trim();
+  if (q.length < 3) return NO_ANSWER;
+  try {
+    const res = await fetch(`/api/answer?q=${encodeURIComponent(q)}`, { headers: tgInitDataHeader() });
+    if (!res.ok) return { ...NO_ANSWER, reason: `http-${res.status}` };
+    return { ...NO_ANSWER, ...(await res.json()) };
+  } catch {
+    return { ...NO_ANSWER, reason: 'offline' };
+  }
+};
+
+export interface AnswerLayerReport {
+  available: boolean;
+  model: string;
+  endpoint: string;
+  questions: number;
+  error: string | null;
+}
+
+export const loadAnswerLayer = async (): Promise<AnswerLayerReport> => {
+  try {
+    const res = await fetch('/api/admin/answers', { headers: authHeaders() });
+    if (!res.ok) return { available: false, model: '', endpoint: '', questions: 0, error: null };
+    return await res.json();
+  } catch {
+    return { available: false, model: '', endpoint: '', questions: 0, error: null };
+  }
+};
+
+export interface EvalRow {
+  id: number;
+  question: string;
+  source: string;
+  enough: boolean;
+  quotes: number;
+  dropped: number;
+  paraphrased: number;
+  reason: string | null;
+}
+
+export interface EvalReport {
+  model: string;
+  total: number;
+  answered: number;
+  refused: number;
+  /** Questions where at least one quotation failed verification. */
+  unverified: number;
+  paraphrase: number;
+  results: EvalRow[];
+  error?: string;
+}
+
+export const runAnswerEval = async (): Promise<EvalReport | null> => {
+  try {
+    const res = await fetch('/api/admin/answers/eval', { method: 'POST', headers: authHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+};
+
 // ── Withdrawal ──────────────────────────────────────────────────────────────
 
 export type WithdrawAction = 'freeze' | 'unfreeze' | 'purge' | 'delete';

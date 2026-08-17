@@ -3,8 +3,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { MediaItem, Locale, ContentLang, CustomType } from '../types';
 import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
-import { searchInside, logSearchOpened } from '../services/db';
-import type { SearchHit } from '../services/db';
+import { searchInside, logSearchOpened, askLibrary } from '../services/db';
+import type { SearchHit, LibraryAnswer } from '../services/db';
 import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ChevronDown, ChevronUp, ExternalLink, PlayCircle, Newspaper, FileText, Headphones, GraduationCap, FileQuestion } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo, getDisplayedLanguages, isExternallyHosted } from '../utils';
@@ -229,10 +229,14 @@ const Home: React.FC<HomeProps> = ({
   const [insideMore, setInsideMore] = useState<Record<string, SearchHit[]>>({});
   const [insideOpen, setInsideOpen] = useState<Record<string, boolean>>({});
   const [insideBusy, setInsideBusy] = useState<string | null>(null);
+  // The assembled answer. Never fetched on a keystroke — it costs a model call,
+  // so the reader asks for it once they have seen what the library holds.
+  const [answer, setAnswer] = useState<LibraryAnswer | null>(null);
+  const [answerBusy, setAnswerBusy] = useState(false);
 
   useEffect(() => {
     const q = searchQuery.trim();
-    setInsideMore({}); setInsideOpen({});
+    setInsideMore({}); setInsideOpen({}); setAnswer(null);
     if (q.length < 3) { setInsideHits([]); setInsideLogId(null); setInsideError(null); return; }
     let cancelled = false;
     // Debounced: typing a word should not be a query per keystroke.
@@ -265,6 +269,11 @@ const Home: React.FC<HomeProps> = ({
       total: Math.max(Number(by[id][0].item_total || 0), by[id].length),
     }));
   }, [insideHits, insideMore]);
+
+  const requestAnswer = async () => {
+    setAnswerBusy(true);
+    try { setAnswer(await askLibrary(searchQuery)); } finally { setAnswerBusy(false); }
+  };
 
   // Open a source's other places, or fold them away again. The list stays a
   // list of sources — one line each — until the reader asks a particular one
@@ -980,6 +989,64 @@ const Home: React.FC<HomeProps> = ({
             </span>
             <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
           </div>
+
+          {/* Two voices, and the screen keeps them apart: the explanation is
+              the model's, every quotation is the library's, checked word for
+              word against the passage it claims to come from. Asking costs a
+              model call, so it happens on request rather than on a keystroke. */}
+          {answer?.available !== false || answerBusy ? (
+            <div className="mb-4">
+              {!answer && (
+                <button
+                  type="button"
+                  onClick={requestAnswer}
+                  disabled={answerBusy}
+                  className="w-full py-3 rounded-2xl bg-slate-900 dark:bg-white/10 text-white text-[10px] font-black uppercase tracking-[0.15em] hover:bg-slate-800 disabled:opacity-50 active:scale-[0.99] transition-all"
+                >
+                  {answerBusy ? t.answerThinking : t.answerAsk}
+                </button>
+              )}
+
+              {answer && answer.enough && (
+                <div className="p-4 rounded-2xl bg-slate-900 dark:bg-white/[0.04] border border-slate-800 dark:border-white/10">
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mb-2">{t.answerTitle}</p>
+                  <p className="text-[13px] text-white dark:text-slate-100 leading-relaxed">{answer.answer}</p>
+
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 mt-4 mb-2">{t.answerQuotes}</p>
+                  <div className="space-y-2">
+                    {answer.quotes.map((qt, i) => {
+                      const found = allItems.find(it => it.id === qt.itemId);
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            if (!found) return;
+                            logSearchOpened(insideLogId, qt.itemId, qt.where);
+                            if (onOpenItemAt) onOpenItemAt(found, { url: qt.formatUrl, page: qt.page, second: qt.second });
+                            else onOpenItem(found);
+                          }}
+                          className="w-full text-left p-3 rounded-xl bg-white/[0.06] border border-white/10 hover:border-red-400/60 active:scale-[0.99] transition-all"
+                        >
+                          <p className="text-[12px] text-slate-100 leading-relaxed">«{qt.text}»</p>
+                          <p className="text-[10px] font-bold text-slate-400 mt-1.5 truncate">
+                            {qt.title}{qt.author ? `, ${qt.author}` : ''} · {qt.where}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[9px] font-bold text-slate-500 mt-3 leading-relaxed">{t.answerDisclaimer}</p>
+                </div>
+              )}
+
+              {answer && !answer.enough && (
+                <p className="p-3.5 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {answer.reason === 'nothing-verified' ? t.answerUnverified : t.answerNone}
+                </p>
+              )}
+            </div>
+          ) : null}
 
           <div className="space-y-2.5">
             {insideGroups.map(group => {

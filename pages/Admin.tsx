@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square, Sparkles
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare, probeSearchSpeed, loadWithdrawals, withdrawItem } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport, SpeedProbe, WithdrawalReport, WithdrawAction } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare, probeSearchSpeed, loadWithdrawals, withdrawItem, loadAnswerLayer, runAnswerEval } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport, SpeedProbe, WithdrawalReport, WithdrawAction, AnswerLayerReport, EvalReport } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1089,6 +1089,10 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [openHolds, setOpenHolds] = useState(false);
   const [withdrawals, setWithdrawals] = useState<WithdrawalReport | null>(null);
   const [holdReason, setHoldReason] = useState('');
+  const [openAnswers, setOpenAnswers] = useState(false);
+  const [answerLayer, setAnswerLayer] = useState<AnswerLayerReport | null>(null);
+  const [evalReport, setEvalReport] = useState<EvalReport | null>(null);
+  const [evalBusy, setEvalBusy] = useState(false);
   const holds = withdrawals?.holds || [];
   const frozenIds = useMemo(() => new Set(holds.map(h => h.item_id)), [holds]);
   const queueWasActive = useRef(false);
@@ -1146,6 +1150,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     loadSearchStats().then(setSearchStats);
     loadVectorReport().then(setVectors);
     loadWithdrawals().then(setWithdrawals);
+    loadAnswerLayer().then(setAnswerLayer);
   }, [activeTab, isAdmin]);
 
   // While an embedding job runs, the coverage number is the progress bar.
@@ -1175,6 +1180,13 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     setWithdrawals(await loadWithdrawals());
     setIndexReport(await loadIndexReport());
     if (action === 'delete') { setEditingItem(null); onUpdate(); }
+  };
+
+  // Running the reference set costs one model call per question, so it is a
+  // button and never a poll.
+  const handleEval = async () => {
+    setEvalBusy(true);
+    try { setEvalReport(await runAnswerEval()); } finally { setEvalBusy(false); }
   };
 
   const handleCompare = async () => {
@@ -1871,6 +1883,82 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     );
   };
 
+  // The answer layer, and the only honest way to judge it: the same real
+  // questions before and after, counted by how many answers survived
+  // verification rather than by how many the model produced.
+  const renderAnswersPanel = (s: any, num: (n: number) => string) => {
+    const a = answerLayer;
+    const e = evalReport;
+    return (
+      <Panel
+        icon={<Sparkles size={18} strokeWidth={2.5} />}
+        title={s.ansTitle}
+        subtitle={s.ansSub}
+        badge={a ? (a.available ? s.ansOn : s.ansOff) : undefined}
+        open={openAnswers}
+        onToggle={() => setOpenAnswers(o => !o)}
+      >
+        <p className="text-[10px] md:text-xs text-slate-500 dark:text-slate-400 font-bold leading-relaxed max-w-3xl mb-5">{s.ansIntro}</p>
+
+        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-4 break-all">
+          {s.vecModel}: {a?.model || '—'} {a?.endpoint ? `· ${a.endpoint}` : ''} · {num(a?.questions || 0)} {s.ansQuestions}
+        </p>
+
+        {!a?.available && (
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 mb-4">
+            {s.ansNotConfigured}
+          </p>
+        )}
+        {a?.error && (
+          <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/25 rounded-2xl px-4 py-3 mb-4 break-words">
+            {a.error}
+          </p>
+        )}
+
+        <button
+          onClick={handleEval}
+          disabled={!a?.available || evalBusy}
+          className="flex items-center gap-2 px-5 py-3 mb-5 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-md active:scale-95 transition-all"
+        >
+          <Play size={13} strokeWidth={3} /> {evalBusy ? s.ansRunning : s.ansRun}
+        </button>
+
+        {e && (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              {[
+                { v: `${num(e.answered)} / ${num(e.total)}`, t: s.ansAnswered, tone: 'text-emerald-600' },
+                { v: num(e.unverified), t: s.ansUnverified, tone: e.unverified ? 'text-amber-600' : 'text-slate-400' },
+                { v: num(e.paraphrase), t: s.ansParaphrase, tone: e.paraphrase ? 'text-amber-600' : 'text-slate-400' },
+                { v: num(e.refused), t: s.ansRefused, tone: 'text-slate-400' },
+              ].map((c, i) => (
+                <div key={i} className="p-4 rounded-3xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                  <p className={`text-xl md:text-2xl font-black tracking-tighter tabular-nums ${c.tone}`}>{c.v}</p>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300 mt-1">{c.t}</p>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              {e.results.slice(0, 30).map(r => (
+                <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">
+                  <span className="min-w-0 flex-1 text-[11px] font-bold text-slate-700 dark:text-slate-200 truncate">{r.question}</span>
+                  {!!r.dropped && (
+                    <span className="shrink-0 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[8px] font-black uppercase tracking-widest">
+                      {num(r.dropped)} {s.ansDropped}
+                    </span>
+                  )}
+                  <span className={`shrink-0 text-[10px] font-black tabular-nums ${r.enough ? 'text-emerald-600' : 'text-slate-400'}`}>
+                    {r.enough ? `${num(r.quotes)} ${s.ansQuotesShort}` : '—'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Panel>
+    );
+  };
+
   const renderQueuePanel = (s: any, num: (n: number) => string) => {
     const active = jobTotals.queued + jobTotals.running;
     const badge = active
@@ -2479,6 +2567,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
               {renderMetricPanel(s, num)}
 
               {renderVectorsPanel(s, num)}
+
+              {renderAnswersPanel(s, num)}
 
               {renderHoldsPanel(s, num)}
 

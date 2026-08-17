@@ -2383,6 +2383,97 @@ const vectorCandidates = async (q, k) => {
   }
 };
 
+// The one search query in the application, named so the answer layer can ask
+// the same question the reader asked and get the same passages back. Two
+// callers, one ranking: an answer assembled from a different shortlist than
+// the one on screen would quote pages the reader cannot see.
+const SEARCH_SQL = `WITH q AS (
+         SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
+                websearch_to_tsquery('english'::regconfig, $1) AS tsq
+       ),
+       matched AS (
+         SELECT c.id, c.item_id, ts_rank(c.tsv, q.tsq) AS fts, v.ord AS vord
+           FROM chunks c
+           CROSS JOIN q
+           LEFT JOIN items i ON i.id = c.item_id
+           -- The passages the meaning search brought, in its order. Empty when
+           -- vectors are off, which is how this whole branch disappears.
+           LEFT JOIN unnest($6::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
+          WHERE (c.tsv @@ q.tsq OR v.vid IS NOT NULL)
+            -- Frozen material is in the catalogue and out of the search. One
+            -- row in index_holds is the whole mechanism, which is what makes
+            -- coming back free.
+            AND NOT EXISTS (SELECT 1 FROM index_holds hh WHERE hh.item_id = c.item_id)
+            -- Compared as text on purpose. A cast would throw on any item whose
+            -- isPrivate is not a clean boolean — one bad row in the catalogue
+            -- would then empty every search result for everyone.
+            AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
+            AND ($5::text IS NULL OR c.item_id = $5)
+       ),
+       scored AS (
+         -- Rank inside each of the two lists. Partitioning on "did the words
+         -- match at all" keeps the word ranking free of the vector-only rows.
+         SELECT id, item_id, fts, vord,
+                RANK() OVER (PARTITION BY (fts > 0) ORDER BY fts DESC) AS fts_rank
+           FROM matched
+       ),
+       fused AS (
+         -- Whether the words matched travels with the row: a passage the meaning
+         -- search alone found has nothing highlighted, and the reader is owed
+         -- the reason.
+         -- Reciprocal rank fusion: each list contributes 1/(60 + place in it).
+         -- Positions, not scores, because a ts_rank and a cosine are not on the
+         -- same scale and pretending otherwise is how one silently wins.
+         --
+         -- With no vectors every row scores 1/(60 + word rank), which is the
+         -- old ordering exactly — not merely close to it. That is the property
+         -- worth having: switching vectors off restores today's search.
+         SELECT id, item_id, (fts > 0) AS by_words,
+                (CASE WHEN fts > 0 THEN 1.0 / (60 + fts_rank) ELSE 0 END)
+              + (CASE WHEN vord IS NOT NULL THEN 1.0 / (60 + vord) ELSE 0 END) AS rank
+           FROM scored
+       ),
+       ranked AS (
+         SELECT id, item_id, rank, by_words,
+                ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY rank DESC, id) AS rn,
+                -- How much this material has to say beyond what is shown. It is
+                -- the difference between "the video mentions it once" and "the
+                -- video mentions it eleven times and you are seeing one".
+                COUNT(*)     OVER (PARTITION BY item_id) AS item_total
+           FROM fused
+       ),
+       hits AS (
+         -- Three places from any one material, however much room is left. Seven
+         -- rows of the same book saying the same sentence is not seven answers,
+         -- and the reader who wants the eighth can ask for it.
+         --
+         -- Fetched with room to spare: neighbouring chunks share their edges, so
+         -- some of these rows are the same passage twice and get dropped below.
+         SELECT id, rank, rn, by_words, item_total FROM ranked
+          WHERE $5::text IS NOT NULL OR rn <= 3
+          ORDER BY rn, rank DESC, id LIMIT $2
+       )
+       SELECT c.id AS chunk_id, c.item_id, c.format_url, c.page, c.page_label,
+              c.second_start, c.second_end, h.rank, h.rn, h.by_words, h.item_total,
+              -- Computed only for the rows that survived, never for every match.
+              ts_headline($3::regconfig, c.text, q.tsq,
+                          'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
+              i.data->'title' AS title, i.data->>'author' AS author
+         FROM hits h
+         JOIN chunks c ON c.id = h.id
+         CROSS JOIN q
+         LEFT JOIN items i ON i.id = c.item_id
+        -- The material with the strongest single hit leads; every other hit of
+        -- that same material follows it immediately, in order of position.
+        ORDER BY MAX(h.rank) OVER (PARTITION BY c.item_id) DESC,
+                 c.item_id,
+                 c.second_start ASC NULLS LAST,
+                 c.page ASC NULLS LAST,
+                 h.rank DESC`;
+
+const searchRows = async ({ q, fetchLimit, headlineConfig, maySeePrivate, onlyItem, near }) =>
+  (await pool.query(SEARCH_SQL, [q, fetchLimit, headlineConfig, maySeePrivate, onlyItem, near])).rows;
+
 // Full-text search over the chunks.
 //
 // Admin-only for now, deliberately. Opening it to readers needs the private-item
@@ -2458,112 +2549,14 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     const near = await vectorCandidates(q, 60);
     const tVector = Date.now() - tStart;
     const tSql = Date.now();
-    const { rows } = await pool.query(
-      // Three decisions, and they are deliberately separate.
-      //
-      // Which fragments count — relevance, as always.
-      //
-      // Which of them fit into one answer — breadth before depth. Ranking the
-      // whole library by relevance hands the list to whoever repeats the word
-      // most often: six books saying it four times each fill every slot, and a
-      // lecture that says it once, in the one place the reader needed, never
-      // appears at all. So a material's second place waits until every other
-      // material has shown its first.
-      //
-      // How they are read — a material's hits stay together and run from the
-      // beginning towards the end. A video answering at 0:00, 27:26 and 0:28 in
-      // relevance order is a list of scores; in time order it is a route
-      // through the recording. Books get the same treatment by page.
-      `WITH q AS (
-         SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
-                websearch_to_tsquery('english'::regconfig, $1) AS tsq
-       ),
-       matched AS (
-         SELECT c.id, c.item_id, ts_rank(c.tsv, q.tsq) AS fts, v.ord AS vord
-           FROM chunks c
-           CROSS JOIN q
-           LEFT JOIN items i ON i.id = c.item_id
-           -- The passages the meaning search brought, in its order. Empty when
-           -- vectors are off, which is how this whole branch disappears.
-           LEFT JOIN unnest($6::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
-          WHERE (c.tsv @@ q.tsq OR v.vid IS NOT NULL)
-            -- Frozen material is in the catalogue and out of the search. One
-            -- row in index_holds is the whole mechanism, which is what makes
-            -- coming back free.
-            AND NOT EXISTS (SELECT 1 FROM index_holds hh WHERE hh.item_id = c.item_id)
-            -- Compared as text on purpose. A cast would throw on any item whose
-            -- isPrivate is not a clean boolean — one bad row in the catalogue
-            -- would then empty every search result for everyone.
-            AND ($4::boolean OR COALESCE(i.data->>'isPrivate', 'false') NOT IN ('true', '1'))
-            AND ($5::text IS NULL OR c.item_id = $5)
-       ),
-       scored AS (
-         -- Rank inside each of the two lists. Partitioning on "did the words
-         -- match at all" keeps the word ranking free of the vector-only rows.
-         SELECT id, item_id, fts, vord,
-                RANK() OVER (PARTITION BY (fts > 0) ORDER BY fts DESC) AS fts_rank
-           FROM matched
-       ),
-       fused AS (
-         -- Whether the words matched travels with the row: a passage the meaning
-         -- search alone found has nothing highlighted, and the reader is owed
-         -- the reason.
-         -- Reciprocal rank fusion: each list contributes 1/(60 + place in it).
-         -- Positions, not scores, because a ts_rank and a cosine are not on the
-         -- same scale and pretending otherwise is how one silently wins.
-         --
-         -- With no vectors every row scores 1/(60 + word rank), which is the
-         -- old ordering exactly — not merely close to it. That is the property
-         -- worth having: switching vectors off restores today's search.
-         SELECT id, item_id, (fts > 0) AS by_words,
-                (CASE WHEN fts > 0 THEN 1.0 / (60 + fts_rank) ELSE 0 END)
-              + (CASE WHEN vord IS NOT NULL THEN 1.0 / (60 + vord) ELSE 0 END) AS rank
-           FROM scored
-       ),
-       ranked AS (
-         SELECT id, item_id, rank, by_words,
-                ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY rank DESC, id) AS rn,
-                -- How much this material has to say beyond what is shown. It is
-                -- the difference between "the video mentions it once" and "the
-                -- video mentions it eleven times and you are seeing one".
-                COUNT(*)     OVER (PARTITION BY item_id) AS item_total
-           FROM fused
-       ),
-       hits AS (
-         -- Three places from any one material, however much room is left. Seven
-         -- rows of the same book saying the same sentence is not seven answers,
-         -- and the reader who wants the eighth can ask for it.
-         --
-         -- Fetched with room to spare: neighbouring chunks share their edges, so
-         -- some of these rows are the same passage twice and get dropped below.
-         SELECT id, rank, rn, by_words, item_total FROM ranked
-          WHERE $5::text IS NOT NULL OR rn <= 3
-          ORDER BY rn, rank DESC, id LIMIT $2
-       )
-       SELECT c.item_id, c.format_url, c.page, c.page_label,
-              c.second_start, c.second_end, h.rank, h.rn, h.by_words, h.item_total,
-              -- Computed only for the rows that survived, never for every match.
-              ts_headline($3::regconfig, c.text, q.tsq,
-                          'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
-              i.data->'title' AS title, i.data->>'author' AS author
-         FROM hits h
-         JOIN chunks c ON c.id = h.id
-         CROSS JOIN q
-         LEFT JOIN items i ON i.id = c.item_id
-        -- The material with the strongest single hit leads; every other hit of
-        -- that same material follows it immediately, in order of position.
-        ORDER BY MAX(h.rank) OVER (PARTITION BY c.item_id) DESC,
-                 c.item_id,
-                 c.second_start ASC NULLS LAST,
-                 c.page ASC NULLS LAST,
-                 h.rank DESC`,
+    const rows = await searchRows({
+      q,
       // Over-fetch, because the duplicates are dropped after the query and the
-      // reader should still get a full list.
-      // Room for the duplicates that will be dropped, and no more: every extra
-      // row here is a ts_headline over a page of text, and on a modest server
-      // that is where the search actually spends its time.
-      [q, Math.min(limit + 8, 60), headlineConfig, maySeePrivate, onlyItem, near],
-    );
+      // reader should still get a full list. Room for what will be dropped and
+      // no more: every extra row is a ts_headline over a page of text.
+      fetchLimit: Math.min(limit + 8, 60),
+      headlineConfig, maySeePrivate, onlyItem, near,
+    });
 
     // Trimming has to keep the breadth rule, and the rows arrive in *reading*
     // order — grouped by material. Cutting that list at twelve keeps the first
@@ -2605,6 +2598,370 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // Loud on the server, and honest to the client: a failed search must not
     // arrive looking like a search that found nothing.
     console.error('search failed:', e?.message || e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── The answer layer ─────────────────────────────────────────────────────────
+//
+// Two voices, and they must never be confused: the explanation is the model's,
+// the quotation is the library's. A model that paraphrases a copyrighted book
+// into its own words is redistributing that book; a model that invents a quote
+// is worse than useless, because a fabricated citation with a page number is
+// believed.
+//
+// So nothing the model writes is trusted about the sources. Every quotation it
+// offers is checked against the passage it claims to come from, character by
+// character, by string comparison and not by another model. What does not check
+// out does not reach the reader.
+//
+// The layer is optional and off until configured: with no model the library is
+// exactly the search it is today.
+
+const LLM_ENDPOINT = process.env.LLM_ENDPOINT || '';       // OpenAI-shaped /chat/completions
+const LLM_MODEL = process.env.LLM_MODEL || '';
+const LLM_API_KEY = process.env.LLM_API_KEY || '';
+const LLM_TIMEOUT_MS = envNum('LLM_TIMEOUT_MS', 60_000);
+// How many passages the model is allowed to see. More context is not a better
+// answer: it is more chances to quote the wrong book.
+const ANSWER_PASSAGES = envNum('ANSWER_PASSAGES', 8);
+// A quotation longer than this is republishing rather than citing. The limit is
+// per licence — see quoteLimitFor.
+const QUOTE_MAX_CHARS = envNum('QUOTE_MAX_CHARS', 400);
+const QUOTE_MAX_CHARS_STRICT = envNum('QUOTE_MAX_CHARS_STRICT', 200);
+// A run of this many identical words outside a quotation is a paraphrase of the
+// source rather than an explanation of it.
+const PARAPHRASE_RUN = envNum('PARAPHRASE_RUN', 12);
+
+let llmFault = null;
+
+const llmAvailable = () => !!(LLM_ENDPOINT && LLM_MODEL);
+
+/** One call to the model. Returns its text, or null with llmFault set. */
+const llmGenerate = async ({ system, user, maxTokens = 900 }) => {
+  if (!llmAvailable()) {
+    llmFault = 'Модель не настроена: задайте LLM_ENDPOINT и LLM_MODEL.';
+    return null;
+  }
+  try {
+    const res = await fetch(LLM_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(LLM_API_KEY ? { Authorization: `Bearer ${LLM_API_KEY}` } : {}),
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        max_tokens: maxTokens,
+        temperature: 0,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+      }),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`модель ответила ${res.status}`);
+    const body = await res.json();
+    const text = body?.choices?.[0]?.message?.content
+      ?? body?.content?.[0]?.text         // Anthropic-shaped, if pointed at one
+      ?? '';
+    if (!text) throw new Error('модель вернула пустой ответ');
+    llmFault = null;
+    return String(text);
+  } catch (e) {
+    llmFault = clip(e?.message || String(e), 300);
+    console.error('llm failed:', e?.message || e);
+    return null;
+  }
+};
+
+// ── Verification, all of it string work ──────────────────────────────────────
+
+const normalizeForMatch = t => String(t || '')
+  .replace(/[«»"“”„‟]/g, '"')
+  .replace(/[–—‒]/g, '-')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+/** True when the quotation really is in that passage, word for word. */
+const quoteIsVerbatim = (quote, passage) => {
+  const q = normalizeForMatch(quote);
+  return q.length >= 12 && normalizeForMatch(passage).includes(q);
+};
+
+// No-derivatives licences forbid altering the text, which includes translating
+// it. We never translate a quotation anyway; this makes the rule enforced rather
+// than merely intended, by refusing a quote written in a different script from
+// the passage it claims to come from.
+const scriptOf = t => (/[А-Яа-яЁё]/.test(t) ? 'cyr' : 'lat');
+const licenseIsNoDerivatives = code => /(^|-)ND(-|$)/i.test(String(code || ''));
+const licenseIsPermissive = code => /^(CC-BY(-SA)?-|CC0|PD|PUBLIC)/i.test(String(code || ''));
+
+/**
+ * How much of a passage may be quoted.
+ *
+ * A licence that permits redistribution permits a paragraph. Everything else —
+ * including "not stated", which is all rights reserved until somebody checks —
+ * gets the short quotation that citation law contemplates, not a page.
+ */
+const quoteLimitFor = license =>
+  (licenseIsPermissive(license?.code) ? QUOTE_MAX_CHARS : QUOTE_MAX_CHARS_STRICT);
+
+const wordsOf = t => normalizeForMatch(t).split(' ').filter(Boolean);
+
+/**
+ * Does the explanation reproduce the source instead of explaining it?
+ *
+ * Returns the longest run of consecutive words the two share. Twelve is where a
+ * sentence stops being a summary: the model is copying, and copying outside a
+ * quotation is exactly what a licence forbids and what a reader cannot tell
+ * apart from the model's own words.
+ */
+const longestSharedRun = (text, passage) => {
+  const a = wordsOf(text);
+  const b = wordsOf(passage);
+  if (!a.length || !b.length) return 0;
+  const index = new Map();
+  b.forEach((w, i) => {
+    if (!index.has(w)) index.set(w, []);
+    index.get(w).push(i);
+  });
+  let best = 0;
+  for (let i = 0; i < a.length; i++) {
+    for (const j of index.get(a[i]) || []) {
+      let n = 0;
+      while (i + n < a.length && j + n < b.length && a[i + n] === b[j + n]) n++;
+      if (n > best) best = n;
+    }
+  }
+  return best;
+};
+
+const splitSentences = t => String(t || '').split(/(?<=[.!?…])\s+/).filter(s => s.trim());
+
+/**
+ * Assemble an answer from the library, and let nothing through unchecked.
+ *
+ * The shape of the result is deliberate: `answer` is the model's explanation,
+ * `quotes` are the library's words with the place to open, and `dropped` says
+ * what was refused and why. A reader gets the first two; an operator needs the
+ * third to know whether the model is behaving.
+ */
+const buildAnswer = async ({ q, maySeePrivate, lang }) => {
+  const near = await vectorCandidates(q, 60);
+  const rows = await searchRows({
+    q,
+    fetchLimit: Math.min(ANSWER_PASSAGES * 3, 60),
+    headlineConfig: /\p{Script=Cyrillic}/u.test(q) ? 'russian' : 'english',
+    maySeePrivate,
+    onlyItem: null,
+    near,
+  });
+  const passages = dropRepeatedPassages(rows).slice(0, ANSWER_PASSAGES);
+  if (!passages.length) return { enough: false, reason: 'nothing-found', quotes: [], passages: [] };
+
+  // The text the model is shown, and the licence each passage carries with it.
+  const items = new Map();
+  for (const r of (await pool.query(
+    'SELECT id, data FROM items WHERE id = ANY($1::text[])',
+    [[...new Set(passages.map(p => p.item_id))]],
+  )).rows) items.set(r.id, r.data || {});
+
+  const full = new Map();
+  for (const r of (await pool.query(
+    `SELECT id, text FROM chunks WHERE id = ANY($1::bigint[])`,
+    [passages.map(p => String(p.chunk_id ?? p.id ?? 0)).filter(x => x !== '0')],
+  )).rows.filter(Boolean)) full.set(String(r.id), r.text);
+
+  const numbered = passages.map((p, i) => {
+    const item = items.get(p.item_id) || {};
+    const where = p.second_start !== null
+      ? formatSeconds(p.second_start)
+      : (p.page_label || p.page || '—');
+    return {
+      n: i + 1,
+      itemId: p.item_id,
+      formatUrl: p.format_url,
+      page: p.page,
+      second: p.second_start,
+      where,
+      title: item.title?.ru || item.title?.en || item.title?.es || p.item_id,
+      author: item.author || '',
+      license: item.license || null,
+      // The passage as stored — the only text a quotation may come from.
+      text: full.get(String(p.chunk_id ?? '')) || String(p.snippet || '').replace(/<[^>]+>/g, ''),
+    };
+  });
+
+  const system = [
+    'Ты помогаешь читателю библиотеки. Отвечай ТОЛЬКО по приведённым фрагментам.',
+    'Если фрагменты не отвечают на вопрос — так и скажи, не додумывай.',
+    'Цитируй дословно и только то, что есть во фрагменте. Не переводи цитаты.',
+    'Своими словами — объясняй, а не переписывай источник.',
+    'Ответ верни строго в JSON: {"enough":true|false,"answer":"…","quotes":[{"n":1,"text":"дословная цитата"}]}',
+  ].join(' ');
+
+  const user = [
+    `Вопрос: ${q}`,
+    '',
+    'Фрагменты:',
+    ...numbered.map(p => `[${p.n}] «${p.title}»${p.author ? `, ${p.author}` : ''} (${p.where}):\n${p.text}`),
+  ].join('\n');
+
+  const raw = await llmGenerate({ system, user });
+  if (raw === null) return { enough: false, reason: 'llm-unavailable', error: llmFault, quotes: [], passages: numbered };
+
+  let parsed = null;
+  try {
+    const jsonText = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    parsed = JSON.parse(jsonText);
+  } catch {
+    return { enough: false, reason: 'llm-unparsable', error: clip(raw, 200), quotes: [], passages: numbered };
+  }
+
+  const dropped = [];
+  const quotes = [];
+  for (const cand of Array.isArray(parsed.quotes) ? parsed.quotes.slice(0, 8) : []) {
+    const p = numbered.find(x => x.n === Number(cand?.n));
+    const text = String(cand?.text || '').trim();
+    if (!p || !text) { dropped.push({ text: clip(text, 120), why: 'no-passage' }); continue; }
+    // Verbatim, or not at all. This is the check that makes a page number mean
+    // something.
+    if (!quoteIsVerbatim(text, p.text)) { dropped.push({ text: clip(text, 120), why: 'not-verbatim' }); continue; }
+    // A no-derivatives source may be quoted, never translated.
+    if (licenseIsNoDerivatives(p.license?.code) && scriptOf(text) !== scriptOf(p.text)) {
+      dropped.push({ text: clip(text, 120), why: 'nd-translation' });
+      continue;
+    }
+    const limit = quoteLimitFor(p.license);
+    quotes.push({
+      n: p.n,
+      itemId: p.itemId,
+      formatUrl: p.formatUrl,
+      page: p.page,
+      second: p.second,
+      where: p.where,
+      title: p.title,
+      author: p.author,
+      // Trimmed to what the licence allows, at a word boundary.
+      text: text.length > limit ? `${text.slice(0, text.lastIndexOf(' ', limit) || limit).trim()}…` : text,
+      trimmed: text.length > limit,
+    });
+  }
+
+  // The explanation, sentence by sentence: any sentence that copies a long run
+  // from a source is not an explanation and is removed.
+  let answer = String(parsed.answer || '').trim();
+  const paraphrased = [];
+  if (answer) {
+    const kept = [];
+    for (const sentence of splitSentences(answer)) {
+      const worst = Math.max(0, ...numbered.map(p => longestSharedRun(sentence, p.text)));
+      if (worst >= PARAPHRASE_RUN) paraphrased.push({ text: clip(sentence, 160), run: worst });
+      else kept.push(sentence);
+    }
+    answer = kept.join(' ').trim();
+  }
+
+  // An answer with no verified quotation is an opinion about a library, not an
+  // answer from one. The reader gets the places instead — the search result they
+  // would have had anyway.
+  const enough = !!(parsed.enough !== false && answer && quotes.length);
+  return {
+    enough,
+    reason: enough ? null : (quotes.length ? 'no-answer-text' : 'nothing-verified'),
+    answer,
+    quotes,
+    dropped,
+    paraphrased,
+    passages: numbered.map(p => ({
+      n: p.n, itemId: p.itemId, formatUrl: p.formatUrl, page: p.page, second: p.second,
+      where: p.where, title: p.title, author: p.author,
+    })),
+  };
+};
+
+app.get('/api/answer', checkUserAccess, async (req, res) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  if (q.length < 3) return res.json({ enough: false, reason: 'too-short', quotes: [] });
+  if (!llmAvailable()) return res.json({ available: false, enough: false, reason: 'llm-unavailable', quotes: [] });
+
+  const settings = req.cachedSettings || {};
+  const user = req.telegramUser;
+  const allowed = settings.allowedUsers || [];
+  const maySeePrivate = !!settings.globalAccess
+    || !!(user && (allowed.includes(user.id) || (user.username && allowed.includes(user.username))));
+
+  try {
+    const t0 = Date.now();
+    const out = await buildAnswer({ q, maySeePrivate, lang: req.query.lang });
+    res.json({ available: true, ...out, tookMs: Date.now() - t0 });
+  } catch (e) {
+    console.error('answer failed:', e?.message || e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Is the layer configured, and what does it do to real questions?
+app.get('/api/admin/answers', requireApiKey, async (req, res) => {
+  try {
+    const { rows: [{ n }] } = await pool.query('SELECT COUNT(*)::int AS n FROM eval_questions');
+    res.json({
+      available: llmAvailable(),
+      model: LLM_MODEL,
+      endpoint: LLM_ENDPOINT ? LLM_ENDPOINT.replace(/^(https?:\/\/[^/]+).*/, '$1') : '',
+      questions: n,
+      error: llmFault,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// The reference set: real questions from the log plus a starter list, so a model
+// change can be judged instead of guessed at. Runs them all and reports what the
+// verification did — the number that matters is not "how many answers" but "how
+// many answers the library could stand behind".
+app.post('/api/admin/answers/eval', requireApiKey, async (req, res) => {
+  if (!llmAvailable()) return res.status(409).json({ error: llmFault || 'Модель не настроена' });
+  try {
+    // Top up the set from questions people actually asked.
+    await pool.query(
+      `INSERT INTO eval_questions (question, source)
+       SELECT DISTINCT query, 'log' FROM search_log
+        WHERE COALESCE(query, '') <> ''
+          AND NOT EXISTS (SELECT 1 FROM eval_questions e WHERE e.question = search_log.query)
+        LIMIT 60`);
+    const { rows } = await pool.query(
+      'SELECT id, question, source FROM eval_questions ORDER BY id LIMIT 100');
+
+    const results = [];
+    for (const row of rows) {
+      const out = await buildAnswer({ q: row.question, maySeePrivate: false, lang: 'ru' });
+      results.push({
+        id: row.id,
+        question: row.question,
+        source: row.source,
+        enough: !!out.enough,
+        quotes: (out.quotes || []).length,
+        dropped: (out.dropped || []).length,
+        paraphrased: (out.paraphrased || []).length,
+        reason: out.reason,
+      });
+    }
+    res.json({
+      model: LLM_MODEL,
+      total: results.length,
+      answered: results.filter(r => r.enough).length,
+      refused: results.filter(r => !r.enough && r.reason === 'nothing-found').length,
+      unverified: results.filter(r => r.dropped > 0).length,
+      paraphrase: results.filter(r => r.paraphrased > 0).length,
+      results,
+    });
+  } catch (e) {
+    console.error('eval failed:', e?.message || e);
     res.status(500).json({ error: e.message });
   }
 });

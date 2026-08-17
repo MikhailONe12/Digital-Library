@@ -331,6 +331,44 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS idx_jobs_queue ON jobs(state, priority, id);
 CREATE INDEX IF NOT EXISTS idx_jobs_batch ON jobs(batch_id);
 
+-- Reference questions for the answer layer.
+--
+-- Changing the model is otherwise an act of faith: the new one sounds different
+-- and nobody can say whether it is better. These are the questions to re-run —
+-- real ones from the log, plus a starter list for a library that has not been
+-- asked much yet — and the measure is not how many answers came back but how
+-- many the library could stand behind after verification.
+CREATE TABLE IF NOT EXISTS eval_questions (
+  id         BIGSERIAL   PRIMARY KEY,
+  question   TEXT        NOT NULL UNIQUE,
+  source     TEXT        NOT NULL DEFAULT 'builtin',  -- builtin | log | manual
+  note       TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+INSERT INTO eval_questions (question, source) VALUES
+  ('что такое подразумеваемая волатильность', 'builtin'),
+  ('чем гамма отличается от дельты', 'builtin'),
+  ('как считается вега опциона', 'builtin'),
+  ('что происходит с премией перед экспирацией', 'builtin'),
+  ('падение волатильности после отчёта', 'builtin'),
+  ('зачем нужен дельта-хеджинг', 'builtin'),
+  ('что такое улыбка волатильности', 'builtin'),
+  ('чем опасна продажа голых опционов', 'builtin'),
+  ('как работает календарный спред', 'builtin'),
+  ('что такое временной распад', 'builtin'),
+  ('почему опцион дороже перед новостями', 'builtin'),
+  ('как выбрать страйк для покупки колла', 'builtin'),
+  ('что такое риск-реверсал', 'builtin'),
+  ('чем отличается американский опцион от европейского', 'builtin'),
+  ('как формула Блэка—Шоулза оценивает опцион', 'builtin'),
+  ('что показывает открытый интерес', 'builtin'),
+  ('как ликвидность влияет на исполнение', 'builtin'),
+  ('что такое портфельная маржа', 'builtin'),
+  ('когда стоит роллировать позицию', 'builtin'),
+  ('чем корреляция активов важна для портфеля', 'builtin')
+ON CONFLICT (question) DO NOTHING;
+
 -- Withdrawal, in two strengths.
 --
 -- A library that indexes what it does not own needs a way back that costs

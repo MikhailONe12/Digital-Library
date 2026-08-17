@@ -1036,11 +1036,22 @@ const Home: React.FC<HomeProps> = ({
                     className="text-[11.5px] text-slate-600 dark:text-slate-300 leading-relaxed mt-1.5 [&_b]:text-red-600 [&_b]:font-black"
                     dangerouslySetInnerHTML={{ __html: sanitizeSnippet(hit.snippet) }}
                   />
-                  {where && (
-                    <span className="inline-block mt-2 px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-[9px] font-black tracking-widest text-slate-600 dark:text-slate-300 tabular-nums">
-                      {where}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2 mt-2">
+                    {where && (
+                      <span className="inline-block px-2 py-1 rounded-lg bg-slate-100 dark:bg-white/[0.06] text-[9px] font-black tracking-widest text-slate-600 dark:text-slate-300 tabular-nums">
+                        {where}
+                      </span>
+                    )}
+                    {/* Nothing is highlighted in this one because the words are
+                        not in it — it was found by what it is about. Saying so
+                        is the difference between a useful result and a card
+                        that looks like a mistake. */}
+                    {hit.by_words === false && (
+                      <span className="inline-block px-2 py-1 rounded-lg bg-red-50 dark:bg-red-500/10 text-[9px] font-black tracking-widest text-red-600 dark:text-red-400">
+                        {t.foundByMeaning}
+                      </span>
+                    )}
+                  </div>
                 </button>
                 {/* How much more this source has to say, and the way to hear
                     it. "+7" is the difference between a source that mentions

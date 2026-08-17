@@ -761,6 +761,11 @@ export interface SearchHit {
    * shown. The difference is what the "show the rest" line offers.
    */
   item_total?: number;
+  /**
+   * False when the words were never in this passage and only the meaning search
+   * brought it. Such a card has nothing highlighted, and says why.
+   */
+  by_words?: boolean;
 }
 
 export interface SearchResponse {

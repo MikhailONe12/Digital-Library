@@ -2088,7 +2088,12 @@ const explainEmbed = e => {
     return 'Модель не установлена в образе: нет пакета @xenova/transformers. Пересоберите образ API.';
   }
   if (/Forbidden|ENOTFOUND|EAI_AGAIN|fetch failed|ECONNREFUSED|403|404/i.test(text)) {
-    return `Файлы модели недоступны. Положите их в ${EMBED_HOME} или откройте серверу доступ к хабу моделей. (${clip(text, 120)})`;
+    // Two very different faults hide behind one network error, and pointing an
+    // operator at the model files when the configured service is simply down
+    // sends them to the wrong place entirely.
+    return EMBED_ENDPOINT
+      ? `Служба векторов не отвечает: ${EMBED_ENDPOINT}. (${clip(text, 120)})`
+      : `Файлы модели недоступны. Положите их в ${EMBED_HOME} или откройте серверу доступ к хабу моделей. (${clip(text, 120)})`;
   }
   return clip(text, 300);
 };
@@ -2137,7 +2142,9 @@ const loadVectorIndex = async () => {
   const { rows } = await pool.query(
     `SELECT v.chunk_id, v.dim, v.vec, (c.text ~ '[А-Яа-яЁё]') AS cyr
        FROM chunk_vectors v JOIN chunks c ON c.id = v.chunk_id
-      WHERE v.model = $1 ORDER BY v.chunk_id`, [EMBED_MODEL],
+      WHERE v.model = $1
+        AND length(regexp_replace(c.text, '[^[:alpha:]]', '', 'g')) >= $2
+      ORDER BY v.chunk_id`, [EMBED_MODEL, EMBED_MIN_LETTERS],
   );
   const dim = rows.length ? rows[0].dim : EMBED_DIM;
   const mat = new Float32Array(rows.length * dim);
@@ -2204,6 +2211,17 @@ const envNum = (name, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 const EMBED_CROSS_K = envNum('EMBED_CROSS_K', 12);
+
+// A passage has to say something before it can be about something. "---- End of
+// Script ---- 31" is page furniture: its vector is dominated by punctuation and
+// it lands near everything, which is how a line of dashes turns up as an answer
+// about volatility.
+//
+// The measure is letters, not length. A short sentence is a real answer and
+// must stay; a long row of dashes and page numbers is not, however long it is.
+// Word search may still find such a chunk — there the reader typed the word and
+// it is genuinely there — but meaning may not offer it.
+const EMBED_MIN_LETTERS = envNum('EMBED_MIN_LETTERS', 40);
 
 const keepClose = hits => {
   if (!hits.length) return [];
@@ -2351,6 +2369,9 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
            FROM matched
        ),
        fused AS (
+         -- Whether the words matched travels with the row: a passage the meaning
+         -- search alone found has nothing highlighted, and the reader is owed
+         -- the reason.
          -- Reciprocal rank fusion: each list contributes 1/(60 + place in it).
          -- Positions, not scores, because a ts_rank and a cosine are not on the
          -- same scale and pretending otherwise is how one silently wins.
@@ -2358,13 +2379,13 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
          -- With no vectors every row scores 1/(60 + word rank), which is the
          -- old ordering exactly — not merely close to it. That is the property
          -- worth having: switching vectors off restores today's search.
-         SELECT id, item_id,
+         SELECT id, item_id, (fts > 0) AS by_words,
                 (CASE WHEN fts > 0 THEN 1.0 / (60 + fts_rank) ELSE 0 END)
               + (CASE WHEN vord IS NOT NULL THEN 1.0 / (60 + vord) ELSE 0 END) AS rank
            FROM scored
        ),
        ranked AS (
-         SELECT id, item_id, rank,
+         SELECT id, item_id, rank, by_words,
                 ROW_NUMBER() OVER (PARTITION BY item_id ORDER BY rank DESC, id) AS rn,
                 -- How much this material has to say beyond what is shown. It is
                 -- the difference between "the video mentions it once" and "the
@@ -2379,12 +2400,12 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
          --
          -- Fetched with room to spare: neighbouring chunks share their edges, so
          -- some of these rows are the same passage twice and get dropped below.
-         SELECT id, rank, rn, item_total FROM ranked
+         SELECT id, rank, rn, by_words, item_total FROM ranked
           WHERE $5::text IS NOT NULL OR rn <= 3
           ORDER BY rn, rank DESC, id LIMIT $2
        )
        SELECT c.item_id, c.format_url, c.page, c.page_label,
-              c.second_start, c.second_end, h.rank, h.rn, h.item_total,
+              c.second_start, c.second_end, h.rank, h.rn, h.by_words, h.item_total,
               -- Computed only for the rows that survived, never for every match.
               ts_headline($3::regconfig, c.text, q.tsq,
                           'MaxFragments=1,MaxWords=40,MinWords=15') AS snippet,
@@ -2874,6 +2895,10 @@ JOB_HANDLERS.embed = async (job, ctx) => {
     }
     done += rows.length;
     await ctx.report(Math.min(0.99, done / total), { done });
+    // The reader should not wait out the staleness window to benefit from work
+    // that has already finished: the writer knows the index changed, so it says
+    // so instead of letting the next search find out fifteen seconds later.
+    vectorIndex.checkedAt = 0;
   }
   return `Вектора: ${done} кусков, модель ${EMBED_MODEL}`;
 };

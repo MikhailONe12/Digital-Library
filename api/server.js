@@ -1994,7 +1994,8 @@ const EMBED_ENDPOINT = process.env.EMBED_ENDPOINT || '';
 // "nothing" for the other. Nine tenths of the best score is a strong statement
 // in either scale — without it the meaning search hands sixty loosely related
 // passages to every query, and they crowd out the literal answers.
-const EMBED_REL_FLOOR = Number(process.env.EMBED_REL_FLOOR || 0.9);
+const EMBED_REL_FLOOR = Number.isFinite(Number(process.env.EMBED_REL_FLOOR))
+  ? Number(process.env.EMBED_REL_FLOOR) : 0.9;
 
 // e5 models were trained with these prefixes and lose accuracy without them.
 const EMBED_QUERY_PREFIX = process.env.EMBED_QUERY_PREFIX ?? 'query: ';
@@ -2112,7 +2113,7 @@ const embedQuery = async q => {
 // about five milliseconds per query — an approximate-neighbour structure would
 // add a moving part and save nothing until this library is twenty times larger.
 
-const vectorIndex = { ids: [], mat: null, dim: 0, model: '', stamp: '', checkedAt: 0 };
+const vectorIndex = { ids: [], cyr: null, mat: null, dim: 0, model: '', stamp: '', checkedAt: 0 };
 
 const vectorStamp = async () => {
   const { rows } = await pool.query(
@@ -2131,21 +2132,28 @@ const loadVectorIndex = async () => {
   vectorIndex.checkedAt = now;
   if (vectorIndex.mat && stamp === vectorIndex.stamp) return vectorIndex;
 
+  // The script each passage is written in comes along for the ride: it is what
+  // makes "show me what the English books say about this" answerable.
   const { rows } = await pool.query(
-    'SELECT chunk_id, dim, vec FROM chunk_vectors WHERE model = $1 ORDER BY chunk_id', [EMBED_MODEL],
+    `SELECT v.chunk_id, v.dim, v.vec, (c.text ~ '[А-Яа-яЁё]') AS cyr
+       FROM chunk_vectors v JOIN chunks c ON c.id = v.chunk_id
+      WHERE v.model = $1 ORDER BY v.chunk_id`, [EMBED_MODEL],
   );
   const dim = rows.length ? rows[0].dim : EMBED_DIM;
   const mat = new Float32Array(rows.length * dim);
   const ids = new Array(rows.length);
+  const cyr = new Uint8Array(rows.length);
   let n = 0;
   for (const r of rows) {
     if (r.dim !== dim) continue;   // a leftover from another model: skip, don't guess
     const v = new Float32Array(r.vec.buffer, r.vec.byteOffset, dim);
     mat.set(v, n * dim);
     ids[n] = String(r.chunk_id);
+    cyr[n] = r.cyr ? 1 : 0;
     n += 1;
   }
   vectorIndex.ids = ids.slice(0, n);
+  vectorIndex.cyr = cyr.subarray(0, n);
   vectorIndex.mat = mat.subarray(0, n * dim);
   vectorIndex.dim = dim;
   vectorIndex.model = EMBED_MODEL;
@@ -2154,11 +2162,12 @@ const loadVectorIndex = async () => {
 };
 
 /** Chunk ids nearest the query vector, closest first. Vectors are unit length, so cosine is a dot product. */
-const nearestChunks = (qvec, k) => {
-  const { ids, mat, dim } = vectorIndex;
+const nearestChunks = (qvec, k, only = null) => {
+  const { ids, mat, dim, cyr } = vectorIndex;
   if (!ids.length || qvec.length !== dim) return [];
   const best = [];   // small k, so an insertion sort beats sorting everything
   for (let i = 0; i < ids.length; i++) {
+    if (only !== null && cyr && cyr[i] !== only) continue;
     let dot = 0;
     const off = i * dim;
     for (let d = 0; d < dim; d++) dot += mat[off + d] * qvec[d];
@@ -2175,6 +2184,33 @@ const nearestChunks = (qvec, k) => {
   return best;
 };
 
+// A pass reserved for the other language.
+//
+// Asked in Russian about a subject the library discusses in both languages, the
+// nearest sixty passages are all Russian — the model puts a literal match above
+// a translated one, and there are enough Russian pages to fill the list. The
+// English shelf is then never offered, which is the one thing a bilingual
+// library exists to do.
+//
+// So the other script gets its own short list, ranked among itself. It is
+// appended after the main one, which is what it deserves: a same-language match
+// is usually the better answer, and this is the "and here is what the other
+// half of the library says" tail.
+// Read so that zero means zero. `parseInt(...) || 12` would quietly ignore an
+// operator who switches the reserve off, which is exactly the setting someone
+// reaches for first when they suspect it of causing trouble.
+const envNum = (name, fallback) => {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) ? n : fallback;
+};
+const EMBED_CROSS_K = envNum('EMBED_CROSS_K', 12);
+
+const keepClose = hits => {
+  if (!hits.length) return [];
+  const floor = hits[0].dot * EMBED_REL_FLOOR;
+  return hits.filter(h => h.dot >= floor);
+};
+
 /** Candidate chunk ids for a query, or an empty list when vectors are not available. */
 const vectorCandidates = async (q, k) => {
   try {
@@ -2182,10 +2218,14 @@ const vectorCandidates = async (q, k) => {
     if (!index.ids.length) return [];
     const qvec = await embedQuery(q);
     if (!qvec) return [];
-    const near = nearestChunks(qvec, k);
-    if (!near.length) return [];
-    const floor = near[0].dot * EMBED_REL_FLOOR;
-    return near.filter(h => h.dot >= floor).map(h => h.id);
+    const main = keepClose(nearestChunks(qvec, k));
+    if (!main.length) return [];
+
+    // Which half of the library the question itself is written in.
+    const asked = /[А-Яа-яЁё]/.test(q) ? 1 : 0;
+    const cross = EMBED_CROSS_K ? keepClose(nearestChunks(qvec, EMBED_CROSS_K, asked ? 0 : 1)) : [];
+    const seen = new Set(main.map(h => h.id));
+    return [...main.map(h => h.id), ...cross.filter(h => !seen.has(h.id)).map(h => h.id)];
   } catch (e) {
     embedFault = explainEmbed(e);
     console.error('vector search unavailable:', e?.message || e);
@@ -2362,7 +2402,10 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
                  h.rank DESC`,
       // Over-fetch, because the duplicates are dropped after the query and the
       // reader should still get a full list.
-      [q, Math.min(limit * 3, 150), headlineConfig, maySeePrivate, onlyItem, near],
+      // Room for the duplicates that will be dropped, and no more: every extra
+      // row here is a ts_headline over a page of text, and on a modest server
+      // that is where the search actually spends its time.
+      [q, Math.min(limit + 8, 60), headlineConfig, maySeePrivate, onlyItem, near],
     );
 
     // Trimming has to keep the breadth rule, and the rows arrive in *reading*

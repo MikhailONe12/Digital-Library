@@ -1027,6 +1027,28 @@ export const startEmbedding = async (itemId?: string): Promise<void> => {
   });
 };
 
+/** How long a search takes here, split into its two halves. */
+export interface SpeedProbe {
+  query: string;
+  vectorMs: number;
+  sqlMs: number;
+  totalMs: number;
+  /** Passages the meaning search offered. Zero means it took no part. */
+  candidates: number;
+  matches: number;
+  error: string | null;
+}
+
+export const probeSearchSpeed = async (): Promise<SpeedProbe | null> => {
+  try {
+    const res = await fetch('/api/admin/vectors/probe', { headers: authHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+};
+
 /** One real question, ranked with and without the vectors. */
 export interface CompareRow {
   query: string;

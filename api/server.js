@@ -2264,7 +2264,10 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // Asked before the query so its answer can travel into it. Sixty is enough
     // to matter next to the word list without letting a loose association
     // outrank a literal hit.
+    const tStart = Date.now();
     const near = await vectorCandidates(q, 60);
+    const tVector = Date.now() - tStart;
+    const tSql = Date.now();
     const { rows } = await pool.query(
       // Three decisions, and they are deliberately separate.
       //
@@ -2368,6 +2371,7 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // entirely, which is precisely what it did. So the cut is made on the
     // breadth order (every material's best place first) and the survivors are
     // then shown in reading order again.
+    const sqlMs = Date.now() - tSql;
     const deduped = dropRepeatedPassages(rows);
     const keep = new Set([...deduped]
       .sort((a, b) => a.rn - b.rn || b.rank - a.rank)
@@ -2391,7 +2395,12 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
       } catch { /* logging must never break search */ }
     }
 
-    res.json({ results, logId });
+    // Where the time went, and whether the meaning search took part at all.
+    // Both questions get asked of a live server sooner or later, and answering
+    // them from the outside means guessing.
+    const took = { total: Date.now() - tStart, vector: tVector, sql: sqlMs, candidates: near.length };
+    if (took.total > 700) console.warn('search slow:', JSON.stringify({ q: clip(q, 60), ...took }));
+    res.json({ results, logId, took });
   } catch (e) {
     // Loud on the server, and honest to the client: a failed search must not
     // arrive looking like a search that found nothing.
@@ -2875,6 +2884,41 @@ app.post('/api/admin/vectors', requireApiKey, async (req, res) => {
        JSON.stringify({ itemId })],
     );
     res.json({ queued: 1, batchId: batch.id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// How long a real search takes on this server, and how much of it is the
+// meaning search. Asked from the admin panel, because "поиск стал медленнее" is
+// otherwise impossible to answer without a developer console.
+app.get('/api/admin/vectors/probe', requireApiKey, async (req, res) => {
+  try {
+    const asked = typeof req.query.q === 'string' && req.query.q.trim()
+      ? req.query.q.trim()
+      : (await pool.query(
+          `SELECT query FROM search_log WHERE COALESCE(query,'') <> '' ORDER BY ts DESC LIMIT 1`)
+        ).rows[0]?.query || 'падение волатильности';
+
+    const t0 = Date.now();
+    const near = await vectorCandidates(asked, 60);
+    const vectorMs = Date.now() - t0;
+    const t1 = Date.now();
+    const { rows } = await pool.query(
+      `WITH q AS (SELECT websearch_to_tsquery('russian'::regconfig, $1) ||
+                         websearch_to_tsquery('english'::regconfig, $1) AS tsq)
+       SELECT c.id FROM chunks c CROSS JOIN q
+        LEFT JOIN unnest($2::bigint[]) WITH ORDINALITY AS v(vid, ord) ON v.vid = c.id
+        WHERE c.tsv @@ q.tsq OR v.vid IS NOT NULL LIMIT 200`, [asked, near]);
+    res.json({
+      query: asked,
+      vectorMs,
+      sqlMs: Date.now() - t1,
+      totalMs: Date.now() - t0,
+      candidates: near.length,
+      matches: rows.length,
+      error: embedFault,
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

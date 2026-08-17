@@ -10,8 +10,8 @@ import {
   HardDrive, Cloud, Server, Save, RotateCcw, Settings, Newspaper, Plus as PlusIcon,
   ScanLine, Play, Square, Sparkles
 } from 'lucide-react';
-import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare } from '../services/db';
-import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport } from '../services/db';
+import { updateItem, deleteItem, saveDb, addUserToWhitelist, removeUserFromWhitelist, toggleGlobalAccess, addCustomType, deleteCustomType, updateCustomType, addToBlacklist, removeFromBlacklist, resetStats, resetTrafficStats, addAnalyticsExcludeUsername, removeAnalyticsExcludeUsername, addAnalyticsExcludeIp, removeAnalyticsExcludeIp, addAnalyticsExcludeUserId, removeAnalyticsExcludeUserId, registerBrowserExclude, removeBrowserExclude, getSkipAnalyticsToken, loadAnalytics, purgeExcludedVisits, lookupDoi, addAnalyticsExcludeVisitor, removeAnalyticsExcludeVisitor, loadErrorLog, clearErrorLog, eraseUserData, getServerApiKey, setServerApiKey, loadContentScan, startContentScan, stopContentScan, loadIndexReport, startIndexing, stopIndexing, loadIndexPages, savePageText, loadJobs, queueSubtitles, jobAction, cancelBatch, unindexItem, queueTranscribe, clearJobHistory, loadSearchStats, loadVectorReport, startEmbedding, loadVectorCompare, probeSearchSpeed } from '../services/db';
+import type { ErrorLogRow, ContentScanReport, ContentScanRow, ContentScanState, IndexReport, IndexRow, IndexPage, JobRow, JobTotals, TranscribeMethod, SearchStats, VectorReport, CompareReport, SpeedProbe } from '../services/db';
 import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   AreaChart, Area
@@ -1085,6 +1085,7 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
   const [vectors, setVectors] = useState<VectorReport | null>(null);
   const [compare, setCompare] = useState<CompareReport | null>(null);
   const [compareBusy, setCompareBusy] = useState(false);
+  const [probe, setProbe] = useState<SpeedProbe | null>(null);
   const queueWasActive = useRef(false);
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobTotals, setJobTotals] = useState<JobTotals>({ queued: 0, running: 0, done: 0, failed: 0, cancelled: 0 });
@@ -1154,6 +1155,8 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
     await refreshJobs();
     setVectors(await loadVectorReport());
   };
+
+  const handleProbe = async () => setProbe(await probeSearchSpeed());
 
   const handleCompare = async () => {
     setCompareBusy(true);
@@ -1701,6 +1704,12 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
             <Play size={13} strokeWidth={3} /> {s.vecCompute}
           </button>
           <button
+            onClick={handleProbe}
+            className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 active:scale-95 transition-all"
+          >
+            <RefreshCw size={13} strokeWidth={3} /> {s.vecProbe}
+          </button>
+          <button
             onClick={handleCompare}
             disabled={compareBusy}
             className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-white/[0.06] border border-slate-300 dark:border-white/15 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300 hover:border-red-400 hover:text-red-600 disabled:opacity-50 active:scale-95 transition-all"
@@ -1708,6 +1717,15 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
             <SearchIcon size={13} strokeWidth={3} /> {compareBusy ? s.vecComparing : s.vecCompare}
           </button>
         </div>
+
+        {/* The honest answer to "did it get slower, and because of what". */}
+        {probe && (
+          <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08] rounded-2xl px-4 py-3 mb-4">
+            «{probe.query}» — {s.vecProbeTotal} {probe.totalMs} мс ·{' '}
+            {s.vecProbeVector} {probe.vectorMs} мс · {s.vecProbeSql} {probe.sqlMs} мс ·{' '}
+            {probe.candidates ? `${s.vecProbeCands} ${probe.candidates}` : s.vecProbeOff}
+          </p>
+        )}
 
         {compare && !compare.ready && (
           <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 py-4 text-center">{s.vecNoLog}</p>

@@ -1058,10 +1058,20 @@ export const loadAnswerLayer = async (): Promise<AnswerLayerReport> => {
   }
 };
 
+export interface EvalKind {
+  kind: string;
+  total: number;
+  answered: number;
+  unverified: number;
+  paraphrase: number;
+}
+
 export interface EvalRow {
   id: number;
   question: string;
   source: string;
+  /** What the question tests: basic, cross-lang, no-answer, bait-quote… */
+  kind: string;
   enough: boolean;
   quotes: number;
   dropped: number;
@@ -1077,6 +1087,7 @@ export interface EvalReport {
   /** Questions where at least one quotation failed verification. */
   unverified: number;
   paraphrase: number;
+  kinds: EvalKind[];
   results: EvalRow[];
   error?: string;
 }

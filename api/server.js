@@ -2628,7 +2628,11 @@ const LLM_API_KEY = process.env.LLM_API_KEY || '';
 const LLM_TIMEOUT_MS = envNum('LLM_TIMEOUT_MS', 180_000);
 // How many passages the model is allowed to see. More context is not a better
 // answer: it is more chances to quote the wrong book.
-const ANSWER_PASSAGES = envNum('ANSWER_PASSAGES', 8);
+// Four, not eight. Every extra passage is prompt to be processed before the
+// first word appears, and on a processor that is seconds each. A definition
+// needs three sentences from one book; a comparison of two authors needs more,
+// and that is what the setting is for.
+const ANSWER_PASSAGES = envNum('ANSWER_PASSAGES', 4);
 // A quotation longer than this is republishing rather than citing. The limit is
 // per licence — see quoteLimitFor.
 const QUOTE_MAX_CHARS = envNum('QUOTE_MAX_CHARS', 400);
@@ -2779,6 +2783,19 @@ const buildAnswer = async ({ q, maySeePrivate, lang }) => {
     [passages.map(p => String(p.chunk_id ?? p.id ?? 0)).filter(x => x !== '0')],
   )).rows.filter(Boolean)) full.set(String(r.id), r.text);
 
+  // Sentences, numbered. This is what makes a fabricated quotation impossible
+  // rather than merely detectable: the model chooses evidence by number and the
+  // library inserts its own text, so there is nothing left for a model to get
+  // wrong about a quotation. Twelve per passage is the cap — beyond that the tail
+  // joins the last sentence rather than growing the prompt.
+  const SENTENCES_PER_PASSAGE = envNum('ANSWER_SENTENCES', 12);
+  const sentencesOf = text => {
+    const parts = splitSentences(text).map(x => x.trim()).filter(Boolean);
+    if (parts.length <= SENTENCES_PER_PASSAGE) return parts;
+    const head = parts.slice(0, SENTENCES_PER_PASSAGE - 1);
+    return [...head, parts.slice(SENTENCES_PER_PASSAGE - 1).join(' ')];
+  };
+
   const numbered = passages.map((p, i) => {
     const item = items.get(p.item_id) || {};
     const where = p.second_start !== null
@@ -2798,20 +2815,24 @@ const buildAnswer = async ({ q, maySeePrivate, lang }) => {
       text: full.get(String(p.chunk_id ?? '')) || String(p.snippet || '').replace(/<[^>]+>/g, ''),
     };
   });
+  for (const p of numbered) p.sentences = sentencesOf(p.text);
 
+  // The model is not asked to write a quotation, and is not told where the
+  // passages come from. It cannot invent a page number it never saw, nor
+  // misspell a quotation it never typed.
   const system = [
-    'Ты помогаешь читателю библиотеки. Отвечай ТОЛЬКО по приведённым фрагментам.',
-    'Если фрагменты не отвечают на вопрос — так и скажи, не додумывай.',
-    'Цитируй дословно и только то, что есть во фрагменте. Не переводи цитаты.',
+    'Ты помогаешь читателю библиотеки. Отвечай ТОЛЬКО по приведённым предложениям.',
+    'Если они не отвечают на вопрос — так и скажи, не додумывай.',
+    'Цитаты не пиши: вместо цитат перечисли номера предложений, которые подтверждают ответ.',
     'Своими словами — объясняй, а не переписывай источник.',
-    'Ответ верни строго в JSON: {"enough":true|false,"answer":"…","quotes":[{"n":1,"text":"дословная цитата"}]}',
+    'Ответ верни строго в JSON: {"enough":true|false,"answer":"…","evidence":["1.2","3.1"]}',
   ].join(' ');
 
   const user = [
     `Вопрос: ${q}`,
     '',
-    'Фрагменты:',
-    ...numbered.map(p => `[${p.n}] «${p.title}»${p.author ? `, ${p.author}` : ''} (${p.where}):\n${p.text}`),
+    'Предложения:',
+    ...numbered.flatMap(p => p.sentences.map((sent, k) => `[${p.n}.${k + 1}] ${sent}`)),
   ].join('\n');
 
   const raw = await llmGenerate({ system, user });
@@ -2827,6 +2848,36 @@ const buildAnswer = async ({ q, maySeePrivate, lang }) => {
 
   const dropped = [];
   const quotes = [];
+
+  // The new path: the model names sentences, the library quotes itself. Nothing
+  // here can fail verification, because there is nothing for the model to have
+  // written. An unknown number is the only possible error, and it is refused.
+  for (const id of (Array.isArray(parsed.evidence) ? parsed.evidence.slice(0, 8) : [])) {
+    const m = String(id).match(/^(\d+)\s*[.:\-]\s*(\d+)$/);
+    const p = m && numbered.find(x => x.n === Number(m[1]));
+    const sentence = p?.sentences?.[Number(m?.[2]) - 1];
+    if (!sentence) { dropped.push({ text: clip(String(id), 40), why: 'no-sentence' }); continue; }
+    if (quotes.some(qq => qq.n === p.n && qq.text.startsWith(sentence.slice(0, 40)))) continue;
+    const limit = quoteLimitFor(p.license);
+    quotes.push({
+      n: p.n,
+      itemId: p.itemId,
+      formatUrl: p.formatUrl,
+      page: p.page,
+      second: p.second,
+      where: p.where,
+      title: p.title,
+      author: p.author,
+      text: sentence.length > limit
+        ? `${sentence.slice(0, sentence.lastIndexOf(' ', limit) || limit).trim()}…`
+        : sentence,
+      trimmed: sentence.length > limit,
+    });
+  }
+
+  // The old path, kept because a model may ignore the format and write a
+  // quotation anyway. Then it is checked exactly as before, and refused if it
+  // does not hold up.
   for (const cand of Array.isArray(parsed.quotes) ? parsed.quotes.slice(0, 8) : []) {
     const p = numbered.find(x => x.n === Number(cand?.n));
     const text = String(cand?.text || '').trim();
@@ -2939,7 +2990,7 @@ app.post('/api/admin/answers/eval', requireApiKey, async (req, res) => {
           AND NOT EXISTS (SELECT 1 FROM eval_questions e WHERE e.question = search_log.query)
         LIMIT 60`);
     const { rows } = await pool.query(
-      'SELECT id, question, source FROM eval_questions ORDER BY id LIMIT 100');
+      'SELECT id, question, source, kind FROM eval_questions ORDER BY id LIMIT 100');
 
     const results = [];
     for (const row of rows) {
@@ -2948,12 +2999,24 @@ app.post('/api/admin/answers/eval', requireApiKey, async (req, res) => {
         id: row.id,
         question: row.question,
         source: row.source,
+        kind: row.kind || 'basic',
         enough: !!out.enough,
         quotes: (out.quotes || []).length,
         dropped: (out.dropped || []).length,
         paraphrased: (out.paraphrased || []).length,
         reason: out.reason,
       });
+    }
+    // Per class, because the totals hide the only interesting failures. A model
+    // that answers every definition and also answers every question the library
+    // cannot answer is worse than one that answers fewer and refuses the rest.
+    const kinds = {};
+    for (const r of results) {
+      const k = kinds[r.kind] || (kinds[r.kind] = { kind: r.kind, total: 0, answered: 0, unverified: 0, paraphrase: 0 });
+      k.total += 1;
+      if (r.enough) k.answered += 1;
+      if (r.dropped) k.unverified += 1;
+      if (r.paraphrased) k.paraphrase += 1;
     }
     res.json({
       model: LLM_MODEL,
@@ -2962,6 +3025,9 @@ app.post('/api/admin/answers/eval', requireApiKey, async (req, res) => {
       refused: results.filter(r => !r.enough && r.reason === 'nothing-found').length,
       unverified: results.filter(r => r.dropped > 0).length,
       paraphrase: results.filter(r => r.paraphrased > 0).length,
+      // For 'no-answer', 'off-topic' and the bait classes, a low `answered` is
+      // the good result — the panel says so next to the number.
+      kinds: Object.values(kinds),
       results,
     });
   } catch (e) {

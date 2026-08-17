@@ -1938,6 +1938,33 @@ const Admin: React.FC<AdminProps> = ({ onBack, db, onUpdate, onLogout, onPreview
                 </div>
               ))}
             </div>
+            {/* By class, because the totals hide the interesting failures: for
+                "no-answer", "off-topic" and the bait classes a LOW number of
+                answers is the good result. */}
+            {!!e.kinds?.length && (
+              <div className="space-y-1.5 mb-4">
+                {e.kinds.map(k => {
+                  const wantsSilence = /no-answer|off-topic|bait/.test(k.kind);
+                  const good = wantsSilence ? k.answered === 0 : k.answered === k.total;
+                  return (
+                    <div key={k.kind} className="flex items-center gap-3 p-2.5 rounded-2xl bg-white dark:bg-black/30 border border-slate-200 dark:border-white/10">
+                      <span className="min-w-0 flex-1 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 truncate">
+                        {k.kind}{wantsSilence ? ` · ${s.ansWantsSilence}` : ''}
+                      </span>
+                      {!!k.unverified && (
+                        <span className="shrink-0 text-[9px] font-black uppercase tracking-widest text-amber-600">
+                          {num(k.unverified)} {s.ansDropped}
+                        </span>
+                      )}
+                      <span className={`shrink-0 text-[11px] font-black tabular-nums ${good ? 'text-emerald-600' : 'text-slate-500 dark:text-slate-300'}`}>
+                        {num(k.answered)} / {num(k.total)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               {e.results.slice(0, 30).map(r => (
                 <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-black/40 border border-slate-100 dark:border-white/[0.08]">

@@ -5,7 +5,7 @@ import MediaCard from '../components/MediaCard';
 import CardCover from '../components/CardCover';
 import { searchInside, logSearchOpened } from '../services/db';
 import type { SearchHit } from '../services/db';
-import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ExternalLink, PlayCircle, Newspaper, FileText, Headphones, GraduationCap, FileQuestion } from 'lucide-react';
+import { Search, Heart, Sparkles, SlidersHorizontal, User, Type, Globe, Clock, ArrowUpDown, Star, Flame, ArrowDownAZ, CalendarClock, BookOpen, Tags as TagsIcon, CheckCircle2, X, Play, Layers, LayoutGrid, ChevronLeft, ChevronDown, ChevronUp, ExternalLink, PlayCircle, Newspaper, FileText, Headphones, GraduationCap, FileQuestion } from 'lucide-react';
 import { isFavorited, getAverageRating, getProgressPercent, getInProgressItemIds } from '../services/db';
 import { pickText, hasVideo, getDisplayedLanguages, isExternallyHosted } from '../utils';
 import { Scope, selectNewArrivals } from '../services/catalog';
@@ -224,13 +224,15 @@ const Home: React.FC<HomeProps> = ({
   const [insideHits, setInsideHits] = useState<SearchHit[]>([]);
   const [insideLogId, setInsideLogId] = useState<number | null>(null);
   const [insideError, setInsideError] = useState<string | null>(null);
-  // One material's full set of places, once the reader asks to see them.
+  // One material's full set of places, once the reader asks to see them, and
+  // which materials are currently open.
   const [insideMore, setInsideMore] = useState<Record<string, SearchHit[]>>({});
+  const [insideOpen, setInsideOpen] = useState<Record<string, boolean>>({});
   const [insideBusy, setInsideBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const q = searchQuery.trim();
-    setInsideMore({});
+    setInsideMore({}); setInsideOpen({});
     if (q.length < 3) { setInsideHits([]); setInsideLogId(null); setInsideError(null); return; }
     let cancelled = false;
     // Debounced: typing a word should not be a query per keystroke.
@@ -264,11 +266,18 @@ const Home: React.FC<HomeProps> = ({
     }));
   }, [insideHits, insideMore]);
 
-  const showAllIn = async (itemId: string) => {
-    setInsideBusy(itemId);
-    const { results } = await searchInside(searchQuery.trim(), 50, itemId);
-    if (results.length) setInsideMore(prev => ({ ...prev, [itemId]: results }));
-    setInsideBusy(null);
+  // Open a source's other places, or fold them away again. The list stays a
+  // list of sources — one line each — until the reader asks a particular one
+  // for everything it has.
+  const toggleGroup = async (id: string, total: number, loaded: number) => {
+    if (insideOpen[id]) { setInsideOpen(prev => ({ ...prev, [id]: false })); return; }
+    if (!insideMore[id] && total > loaded) {
+      setInsideBusy(id);
+      const { results } = await searchInside(searchQuery.trim(), 50, id);
+      if (results.length) setInsideMore(prev => ({ ...prev, [id]: results }));
+      setInsideBusy(null);
+    }
+    setInsideOpen(prev => ({ ...prev, [id]: true }));
   };
 
   /** Seconds as a reader would read them: 12:34, or 1:05:02 past the hour. */
@@ -964,25 +973,36 @@ const Home: React.FC<HomeProps> = ({
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               {t.foundInSources}
             </h3>
+            {/* Sources, not rows. The list is one line per source now, so a
+                count of rows would describe something nobody can see. */}
             <span className="text-[10px] font-black text-red-600 tabular-nums">
-              {insideGroups.reduce((n, g) => n + g.hits.length, 0)}
+              {insideGroups.length}
             </span>
             <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
           </div>
 
           <div className="space-y-2.5">
-            {insideGroups.map(group => (
+            {insideGroups.map(group => {
+            const open = !!insideOpen[group.id];
+            // Folded, a source is one line — the list stays a list of sources.
+            // Opened, it is every place that source speaks about this.
+            const visible = open ? (insideMore[group.id] || group.hits) : group.hits.slice(0, 1);
+            return (
             <React.Fragment key={group.id}>
-            {group.hits.map((hit, n) => {
+            {visible.map((hit, n) => {
               const found = allItems.find(i => i.id === hit.item_id);
               const where = hit.second_start !== null
                 ? formatClock(hit.second_start)
                 : hit.page_label ? `${t.pageShort} ${hit.page_label}`
                 : hit.page ? `${t.pageShort} ${hit.page}`
                 : '';
+              // The toggle sits over the card rather than inside it: a button
+              // nested in a button is invalid, and tapping "show the rest"
+              // must not also open the book.
+              const toggle = n === 0 && group.total > 1;
               return (
+                <div key={`${hit.item_id}-${hit.format_url}-${n}`} className="relative">
                 <button
-                  key={`${hit.item_id}-${hit.format_url}-${n}`}
                   type="button"
                   onClick={() => {
                     if (!found) return;
@@ -1000,7 +1020,7 @@ const Home: React.FC<HomeProps> = ({
                       size: 15, strokeWidth: 2.5,
                       className: 'shrink-0 mt-[1px] text-red-600 dark:text-red-500',
                     })}
-                    <div className="min-w-0 flex-1">
+                    <div className={`min-w-0 flex-1 ${toggle ? 'pr-14' : ''}`}>
                       <p className="text-[13px] font-black text-slate-900 dark:text-white truncate">
                         {found ? pickText(found.title, lang) : hit.item_id}
                       </p>
@@ -1022,24 +1042,30 @@ const Home: React.FC<HomeProps> = ({
                     </span>
                   )}
                 </button>
+                {/* How much more this source has to say, and the way to hear
+                    it. "+7" is the difference between a source that mentions
+                    the word and one that is about it. */}
+                {toggle && (
+                  <button
+                    type="button"
+                    aria-label={`${t.morePlacesHere} ${group.total - 1}`}
+                    onClick={() => toggleGroup(group.id, group.total, group.hits.length)}
+                    disabled={insideBusy === group.id}
+                    className="absolute top-2.5 right-2.5 flex items-center gap-0.5 pl-2 pr-1.5 py-1 rounded-xl bg-slate-100 dark:bg-white/[0.08] text-[10px] font-black tabular-nums text-slate-500 dark:text-slate-300 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/15 active:scale-95 disabled:opacity-50 transition-all"
+                  >
+                    {insideBusy === group.id
+                      ? '…'
+                      : open
+                        ? <ChevronUp size={13} strokeWidth={3} />
+                        : <>+{group.total - 1}<ChevronDown size={13} strokeWidth={3} /></>}
+                  </button>
+                )}
+                </div>
               );
             })}
-            {/* The breadth rule keeps one source from filling the answer, which
-                means a source that speaks about this ten times shows one line.
-                Saying how many are left — and opening them here — is the
-                difference between "it mentions this" and "it is about this". */}
-            {group.total > group.hits.length && (
-              <button
-                type="button"
-                onClick={() => showAllIn(group.id)}
-                disabled={insideBusy === group.id}
-                className="w-full py-2 text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500 hover:text-red-600 disabled:opacity-50 transition-colors"
-              >
-                {insideBusy === group.id ? '…' : `${t.morePlacesHere} ${group.total - group.hits.length}`}
-              </button>
-            )}
             </React.Fragment>
-            ))}
+            );
+            })}
           </div>
         </div>
       )}

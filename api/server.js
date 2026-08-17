@@ -2621,7 +2621,11 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
 const LLM_ENDPOINT = process.env.LLM_ENDPOINT || '';       // OpenAI-shaped /chat/completions
 const LLM_MODEL = process.env.LLM_MODEL || '';
 const LLM_API_KEY = process.env.LLM_API_KEY || '';
-const LLM_TIMEOUT_MS = envNum('LLM_TIMEOUT_MS', 60_000);
+// Three minutes, because the intended deployment is a model on this server's
+// own processor: a couple of thousand tokens of context is a minute of prefill
+// before a word is generated. A cloud model answers in seconds and never gets
+// near this; a local one would have been cut off at sixty.
+const LLM_TIMEOUT_MS = envNum('LLM_TIMEOUT_MS', 180_000);
 // How many passages the model is allowed to see. More context is not a better
 // answer: it is more chances to quote the wrong book.
 const ANSWER_PASSAGES = envNum('ANSWER_PASSAGES', 8);

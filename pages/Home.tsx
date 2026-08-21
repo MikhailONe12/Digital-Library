@@ -229,8 +229,9 @@ const Home: React.FC<HomeProps> = ({
   const [insideMore, setInsideMore] = useState<Record<string, SearchHit[]>>({});
   const [insideOpen, setInsideOpen] = useState<Record<string, boolean>>({});
   const [insideBusy, setInsideBusy] = useState<string | null>(null);
+  // The second pass, by meaning. It runs on its own, right after the words come
+  // back, and only says so while it is running.
   const [semanticBusy, setSemanticBusy] = useState(false);
-  const [semanticDone, setSemanticDone] = useState(false);
   const searchRequestRef = useRef<AbortController | null>(null);
   const semanticRequestRef = useRef<AbortController | null>(null);
   // The assembled answer. Never fetched on a keystroke — it costs a model call,
@@ -248,7 +249,7 @@ const Home: React.FC<HomeProps> = ({
   useEffect(() => {
     const q = searchQuery.trim();
     setInsideMore({}); setInsideOpen({}); setAnswer(null);
-    setSemanticDone(false); setSemanticBusy(false);
+    setSemanticBusy(false);
     searchRequestRef.current?.abort();
     semanticRequestRef.current?.abort();
     if (q.length < 3) {
@@ -260,43 +261,45 @@ const Home: React.FC<HomeProps> = ({
     searchRequestRef.current = controller;
     setSearching(true);
     // A short pause keeps typing responsive without starting a server query for
-    // every intermediate word. It is short again — the slow part was meaning
-    // search, and that has moved to a button. Word search is an indexed lookup
-    // and answers in milliseconds.
+    // every intermediate word. Short, because what follows is an indexed word
+    // lookup answering in milliseconds; the slower search by meaning runs after
+    // it rather than in front of it, so it delays nothing.
     const timer = window.setTimeout(async () => {
       // Twelve rather than eight: the server now shows at most three places per
       // material, so the extra room goes to more sources answering rather than
       // to one source answering more.
-      const { results, logId, error, canAnswer: may } = await searchInside(q, 12, undefined, { signal: controller.signal });
+      const { results, logId, error, canAnswer: may, canMeaning } =
+        await searchInside(q, 12, undefined, { signal: controller.signal });
       if (cancelled || controller.signal.aborted) return;
       setInsideHits(results);
       setInsideLogId(logId);
       setInsideError(error);
       setCanAnswer(may);
       setSearching(false);
-    }, 350);
-    return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
-  }, [searchQuery]);
+      if (!canMeaning) return;
 
-  const expandByMeaning = async () => {
-    const q = searchQuery.trim();
-    if (q.length < 3 || semanticBusy) return;
-    semanticRequestRef.current?.abort();
-    const controller = new AbortController();
-    semanticRequestRef.current = controller;
-    setSemanticBusy(true);
-    const { results, error } = await searchInside(q, 12, undefined, {
-      semantic: true,
-      log: false,
-      signal: controller.signal,
-    });
-    if (!controller.signal.aborted && q === searchQuery.trim()) {
-      if (results.length) setInsideHits(results);
-      setInsideError(error);
-      setSemanticDone(true);
-    }
-    if (!controller.signal.aborted) setSemanticBusy(false);
-  };
+      // Meaning, without anyone having to ask for it. The words are already on
+      // screen, so this costs the reader nothing but a moment; when it comes
+      // back the list is replaced by the fused one, which holds every place the
+      // words found plus what only meaning could reach. If it finds nothing, or
+      // cannot run, the list simply stays as it is.
+      const second = new AbortController();
+      semanticRequestRef.current = second;
+      setSemanticBusy(true);
+      const fused = await searchInside(q, 12, undefined, {
+        semantic: true, log: false, signal: second.signal,
+      });
+      if (cancelled || second.signal.aborted) return;
+      if (fused.results.length) setInsideHits(fused.results);
+      setSemanticBusy(false);
+    }, 350);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      semanticRequestRef.current?.abort();
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery]);
 
   // Results arrive grouped by material and carry how many places that material
   // holds in total, so a source can say "there are nine more of these" instead
@@ -1035,16 +1038,13 @@ const Home: React.FC<HomeProps> = ({
             <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
           </div>
 
-          {!semanticDone && (
-            <button
-              type="button"
-              onClick={expandByMeaning}
-              disabled={semanticBusy}
-              className="mb-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.05] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300 transition-colors hover:border-red-300 hover:text-red-600 disabled:cursor-wait disabled:opacity-60"
-            >
-              <Sparkles size={13} className="text-red-600" />
-              {semanticBusy ? t.searchingByMeaning : t.searchByMeaning}
-            </button>
+          {/* Said, not asked: the reader is told the library is still looking,
+              and the list updates under them when it finishes. */}
+          {semanticBusy && (
+            <p className="mb-4 inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500">
+              <Sparkles size={13} className="text-red-600 animate-pulse" />
+              {t.searchingByMeaning}
+            </p>
           )}
 
           {/* Two voices, and the screen keeps them apart: the explanation is

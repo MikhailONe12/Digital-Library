@@ -2361,6 +2361,24 @@ const keepClose = hits => {
   return hits.filter(h => h.dot >= floor);
 };
 
+// Can this server search by meaning at all — are there vectors, and is the
+// embedder not in its cooldown after failing? Asked so the browser knows whether
+// a second pass is worth starting; cached, because it is asked on every search
+// and the answer changes about as often as an operator presses "compute".
+let meaningState = { ready: false, at: 0 };
+const meaningAvailable = async () => {
+  const now = Date.now();
+  if (now - meaningState.at < 60_000) return meaningState.ready && now >= embedColdUntil;
+  try {
+    const { rows: [{ n }] } = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM chunk_vectors WHERE model = $1', [EMBED_MODEL]);
+    meaningState = { ready: n > 0, at: now };
+  } catch {
+    meaningState = { ready: false, at: now };
+  }
+  return meaningState.ready && now >= embedColdUntil;
+};
+
 /** Candidate chunk ids for a query, or an empty list when vectors are not available. */
 const vectorCandidates = async (q, k) => {
   try {
@@ -2602,7 +2620,12 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // Whether this server can assemble an answer at all. It rides along with the
     // results rather than taking a request of its own, so the interface never
     // offers a button that the server will refuse.
-    res.json({ results, logId, took, canAnswer: llmAvailable() });
+    res.json({
+      results, logId, took,
+      canAnswer: llmAvailable(),
+      // Only worth a second pass if there is something to search by meaning.
+      canMeaning: semantic ? false : await meaningAvailable(),
+    });
   } catch (e) {
     // Loud on the server, and honest to the client: a failed search must not
     // arrive looking like a search that found nothing.

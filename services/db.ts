@@ -784,6 +784,12 @@ export interface SearchResponse {
    * server is going to refuse.
    */
   canAnswer: boolean;
+  /**
+   * Whether a second, slower pass by meaning would find anything at all. False
+   * when no vectors are computed or the embedder is in its cooldown, so the
+   * browser does not spend a request on a pass that cannot answer.
+   */
+  canMeaning: boolean;
 }
 
 export interface SearchOptions {
@@ -806,7 +812,7 @@ export const searchInside = async (
   query: string, limit = 20, itemId?: string, options: SearchOptions = {},
 ): Promise<SearchResponse> => {
   const q = query.trim();
-  if (q.length < 3) return { results: [], logId: null, error: null, canAnswer: false };
+  if (q.length < 3) return { results: [], logId: null, error: null, canAnswer: false, canMeaning: false };
   try {
     const qs = new URLSearchParams({ q, limit: String(limit) });
     if (itemId) qs.set('item', itemId);
@@ -822,7 +828,7 @@ export const searchInside = async (
         : res.status === 404
           ? 'поиск не выложен на сервер'
           : `ошибка сервера ${res.status}`;
-      return { results: [], logId: null, error: reason, canAnswer: false };
+      return { results: [], logId: null, error: reason, canAnswer: false, canMeaning: false };
     }
     const data = await res.json();
     return {
@@ -830,12 +836,13 @@ export const searchInside = async (
       logId: data.logId ?? null,
       error: null,
       canAnswer: !!data.canAnswer,
+      canMeaning: !!data.canMeaning,
     };
   } catch (error) {
     if ((error as Error).name === 'AbortError') {
-      return { results: [], logId: null, error: null, canAnswer: false };
+      return { results: [], logId: null, error: null, canAnswer: false, canMeaning: false };
     }
-    return { results: [], logId: null, error: 'нет связи с сервером', canAnswer: false };
+    return { results: [], logId: null, error: 'нет связи с сервером', canAnswer: false, canMeaning: false };
   }
 };
 

@@ -2599,7 +2599,10 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // them from the outside means guessing.
     const took = { total: Date.now() - tStart, vector: tVector, sql: sqlMs, candidates: near.length, semantic };
     if (took.total > 700) console.warn('search slow:', JSON.stringify({ q: clip(q, 60), ...took }));
-    res.json({ results, logId, took });
+    // Whether this server can assemble an answer at all. It rides along with the
+    // results rather than taking a request of its own, so the interface never
+    // offers a button that the server will refuse.
+    res.json({ results, logId, took, canAnswer: llmAvailable() });
   } catch (e) {
     // Loud on the server, and honest to the client: a failed search must not
     // arrive looking like a search that found nothing.

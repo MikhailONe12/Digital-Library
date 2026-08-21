@@ -237,31 +237,44 @@ const Home: React.FC<HomeProps> = ({
   // so the reader asks for it once they have seen what the library holds.
   const [answer, setAnswer] = useState<LibraryAnswer | null>(null);
   const [answerBusy, setAnswerBusy] = useState(false);
+  // Whether this server has a model connected at all. A button that cannot do
+  // anything is worse than no button, so the server is asked first — it answers
+  // alongside the search results, at no extra request.
+  const [canAnswer, setCanAnswer] = useState(false);
+  // A query is on its way. The places already on screen stay there while it
+  // runs: emptying the list on every keystroke made it flash between words.
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     const q = searchQuery.trim();
     setInsideMore({}); setInsideOpen({}); setAnswer(null);
-    setInsideHits([]); setInsideLogId(null); setInsideError(null);
     setSemanticDone(false); setSemanticBusy(false);
     searchRequestRef.current?.abort();
     semanticRequestRef.current?.abort();
-    if (q.length < 3) { setInsideHits([]); setInsideLogId(null); setInsideError(null); return; }
+    if (q.length < 3) {
+      setInsideHits([]); setInsideLogId(null); setInsideError(null); setSearching(false);
+      return;
+    }
     let cancelled = false;
     const controller = new AbortController();
     searchRequestRef.current = controller;
+    setSearching(true);
     // A short pause keeps typing responsive without starting a server query for
-    // every intermediate word. The query itself is literal full-text search;
-    // semantic inference is an explicit second action below the results.
+    // every intermediate word. It is short again — the slow part was meaning
+    // search, and that has moved to a button. Word search is an indexed lookup
+    // and answers in milliseconds.
     const timer = window.setTimeout(async () => {
       // Twelve rather than eight: the server now shows at most three places per
       // material, so the extra room goes to more sources answering rather than
       // to one source answering more.
-      const { results, logId, error } = await searchInside(q, 12, undefined, { signal: controller.signal });
+      const { results, logId, error, canAnswer: may } = await searchInside(q, 12, undefined, { signal: controller.signal });
       if (cancelled || controller.signal.aborted) return;
       setInsideHits(results);
       setInsideLogId(logId);
       setInsideError(error);
-    }, 700);
+      setCanAnswer(may);
+      setSearching(false);
+    }, 350);
     return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
   }, [searchQuery]);
 
@@ -1009,7 +1022,7 @@ const Home: React.FC<HomeProps> = ({
       )}
 
       {insideHits.length > 0 && (
-        <div className="mt-10 animate-in fade-in slide-in-from-bottom-2 duration-500">
+        <div className={`mt-10 animate-in fade-in slide-in-from-bottom-2 duration-500 transition-opacity ${searching ? 'opacity-40' : 'opacity-100'}`}>
           <div className="flex items-center gap-3 mb-4">
             <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500">
               {t.foundInSources}
@@ -1038,7 +1051,7 @@ const Home: React.FC<HomeProps> = ({
               the model's, every quotation is the library's, checked word for
               word against the passage it claims to come from. Asking costs a
               model call, so it happens on request rather than on a keystroke. */}
-          {answer?.available !== false || answerBusy ? (
+          {canAnswer || answerBusy || answer ? (
             <div className="mb-4">
               {!answer && (
                 <button
@@ -1049,6 +1062,15 @@ const Home: React.FC<HomeProps> = ({
                 >
                   {answerBusy ? t.answerThinking : t.answerAsk}
                 </button>
+              )}
+
+              {/* The model is not connected on this server. Saying so is the
+                  whole point: a button that quietly disappears on being pressed
+                  looks like a broken interface rather than a missing setting. */}
+              {answer && answer.available === false && (
+                <p className="p-3.5 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                  {t.answerOff}
+                </p>
               )}
 
               {answer && answer.enough && (
@@ -1084,7 +1106,7 @@ const Home: React.FC<HomeProps> = ({
                 </div>
               )}
 
-              {answer && !answer.enough && (
+              {answer && answer.available !== false && !answer.enough && (
                 <p className="p-3.5 rounded-2xl bg-slate-100 dark:bg-white/[0.06] text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
                   {answer.reason === 'nothing-verified' ? t.answerUnverified : t.answerNone}
                 </p>

@@ -778,6 +778,12 @@ export interface SearchResponse {
    * week being mistaken for "nothing indexed".
    */
   error: string | null;
+  /**
+   * Whether the server has a model connected and can assemble an answer. It
+   * travels with the results so the interface never offers a button that the
+   * server is going to refuse.
+   */
+  canAnswer: boolean;
 }
 
 export interface SearchOptions {
@@ -800,7 +806,7 @@ export const searchInside = async (
   query: string, limit = 20, itemId?: string, options: SearchOptions = {},
 ): Promise<SearchResponse> => {
   const q = query.trim();
-  if (q.length < 3) return { results: [], logId: null, error: null };
+  if (q.length < 3) return { results: [], logId: null, error: null, canAnswer: false };
   try {
     const qs = new URLSearchParams({ q, limit: String(limit) });
     if (itemId) qs.set('item', itemId);
@@ -816,15 +822,20 @@ export const searchInside = async (
         : res.status === 404
           ? 'поиск не выложен на сервер'
           : `ошибка сервера ${res.status}`;
-      return { results: [], logId: null, error: reason };
+      return { results: [], logId: null, error: reason, canAnswer: false };
     }
     const data = await res.json();
-    return { results: data.results || [], logId: data.logId ?? null, error: null };
+    return {
+      results: data.results || [],
+      logId: data.logId ?? null,
+      error: null,
+      canAnswer: !!data.canAnswer,
+    };
   } catch (error) {
     if ((error as Error).name === 'AbortError') {
-      return { results: [], logId: null, error: null };
+      return { results: [], logId: null, error: null, canAnswer: false };
     }
-    return { results: [], logId: null, error: 'нет связи с сервером' };
+    return { results: [], logId: null, error: 'нет связи с сервером', canAnswer: false };
   }
 };
 

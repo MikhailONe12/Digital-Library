@@ -2520,6 +2520,11 @@ const dropRepeatedPassages = rows => {
 
 app.get('/api/search', checkUserAccess, async (req, res) => {
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  // Full-text search is the interactive path: it must not wait for model
+  // inference while a reader types. Meaning search is explicitly requested by
+  // the UI after literal results are already visible.
+  const semantic = req.query.semantic === '1';
+  const shouldLog = req.query.log !== '0';
   // Asking for one material's places rather than the library's: the reader has
   // already chosen where to look, so everything that material says is fair game.
   const onlyItem = typeof req.query.item === 'string' && req.query.item ? req.query.item : null;
@@ -2542,11 +2547,12 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // query with the English dictionary highlights the wrong words.
     const headlineConfig = /\p{Script=Cyrillic}/u.test(q) ? 'russian' : 'english';
 
-    // Asked before the query so its answer can travel into it. Sixty is enough
-    // to matter next to the word list without letting a loose association
-    // outrank a literal hit.
+    // Model inference is optional and deliberately outside the normal typing
+    // path. It is useful for paraphrases and cross-language questions, but a
+    // slow embedder must never turn an indexed word search into a minute-long
+    // wait.
     const tStart = Date.now();
-    const near = await vectorCandidates(q, 60);
+    const near = semantic ? await vectorCandidates(q, 60) : [];
     const tVector = Date.now() - tStart;
     const tSql = Date.now();
     const rows = await searchRows({
@@ -2578,7 +2584,7 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // Opening one material's remaining places is the same question asked again,
     // not a new one — logging it would inflate every count in the metric panel.
     let logId = null;
-    if (!onlyItem) {
+    if (!onlyItem && shouldLog) {
       try {
         const ins = await pool.query(
           'INSERT INTO search_log (query, lang, results, visitor) VALUES ($1,$2,$3,$4) RETURNING id',
@@ -2591,7 +2597,7 @@ app.get('/api/search', checkUserAccess, async (req, res) => {
     // Where the time went, and whether the meaning search took part at all.
     // Both questions get asked of a live server sooner or later, and answering
     // them from the outside means guessing.
-    const took = { total: Date.now() - tStart, vector: tVector, sql: sqlMs, candidates: near.length };
+    const took = { total: Date.now() - tStart, vector: tVector, sql: sqlMs, candidates: near.length, semantic };
     if (took.total > 700) console.warn('search slow:', JSON.stringify({ q: clip(q, 60), ...took }));
     res.json({ results, logId, took });
   } catch (e) {

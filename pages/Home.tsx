@@ -229,6 +229,10 @@ const Home: React.FC<HomeProps> = ({
   const [insideMore, setInsideMore] = useState<Record<string, SearchHit[]>>({});
   const [insideOpen, setInsideOpen] = useState<Record<string, boolean>>({});
   const [insideBusy, setInsideBusy] = useState<string | null>(null);
+  const [semanticBusy, setSemanticBusy] = useState(false);
+  const [semanticDone, setSemanticDone] = useState(false);
+  const searchRequestRef = useRef<AbortController | null>(null);
+  const semanticRequestRef = useRef<AbortController | null>(null);
   // The assembled answer. Never fetched on a keystroke — it costs a model call,
   // so the reader asks for it once they have seen what the library holds.
   const [answer, setAnswer] = useState<LibraryAnswer | null>(null);
@@ -237,21 +241,49 @@ const Home: React.FC<HomeProps> = ({
   useEffect(() => {
     const q = searchQuery.trim();
     setInsideMore({}); setInsideOpen({}); setAnswer(null);
+    setInsideHits([]); setInsideLogId(null); setInsideError(null);
+    setSemanticDone(false); setSemanticBusy(false);
+    searchRequestRef.current?.abort();
+    semanticRequestRef.current?.abort();
     if (q.length < 3) { setInsideHits([]); setInsideLogId(null); setInsideError(null); return; }
     let cancelled = false;
-    // Debounced: typing a word should not be a query per keystroke.
+    const controller = new AbortController();
+    searchRequestRef.current = controller;
+    // A short pause keeps typing responsive without starting a server query for
+    // every intermediate word. The query itself is literal full-text search;
+    // semantic inference is an explicit second action below the results.
     const timer = window.setTimeout(async () => {
       // Twelve rather than eight: the server now shows at most three places per
       // material, so the extra room goes to more sources answering rather than
       // to one source answering more.
-      const { results, logId, error } = await searchInside(q, 12);
-      if (cancelled) return;
+      const { results, logId, error } = await searchInside(q, 12, undefined, { signal: controller.signal });
+      if (cancelled || controller.signal.aborted) return;
       setInsideHits(results);
       setInsideLogId(logId);
       setInsideError(error);
-    }, 350);
-    return () => { cancelled = true; window.clearTimeout(timer); };
+    }, 700);
+    return () => { cancelled = true; controller.abort(); window.clearTimeout(timer); };
   }, [searchQuery]);
+
+  const expandByMeaning = async () => {
+    const q = searchQuery.trim();
+    if (q.length < 3 || semanticBusy) return;
+    semanticRequestRef.current?.abort();
+    const controller = new AbortController();
+    semanticRequestRef.current = controller;
+    setSemanticBusy(true);
+    const { results, error } = await searchInside(q, 12, undefined, {
+      semantic: true,
+      log: false,
+      signal: controller.signal,
+    });
+    if (!controller.signal.aborted && q === searchQuery.trim()) {
+      if (results.length) setInsideHits(results);
+      setInsideError(error);
+      setSemanticDone(true);
+    }
+    if (!controller.signal.aborted) setSemanticBusy(false);
+  };
 
   // Results arrive grouped by material and carry how many places that material
   // holds in total, so a source can say "there are nine more of these" instead
@@ -989,6 +1021,18 @@ const Home: React.FC<HomeProps> = ({
             </span>
             <div className="flex-1 h-px bg-slate-200 dark:bg-white/[0.08]" />
           </div>
+
+          {!semanticDone && (
+            <button
+              type="button"
+              onClick={expandByMeaning}
+              disabled={semanticBusy}
+              className="mb-4 inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/[0.05] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600 dark:text-slate-300 transition-colors hover:border-red-300 hover:text-red-600 disabled:cursor-wait disabled:opacity-60"
+            >
+              <Sparkles size={13} className="text-red-600" />
+              {semanticBusy ? t.searchingByMeaning : t.searchByMeaning}
+            </button>
+          )}
 
           {/* Two voices, and the screen keeps them apart: the explanation is
               the model's, every quotation is the library's, checked word for

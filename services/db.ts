@@ -780,6 +780,15 @@ export interface SearchResponse {
   error: string | null;
 }
 
+export interface SearchOptions {
+  /** Add the slower semantic/vector pass after the reader explicitly asks. */
+  semantic?: boolean;
+  /** Cancels an obsolete browser request while the reader keeps typing. */
+  signal?: AbortSignal;
+  /** Secondary enrichment requests must not duplicate search analytics. */
+  log?: boolean;
+}
+
 /**
  * Full-text search over the indexed books, videos and external sources.
  *
@@ -788,14 +797,19 @@ export interface SearchResponse {
  * is shown. It is also not logged as a new question — it is the same one.
  */
 export const searchInside = async (
-  query: string, limit = 20, itemId?: string,
+  query: string, limit = 20, itemId?: string, options: SearchOptions = {},
 ): Promise<SearchResponse> => {
   const q = query.trim();
   if (q.length < 3) return { results: [], logId: null, error: null };
   try {
     const qs = new URLSearchParams({ q, limit: String(limit) });
     if (itemId) qs.set('item', itemId);
-    const res = await fetch(`/api/search?${qs}`, { headers: tgInitDataHeader() });
+    if (options.semantic) qs.set('semantic', '1');
+    if (options.log === false) qs.set('log', '0');
+    const res = await fetch(`/api/search?${qs}`, {
+      headers: tgInitDataHeader(),
+      signal: options.signal,
+    });
     if (!res.ok) {
       const reason = res.status === 401 || res.status === 403
         ? 'нет доступа к поиску'
@@ -806,7 +820,10 @@ export const searchInside = async (
     }
     const data = await res.json();
     return { results: data.results || [], logId: data.logId ?? null, error: null };
-  } catch {
+  } catch (error) {
+    if ((error as Error).name === 'AbortError') {
+      return { results: [], logId: null, error: null };
+    }
     return { results: [], logId: null, error: 'нет связи с сервером' };
   }
 };
